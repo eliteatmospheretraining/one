@@ -1,0 +1,130 @@
+{
+  "theme_and_archetype": {
+    "domain": "Fitness, Gym, Sports, Athletics",
+    "theme": "LIGHT",
+    "archetype": "Archetype 2 (The Performance Pro)",
+    "reasoning": "A high-visibility 'Tactical' look is required for an admin tool used on-court under direct sunlight. Light theme maximizes readability outdoors. Deep Obsidian anchors the UI with pure white backgrounds, while 'Electric Volt' (tennis yellow) serves as the kinetic trigger for CTAs. Soft shadows are replaced by hard borders for a rugged, elite athletic feel."
+  },
+  "typography": {
+    "fonts": {
+      "headings": {
+        "family": "Barlow Condensed",
+        "weights": ["700", "900"],
+        "usage": "Used for all Page Titles, Athlete Names on Profiles, Invoice Numbers, and large statistical numbers."
+      },
+      "body": {
+        "family": "Manrope",
+        "weights": ["400", "500", "600", "700"],
+        "usage": "Used for all UI elements, form fields, schedule times, tables, and buttons. Highly legible for dense data."
+      }
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight uppercase",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight uppercase",
+      "h3": "text-xl font-bold tracking-tight uppercase",
+      "body": "text-base tracking-normal",
+      "label": "text-xs font-bold uppercase tracking-[0.1em] text-gray-500",
+      "number_display": "text-3xl font-black tracking-tighter"
+    }
+  },
+  "colors": {
+    "background": {
+      "base": "#FFFFFF",
+      "surface": "#F4F4F5",
+      "surface_hover": "#E4E4E7",
+      "dark_surface": "#0A0A0A"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#52525B",
+      "inverse": "#FFFFFF",
+      "accent": "#CCFF00"
+    },
+    "brand": {
+      "primary": "#CCFF00",
+      "primary_hover": "#B3E600",
+      "obsidian": "#0A0A0A",
+      "obsidian_hover": "#27272A"
+    },
+    "status_pills": {
+      "scheduled": { "bg": "#F4F4F5", "text": "#0A0A0A", "border": "#E4E4E7" },
+      "completed": { "bg": "#0A0A0A", "text": "#FFFFFF", "border": "#0A0A0A" },
+      "cancelled": { "bg": "#EF4444", "text": "#FFFFFF", "border": "#DC2626" },
+      "rescheduled": { "bg": "#3B82F6", "text": "#FFFFFF", "border": "#2563EB" }
+    },
+    "attendance_chips": {
+      "full_day": { "bg": "#0A0A0A", "text": "#FFFFFF", "border": "#0A0A0A" },
+      "half_day": { "bg": "#71717A", "text": "#FFFFFF", "border": "#52525B" },
+      "drop_in_full": { "bg": "#CCFF00", "text": "#0A0A0A", "border": "#0A0A0A" },
+      "drop_in_half": { "bg": "#FEF08A", "text": "#0A0A0A", "border": "#0A0A0A" },
+      "absent": { "bg": "#EF4444", "text": "#FFFFFF", "border": "#DC2626" }
+    },
+    "invoice_status": {
+      "draft": { "bg": "#F4F4F5", "text": "#52525B", "border": "#D4D4D8" },
+      "sent": { "bg": "#DBEAFE", "text": "#1E3A8A", "border": "#BFDBFE" },
+      "paid": { "bg": "#CCFF00", "text": "#0A0A0A", "border": "#0A0A0A" }
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "Mobile-First 'Control Room' Grid",
+    "container": "w-full max-w-md mx-auto md:max-w-4xl min-h-screen bg-white pb-24 md:pb-0 relative",
+    "cards": "bg-white border-2 border-black p-4 shadow-[4px_4px_0px_0px_rgba(10,10,10,1)]",
+    "inputs": "h-12 bg-gray-50 border-2 border-black px-4 text-base focus:ring-0 focus:border-black focus:bg-white transition-colors",
+    "buttons": {
+      "primary": "h-14 bg-[#CCFF00] text-black font-bold uppercase tracking-widest border-2 border-black hover:bg-[#B3E600] active:translate-y-1 active:shadow-none shadow-[4px_4px_0px_0px_rgba(10,10,10,1)] transition-all flex items-center justify-center",
+      "secondary": "h-14 bg-black text-white font-bold uppercase tracking-widest border-2 border-black hover:bg-zinc-800 active:translate-y-1 active:shadow-none shadow-[4px_4px_0px_0px_rgba(204,255,0,1)] transition-all flex items-center justify-center",
+      "ghost": "h-12 bg-transparent text-black font-bold uppercase hover:bg-gray-100 transition-colors flex items-center justify-center"
+    },
+    "bottom_nav": "fixed bottom-0 left-0 right-0 h-20 bg-white border-t-2 border-black flex justify-around items-center z-50 md:hidden",
+    "sidebar": "hidden md:flex flex-col w-64 border-r-2 border-black h-screen sticky top-0 p-6",
+    "radius": "rounded-none",
+    "gaps": "gap-4 md:gap-6"
+  },
+  "components": {
+    "login_view": "Dark atmospheric background using the provided generated texture. A stark white container with a heavy black border in the center for the Magic Link email input. Emphasize the bold EAT logo.",
+    "calendar_view": "Weekly strip at the top (side-scrollable list of dates). Daily view below it showing sessions as heavy bordered cards. Status pills top right of each card.",
+    "session_detail": "Header with time and program. Full roster list below. Each athlete row has large, tap-friendly attendance chips that snap state immediately. Fat-finger optimized (min 44px height).",
+    "roster_list": "Sticky search bar and filter chips (Program, Status) at top. List of athlete cards showing Name, Age, UTR/WTN, and Rate. Tap to view/edit profile.",
+    "invoice_pdf": "Professional, minimalist Swiss grid. Black and white only. Top left: EAT Logo. Top right: INVOICE EAT-00000X. Below: Billed to Family Name / Address. Table: Date, Session Type, Rate, Qty, Amount. Bottom right: Total Due. Bottom center footer: '1000 Brickell Ave Ste 715 PMB 5042, Miami, FL 33131'.",
+    "payment_modal": "Slide-up bottom sheet on mobile (Shadcn Drawer). Large input for amount, date picker, Zelle method locked/defaulted, notes field, massive 'MARK PAID' button."
+  },
+  "media": {
+    "logo": {
+      "url": "https://customer-assets.emergentagent.com/job_eat-admin-portal/artifacts/jnekghwj_EAT%20Logo.%20%285%29.png",
+      "description": "Primary EAT Wordmark. Bold dark blocky type. Always use on high-contrast white backgrounds or inverted for dark mode. Do not distort.",
+      "category": "branding"
+    },
+    "login_background": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/27bd2c08-81a7-4d84-9fd8-a6f133951f25/images/ed7543213097b821a4f66deb480a28ca03722b27c115c242850aa3aafb703655.png",
+      "description": "Cinematic obsidian black hardcourt texture with neon yellow line. Use this specifically for the unauthenticated magic-link login screen background.",
+      "category": "background"
+    },
+    "textures": {
+      "url": "https://images.pexels.com/photos/11391946/pexels-photo-11391946.jpeg",
+      "description": "Tennis court surface texture. Can be used as a heavily desaturated or low-opacity watermark background for empty states.",
+      "category": "empty_state"
+    }
+  },
+  "motion_and_interactions": {
+    "philosophy": "Tactical and immediate. No slow fades. Fast state changes that mimic physical switches.",
+    "hover": "-translate-y-[2px] transition-transform duration-150 ease-out",
+    "active": "translate-y-0 shadow-none transition-all duration-75",
+    "attendance_tap": "Scale down to 0.95 and snap to new color within 100ms. Provide clear visual feedback.",
+    "page_transition": "Simple opacity fade 0 to 1 over 150ms."
+  },
+  "accessibility_and_testing": {
+    "contrast": "All text must pass WCAG AAA (7:1). Black on yellow is extremely high contrast. White on black is high contrast.",
+    "touch_targets": "Minimum 48x48px for all interactive elements (chips, icons, list rows) to prevent mis-taps on-court.",
+    "testing_attributes": "All interactive and key informational elements MUST include a `data-testid` attribute in kebab-case format (e.g., `data-testid=\"login-submit-button\"`, `data-testid=\"attendance-chip-full\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Install required fonts: `yarn add @fontsource/barlow-condensed @fontsource/manrope`",
+    "Install icon library: `yarn add @phosphor-icons/react` (Choose bold or fill weights for robust look)",
+    "Configure tailwind.config.js with the custom colors (especially the CCFF00 volt yellow) and fonts.",
+    "Override default Shadcn styles: remove soft shadows, apply hard 2px black borders and sharp corners (rounded-none).",
+    "Implement bottom navigation fixed to viewport bottom for mobile layout.",
+    "Ensure 'Magic Link' login page uses the `login_background` media URL provided.",
+    "For PDF generation, ensure it aligns strictly to the minimalist black-and-white grid structure outlined.",
+    "Apply `data-testid` to all actionable components without exception."
+  ]
+}
