@@ -1,56 +1,93 @@
-import { useEffect } from "react";
-import "@/App.css";
+import React from "react";
+import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { Toaster } from "sonner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import { AuthProvider } from "./lib/auth";
+import RequireAuth from "./components/RequireAuth";
+import AppLayout from "./components/AppLayout";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+import Login from "./pages/Login";
+import CalendarPage from "./pages/CalendarPage";
+import Roster from "./pages/Roster";
+import Invoices from "./pages/Invoices";
+import Settings from "./pages/Settings";
+import SessionDetail from "./pages/SessionDetail";
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
-  );
+export default function App() {
+    return (
+        <div className="App">
+            <BrowserRouter>
+                <AuthProvider>
+                    <Routes>
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/verify" element={<Login />} />
+                        <Route
+                            path="/"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <CalendarPage />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
+                        <Route
+                            path="/sessions/:id"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <SessionDetail />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
+                        <Route
+                            path="/roster"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <Roster />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
+                        <Route
+                            path="/invoices"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <Invoices />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
+                        <Route
+                            path="/settings"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <Settings />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
+                    </Routes>
+                </AuthProvider>
+            </BrowserRouter>
+            <Toaster
+                position="top-center"
+                toastOptions={{
+                    style: {
+                        background: "#0A0A0A",
+                        color: "#FFFFFF",
+                        border: "2px solid #CCFF00",
+                        borderRadius: 0,
+                        fontFamily: "Manrope, sans-serif",
+                        fontWeight: 700,
+                    },
+                }}
+            />
+        </div>
+    );
 }
-
-export default App;

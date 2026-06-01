@@ -1,0 +1,49 @@
+{
+  "summary": "First testing pass on EAT Portal (FastAPI + React + Mongo). Backend: 15/15 pytest tests passed against the public REACT_APP_BACKEND_URL — covers magic-link auth (admin allowlist, single-use tokens, JWT, /me), rate-card values, family/athlete/session CRUD, attendance billing (full/half/drop-in, rate_override semantics, drop-ins NOT overridden, absent excluded), invoice generation with sequential EAT-NNNNNN numbering, PDF rendering (WeasyPrint returns real %PDF bytes), payment marks invoice paid, delete restricted to draft invoices, Resend send accepted as either 200 or 500 (returned 200 in this run). Frontend (mobile 390x844): /login renders, magic link flow shows dev link, /verify auto-authenticates and redirects to /, bottom-tab nav present, no horizontal overflow, Calendar 'New Session' modal opens, Roster create-family + create-athlete modals open and family was created end-to-end via UI, Invoices list page shows existing invoices and 'New Invoice' button, Settings displays full rate card ($60/$30/$85/$50/$300/$1100/$85/$65).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/invoices/{id}/send", "issue": "Resend domain currently sends 200, but if domain ever unverifies the route raises a raw 500 with the exception string; consider a more user-friendly error payload."},
+      {"endpoint": "DELETE /api/families/{id}", "issue": "Only blocks deletion when athletes exist — does not check sessions/invoices referencing the family. Could leave orphan invoices if a family is deleted later."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AthleteForm <select> option", "issue": "React hydration warning: <span> cannot be a child of <option>. Caused by ve-dynamic instrumentation wrapping the family option label text in a <span>. Doesn't break the page but pollutes the console and may break SSR.", "selector": "[data-testid='athlete-family-select'] option", "priority": "LOW"},
+      {"component": "Radix Dialog (Modal)", "issue": "Console warnings: 'Missing Description or aria-describedby for DialogContent' on every modal (new session, new family, new athlete, invoice modals). Add DialogDescription or aria-describedby for a11y.", "selector": "[role='dialog']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "All forms with date pickers (SessionForm, AthleteForm, Invoice generate, Payment)", "issues": ["Uses native browser <input type='date'> picker rather than shadcn calendar component as preferred per testing guidelines. Functional but inconsistent with rest of design system."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optionally swap native <input type=date> for shadcn Calendar/Popover for consistent UX.",
+    "Add DialogDescription/aria-describedby to all Modal components to silence Radix a11y warnings.",
+    "Fix AthleteForm <option> hydration warning — the dynamic visual-edit wrapper injects a <span> inside <option>; either disable VE instrumentation on that node or render the option text as a plain string (e.g., {`${f.family_name} (${f.guardian_name})`}).",
+    "Consider tightening DELETE /api/families to also block when sessions or invoices reference the family."
+  ],
+  "critical_code_review_comments": [
+    "auth.py reads os.environ['JWT_SECRET'] at import time — fine, but JWT_EXP_DAYS=30 is long for an admin-only portal; consider 7 days or sliding refresh.",
+    "routes_sessions.save_attendance silently skips entries with unknown athlete_id (no warning logged) — could mask data bugs.",
+    "routes_invoices.send_invoice surfaces Resend exception text directly in the 500 response — fine for dev, but in prod the raw exception could leak Resend internals.",
+    "billing.compute_billed_rate: half-day with rate_override on full_time uses base/2 (override/2). For program_type=private/semi_private with half attendance + rate_override the formula also returns override/2 — confirm with product if half-day private should be 50% of override.",
+    "Mongo counters collection uses _id='invoice_seq' — atomic find_one_and_update with upsert is correct. Good.",
+    "No pagination on list endpoints (families/athletes/sessions/invoices) — fine for current scale (single coach) but flag for the future."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/__init__.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% (key flows verified)"},
+  "test_credentials": "Admin: coachrico@eliteatmospheretraining.com — magic-link only (DEV_MODE returns dev_token & dev_magic_link in response).",
+  "seed_data_creation": "Tests create TEST_-prefixed families/athletes/sessions/invoices. Some TEST_ data is left in Mongo because cleanup of invoices/sessions is partial; this is intentional for the next agent to inspect, and does not affect production logic.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend covered comprehensively in /app/backend/tests/backend_test.py (15 tests, 100% pass via REACT_APP_BACKEND_URL). Use mobile nav testids with '-mobile' suffix (e.g., nav-roster-mobile) — the desktop nav-* testids are hidden on mobile viewport. Resend domain noreply@eliteatmospheretraining.com appears verified — /api/invoices/{id}/send returned 200 in this run. Invoice number counter starts at EAT-000001 and increments across runs (not reset). Test family/athlete records remain in DB with TEST_ prefix.",
+  "rca of the issue": "N/A — no critical issues found."
+}

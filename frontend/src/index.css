@@ -1,75 +1,45 @@
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/barlow-condensed/900.css";
+@import "@fontsource/manrope/400.css";
+@import "@fontsource/manrope/500.css";
+@import "@fontsource/manrope/600.css";
+@import "@fontsource/manrope/700.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 body {
     margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
+    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+    background: #FFFFFF;
+    color: #0A0A0A;
 }
 
 @layer base {
     :root {
         --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
+        --foreground: 0 0% 4%;
         --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
+        --card-foreground: 0 0% 4%;
         --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-    .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
+        --popover-foreground: 0 0% 4%;
+        --primary: 0 0% 4%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 96%;
+        --secondary-foreground: 0 0% 4%;
+        --muted: 0 0% 96%;
+        --muted-foreground: 0 0% 32%;
+        --accent: 73 100% 50%; /* volt */
+        --accent-foreground: 0 0% 4%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 0 0% 4%;
+        --input: 0 0% 90%;
+        --ring: 0 0% 4%;
+        --radius: 0px;
     }
 }
 
@@ -80,36 +50,67 @@ code {
     body {
         @apply bg-background text-foreground;
     }
+    h1, h2, h3, h4 {
+        font-family: 'Barlow Condensed', Impact, sans-serif;
+        letter-spacing: -0.01em;
+    }
+    ::selection {
+        background: #CCFF00;
+        color: #0A0A0A;
+    }
 }
 
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
+@layer components {
+    .eat-card {
+        @apply bg-white border-2 border-obsidian p-4 shadow-brut;
     }
-
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
+    .eat-card-flat {
+        @apply bg-white border-2 border-obsidian p-4;
     }
+    .eat-input {
+        @apply h-12 w-full bg-white border-2 border-obsidian px-4 text-base font-medium placeholder:text-zinc-400 focus:outline-none focus:ring-0 focus:bg-white;
+        font-family: 'Manrope', sans-serif;
+    }
+    .eat-input:focus {
+        box-shadow: 4px 4px 0px 0px #CCFF00;
+    }
+    .eat-btn {
+        @apply h-12 px-6 inline-flex items-center justify-center font-bold uppercase tracking-widest border-2 border-obsidian transition-all duration-100;
+    }
+    .eat-btn-primary {
+        @apply eat-btn bg-volt text-obsidian shadow-brut hover:bg-volt-hover active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
+    }
+    .eat-btn-secondary {
+        @apply eat-btn bg-obsidian text-white hover:bg-obsidian-hover shadow-brut-volt active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
+    }
+    .eat-btn-ghost {
+        @apply eat-btn bg-transparent border-transparent text-obsidian hover:bg-zinc-100 shadow-none;
+    }
+    .eat-label {
+        @apply text-xs font-bold uppercase tracking-[0.15em] text-zinc-500;
+    }
+    .eat-h1 {
+        @apply text-4xl sm:text-5xl font-black uppercase tracking-tight;
+        font-family: 'Barlow Condensed', Impact, sans-serif;
+    }
+    .eat-h2 {
+        @apply text-2xl sm:text-3xl font-bold uppercase tracking-tight;
+        font-family: 'Barlow Condensed', Impact, sans-serif;
+    }
+    .eat-h3 {
+        @apply text-xl font-bold uppercase tracking-tight;
+        font-family: 'Barlow Condensed', Impact, sans-serif;
+    }
+    .eat-stat-num {
+        @apply text-3xl font-black tracking-tighter;
+        font-family: 'Barlow Condensed', Impact, sans-serif;
+    }
+    .eat-pill {
+        @apply inline-flex items-center px-2.5 py-1 text-xs font-bold uppercase tracking-wider border-2;
+    }
+    .eat-tile-tap {
+        @apply transition-transform duration-75 active:scale-95;
+    }
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
 }
