@@ -3,6 +3,7 @@ import { api, API, getToken } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
+import { DateField } from "../components/DateField";
 import { InvoiceStatusPill } from "../components/Pills";
 import { INVOICES } from "../lib/testIds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
@@ -156,11 +157,11 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Period Start</label>
-                        <input data-testid={INVOICES.periodStart} type="date" required value={start} onChange={(e) => setStart(e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5"><DateField value={start} onChange={setStart} data-testid={INVOICES.periodStart} required /></div>
                     </div>
                     <div>
                         <label className="eat-label">Period End</label>
-                        <input data-testid={INVOICES.periodEnd} type="date" required value={end} onChange={(e) => setEnd(e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5"><DateField value={end} onChange={setEnd} data-testid={INVOICES.periodEnd} required /></div>
                     </div>
                 </div>
                 <button data-testid={INVOICES.generateBtn} disabled={busy} type="submit" className="eat-btn-primary w-full mt-2">
@@ -357,7 +358,7 @@ function PaymentModal({ open, onOpenChange, invoiceId, amountSuggest, onPaid }) 
                 </div>
                 <div>
                     <label className="eat-label">Date Received</label>
-                    <input data-testid={INVOICES.paymentDate} required type="date" value={date} onChange={(e) => setDate(e.target.value)} className="eat-input mt-1.5" />
+                    <div className="mt-1.5"><DateField value={date} onChange={setDate} data-testid={INVOICES.paymentDate} required /></div>
                 </div>
                 <div>
                     <label className="eat-label">Method</label>

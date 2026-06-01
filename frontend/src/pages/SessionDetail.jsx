@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { SessionStatusPill } from "../components/Pills";
 import { ATTENDANCE_TYPES, PROGRAM_LABEL, fmtDate, fmtMoney } from "../lib/format";
 import { SESSION } from "../lib/testIds";
-import { CheckCircle2, ChevronLeft, MapPin, Pencil, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ClipboardCopy, MapPin, Pencil, Trash2, X } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 import { toast } from "sonner";
 
@@ -88,6 +88,29 @@ export default function SessionDetail() {
         }
     }
 
+    async function copyFromPrevious() {
+        try {
+            const r = await api.get(`/sessions/${id}/last-attendance`);
+            if (!r.data.source || (r.data.entries || []).length === 0) {
+                toast.info("No previous session to copy from");
+                return;
+            }
+            const rosterIds = new Set(roster.map((x) => x.athlete.id));
+            const next = { ...marks };
+            let copied = 0;
+            r.data.entries.forEach((e) => {
+                if (rosterIds.has(e.athlete_id)) {
+                    next[e.athlete_id] = e.attendance_type;
+                    copied += 1;
+                }
+            });
+            setMarks(next);
+            toast.success(`Copied ${copied} from ${r.data.source.date}`);
+        } catch (e) {
+            toast.error("Could not load previous session");
+        }
+    }
+
     const attendanceComplete = Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
 
     return (
@@ -147,11 +170,21 @@ export default function SessionDetail() {
 
                 {/* Attendance */}
                 <div className="mt-10">
-                    <div className="flex items-end justify-between mb-4">
+                    <div className="flex items-end justify-between mb-4 flex-wrap gap-2">
                         <h2 className="eat-h2">Attendance</h2>
-                        <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
-                            {Object.keys(marks).length}/{roster.length} marked
-                        </span>
+                        <div className="flex items-center gap-3">
+                            <button
+                                data-testid="session-copy-previous-btn"
+                                onClick={copyFromPrevious}
+                                className="eat-btn-ghost h-9 text-xs px-2"
+                                title="Copy attendance from the most recent prior session of the same type"
+                            >
+                                <ClipboardCopy size={12} className="mr-1" strokeWidth={1.75} /> Copy previous
+                            </button>
+                            <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
+                                {Object.keys(marks).length}/{roster.length} marked
+                            </span>
+                        </div>
                     </div>
 
                     {roster.length === 0 ? (

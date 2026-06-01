@@ -91,6 +91,31 @@ async def delete_session(session_id: str):
 
 # ---------- Attendance ----------
 
+@router.get("/{session_id}/last-attendance")
+async def last_attendance(session_id: str):
+    """Return the most recent prior session's attendance for the same program_type.
+
+    Used by the UI to prefill 'Copy from previous session'.
+    """
+    s = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Session not found")
+    prev = await db.sessions.find_one(
+        {
+            "session_type": s["session_type"],
+            "date": {"$lt": s["date"]},
+            "id": {"$ne": session_id},
+        },
+        {"_id": 0},
+        sort=[("date", -1), ("start_time", -1)],
+    )
+    if not prev:
+        return {"source": None, "entries": []}
+    records = await db.attendance_records.find({"session_id": prev["id"]}, {"_id": 0}).to_list(500)
+    entries = [{"athlete_id": r["athlete_id"], "attendance_type": r["attendance_type"]} for r in records]
+    return {"source": prev, "entries": entries}
+
+
 @router.get("/{session_id}/attendance")
 async def get_attendance(session_id: str):
     session = await db.sessions.find_one({"id": session_id}, {"_id": 0})

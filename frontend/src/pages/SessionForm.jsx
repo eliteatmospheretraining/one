@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
+import { DateField } from "../components/DateField";
 import { SESSION_FORM } from "../lib/testIds";
 import { PROGRAM_LABEL } from "../lib/format";
 import { toast } from "sonner";
@@ -77,7 +78,9 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             <form onSubmit={submit} className="flex flex-col gap-4">
                 <div>
                     <label className="eat-label">Date</label>
-                    <input data-testid={SESSION_FORM.date} type="date" required value={date} onChange={(e) => setDate(e.target.value)} className="eat-input mt-1.5" />
+                    <div className="mt-1.5">
+                        <DateField value={date} onChange={setDate} data-testid={SESSION_FORM.date} required />
+                    </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div>

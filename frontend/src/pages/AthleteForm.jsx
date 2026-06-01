@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
+import { DateField } from "../components/DateField";
 import { ATHLETE_FORM } from "../lib/testIds";
 import { toast } from "sonner";
 
@@ -116,11 +117,11 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Date of Birth</label>
-                        <input data-testid={ATHLETE_FORM.dobInput} type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5"><DateField value={form.date_of_birth} onChange={(v) => set("date_of_birth", v)} data-testid={ATHLETE_FORM.dobInput} /></div>
                     </div>
                     <div>
                         <label className="eat-label">Training Start</label>
-                        <input data-testid={ATHLETE_FORM.trainingStart} type="date" value={form.training_start_date} onChange={(e) => set("training_start_date", e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5"><DateField value={form.training_start_date} onChange={(v) => set("training_start_date", v)} data-testid={ATHLETE_FORM.trainingStart} /></div>
                     </div>
                 </div>
 
