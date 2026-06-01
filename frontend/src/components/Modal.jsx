@@ -5,13 +5,15 @@ export function Modal({ open, onOpenChange, title, description, children, maxW =
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
-                className={`${maxW} w-[calc(100vw-2rem)] bg-white border-2 border-obsidian rounded-none p-0 shadow-brut`}
+                className={`${maxW} w-[calc(100vw-2rem)] bg-mid border border-subtle rounded-[2px] p-0 text-paper`}
             >
-                <DialogHeader className="p-5 border-b-2 border-obsidian">
-                    <DialogTitle className="font-heading text-2xl uppercase tracking-tight">{title}</DialogTitle>
+                <DialogHeader className="px-6 pt-6 pb-3">
+                    <DialogTitle asChild>
+                        <h2 className="font-thunder uppercase text-2xl tracking-tight" style={{ fontWeight: 500 }}>{title}</h2>
+                    </DialogTitle>
                     <DialogDescription className="sr-only">{description || title}</DialogDescription>
                 </DialogHeader>
-                <div className="p-5 max-h-[70vh] overflow-y-auto">{children}</div>
+                <div className="px-6 pb-6 max-h-[70vh] overflow-y-auto">{children}</div>
             </DialogContent>
         </Dialog>
     );

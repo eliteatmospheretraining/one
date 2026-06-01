@@ -110,38 +110,38 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             <form onSubmit={submit} className="flex flex-col gap-4">
                 <div>
                     <label className="eat-label">Full Name</label>
-                    <input data-testid={ATHLETE_FORM.nameInput} required value={form.full_name} onChange={(e) => set("full_name", e.target.value)} className="eat-input mt-1" />
+                    <input data-testid={ATHLETE_FORM.nameInput} required value={form.full_name} onChange={(e) => set("full_name", e.target.value)} className="eat-input mt-1.5" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Date of Birth</label>
-                        <input data-testid={ATHLETE_FORM.dobInput} type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.dobInput} type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                     <div>
                         <label className="eat-label">Training Start</label>
-                        <input data-testid={ATHLETE_FORM.trainingStart} type="date" value={form.training_start_date} onChange={(e) => set("training_start_date", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.trainingStart} type="date" value={form.training_start_date} onChange={(e) => set("training_start_date", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                 </div>
 
                 <div>
                     <label className="eat-label">Family</label>
-                    <select data-testid={ATHLETE_FORM.family} required value={form.family_id} onChange={(e) => set("family_id", e.target.value)} className="eat-input mt-1">
+                    <select data-testid={ATHLETE_FORM.family} required value={form.family_id} onChange={(e) => set("family_id", e.target.value)} className="eat-input mt-1.5">
                         <option value="">Select…</option>
-                        {families.map((f) => <option key={f.id} value={f.id}>{f.family_name} ({f.guardian_name})</option>)}
+                        {families.map((f) => <option key={f.id} value={f.id}>{`${f.family_name} (${f.guardian_name})`}</option>)}
                     </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Program</label>
-                        <select data-testid={ATHLETE_FORM.program} value={form.program_type} onChange={(e) => set("program_type", e.target.value)} className="eat-input mt-1">
+                        <select data-testid={ATHLETE_FORM.program} value={form.program_type} onChange={(e) => set("program_type", e.target.value)} className="eat-input mt-1.5">
                             {PROGRAMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="eat-label">Status</label>
-                        <select data-testid={ATHLETE_FORM.status} value={form.status} onChange={(e) => set("status", e.target.value)} className="eat-input mt-1">
+                        <select data-testid={ATHLETE_FORM.status} value={form.status} onChange={(e) => set("status", e.target.value)} className="eat-input mt-1.5">
                             {STATUSES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                         </select>
                     </div>
@@ -150,36 +150,36 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Rate Type</label>
-                        <select data-testid={ATHLETE_FORM.rateType} value={form.rate_type} onChange={(e) => set("rate_type", e.target.value)} className="eat-input mt-1">
+                        <select data-testid={ATHLETE_FORM.rateType} value={form.rate_type} onChange={(e) => set("rate_type", e.target.value)} className="eat-input mt-1.5">
                             {RATE_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="eat-label">Rate Override ($)</label>
-                        <input data-testid={ATHLETE_FORM.rateOverride} type="number" step="0.01" placeholder="default" value={form.rate_override} onChange={(e) => set("rate_override", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.rateOverride} type="number" step="0.01" placeholder="default" value={form.rate_override} onChange={(e) => set("rate_override", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">
                     <div>
                         <label className="eat-label">UTR</label>
-                        <input data-testid={ATHLETE_FORM.utr} type="number" step="0.01" value={form.utr} onChange={(e) => set("utr", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.utr} type="number" step="0.01" value={form.utr} onChange={(e) => set("utr", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                     <div>
                         <label className="eat-label">WTN</label>
-                        <input data-testid={ATHLETE_FORM.wtn} type="number" step="0.01" value={form.wtn} onChange={(e) => set("wtn", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.wtn} type="number" step="0.01" value={form.wtn} onChange={(e) => set("wtn", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                     <div>
                         <label className="eat-label">Shirt</label>
-                        <input data-testid={ATHLETE_FORM.shirt} value={form.shirt_size} onChange={(e) => set("shirt_size", e.target.value)} className="eat-input mt-1" />
+                        <input data-testid={ATHLETE_FORM.shirt} value={form.shirt_size} onChange={(e) => set("shirt_size", e.target.value)} className="eat-input mt-1.5" />
                     </div>
                 </div>
 
-                <button data-testid={ATHLETE_FORM.submit} type="submit" className="eat-btn-primary w-full mt-2">
+                <button data-testid={ATHLETE_FORM.submit} type="submit" className="eat-btn-primary w-full mt-2 h-12">
                     {isEdit ? "Save Changes" : "Create Athlete"}
                 </button>
                 {isEdit && form.status !== "archived" && (
-                    <button data-testid={ATHLETE_FORM.archive} type="button" onClick={archive} className="eat-btn-ghost h-10 text-sm border-2 border-red-500 text-red-700">
+                    <button data-testid={ATHLETE_FORM.archive} type="button" onClick={archive} className="eat-btn-danger h-10">
                         Archive Athlete
                     </button>
                 )}

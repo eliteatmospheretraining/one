@@ -3,13 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { SessionStatusPill } from "../components/Pills";
-import { ATTENDANCE_STYLES, ATTENDANCE_TYPES, PROGRAM_LABEL, fmtDate, fmtMoney } from "../lib/format";
-import { SESSION, CALENDAR } from "../lib/testIds";
+import { ATTENDANCE_TYPES, PROGRAM_LABEL, fmtDate, fmtMoney } from "../lib/format";
+import { SESSION } from "../lib/testIds";
 import { CheckCircle2, ChevronLeft, MapPin, Pencil, Trash2, X } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 import { toast } from "sonner";
 
-const CHIP_ABBREV = {
+const CHIP_LABEL = {
     full: "Full",
     half: "Half",
     drop_in_full: "DI · Full",
@@ -21,7 +21,7 @@ export default function SessionDetail() {
     const { id } = useParams();
     const nav = useNavigate();
     const [data, setData] = useState(null);
-    const [marks, setMarks] = useState({}); // athlete_id -> attendance_type
+    const [marks, setMarks] = useState({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -47,7 +47,7 @@ export default function SessionDetail() {
     useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
     if (loading || !data) {
-        return <div className="p-10 text-center text-zinc-400 uppercase tracking-widest font-bold text-sm">Loading…</div>;
+        return <div className="p-10 text-center text-muted uppercase tracking-wider2 text-sm">Loading…</div>;
     }
 
     const session = data.session;
@@ -94,104 +94,104 @@ export default function SessionDetail() {
         <div>
             <PageHeader
                 subtitle={
-                    <span className="inline-flex items-center gap-2">
-                        <button onClick={() => nav("/")} className="inline-flex items-center gap-1 hover:text-obsidian">
-                            <ChevronLeft size={14} /> Back to Schedule
-                        </button>
-                    </span>
+                    <button onClick={() => nav("/")} className="inline-flex items-center gap-1 hover:text-paper">
+                        <ChevronLeft size={13} /> Back to Schedule
+                    </button>
                 }
                 title={
-                    <span className="flex items-baseline gap-3 flex-wrap">
+                    <span className="flex items-baseline gap-4 flex-wrap">
                         <span>{session.start_time || "—"}</span>
-                        <span className="text-xl text-zinc-400 font-bold">{PROGRAM_LABEL[session.session_type]}</span>
+                        <span className="text-3xl text-muted" style={{ fontWeight: 300 }}>{PROGRAM_LABEL[session.session_type]}</span>
                     </span>
                 }
                 actions={<SessionStatusPill status={session.status} />}
             />
 
-            <div className="px-4 md:px-8 mt-4 md:mt-6">
-                <div className="eat-card flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                    <span className="font-bold uppercase tracking-widest text-xs">{fmtDate(session.date, { weekday: "long", month: "long", day: "numeric" })}</span>
+            <div className="px-5 md:px-10 mt-6">
+                {/* Meta row */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted pb-5 border-b border-subtle">
+                    <span className="uppercase tracking-wider2 text-paper" style={{ fontWeight: 500 }}>
+                        {fmtDate(session.date, { weekday: "long", month: "long", day: "numeric" })}
+                    </span>
                     {session.location && (
-                        <span className="inline-flex items-center gap-1.5 text-zinc-600"><MapPin size={14} /> {session.location}</span>
+                        <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {session.location}</span>
                     )}
-                    {session.end_time && <span className="text-zinc-600">Ends {session.end_time}</span>}
+                    {session.end_time && <span>Ends {session.end_time}</span>}
                 </div>
 
-                {/* Action row */}
-                <div className="flex flex-wrap gap-2 mt-4">
-                    <button data-testid={SESSION.editBtn} onClick={() => setEditOpen(true)} className="eat-btn-ghost h-10 text-sm border-2 border-obsidian">
-                        <Pencil size={14} className="mr-1.5" /> Edit
+                {/* Actions */}
+                <div className="flex flex-wrap gap-2 mt-5">
+                    <button data-testid={SESSION.editBtn} onClick={() => setEditOpen(true)} className="eat-btn-secondary">
+                        <Pencil size={13} className="mr-1.5" strokeWidth={1.75} /> Edit
                     </button>
                     {session.status !== "completed" && (
                         <button
                             data-testid={SESSION.completeBtn}
                             disabled={!attendanceComplete}
                             onClick={() => setStatus("completed")}
-                            className="eat-btn-secondary h-10 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="eat-btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
                             title={attendanceComplete ? "Mark complete" : "Save attendance for all athletes first"}
                         >
-                            <CheckCircle2 size={14} className="mr-1.5" /> Complete
+                            <CheckCircle2 size={13} className="mr-1.5" strokeWidth={1.75} /> Complete
                         </button>
                     )}
                     {session.status !== "cancelled" && (
-                        <button data-testid={SESSION.cancelBtn} onClick={() => setStatus("cancelled")} className="eat-btn-ghost h-10 text-sm border-2 border-red-500 text-red-700">
-                            <X size={14} className="mr-1.5" /> Cancel
+                        <button data-testid={SESSION.cancelBtn} onClick={() => setStatus("cancelled")} className="eat-btn-danger">
+                            <X size={13} className="mr-1.5" strokeWidth={1.75} /> Cancel
                         </button>
                     )}
-                    <button data-testid={SESSION.deleteBtn} onClick={deleteSession} className="eat-btn-ghost h-10 text-sm border-2 border-zinc-300">
-                        <Trash2 size={14} className="mr-1.5" /> Delete
+                    <button data-testid={SESSION.deleteBtn} onClick={deleteSession} className="eat-btn-ghost">
+                        <Trash2 size={13} className="mr-1.5" strokeWidth={1.75} /> Delete
                     </button>
                 </div>
 
-                <div className="mt-6">
-                    <div className="flex items-end justify-between mb-3">
+                {/* Attendance */}
+                <div className="mt-10">
+                    <div className="flex items-end justify-between mb-4">
                         <h2 className="eat-h2">Attendance</h2>
-                        <span className="text-xs text-zinc-500 font-bold uppercase tracking-widest">
+                        <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
                             {Object.keys(marks).length}/{roster.length} marked
                         </span>
                     </div>
 
                     {roster.length === 0 ? (
-                        <div className="border-2 border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
-                            No athletes attached. Add expected attendees by editing the session.
+                        <div className="py-10 text-center text-muted text-sm font-light">
+                            No athletes attached. Edit the session to add expected attendees.
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-3">
-                            {roster.map(({ athlete }) => (
-                                <div key={athlete.id} className="eat-card-flat">
-                                    <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex flex-col">
+                            {roster.map(({ athlete }, idx) => (
+                                <div key={athlete.id} className={`py-5 ${idx > 0 ? "border-t border-subtle" : ""}`}>
+                                    <div className="flex items-start justify-between gap-3 mb-3">
                                         <div className="min-w-0">
-                                            <div className="font-heading text-xl uppercase tracking-tight truncate">{athlete.full_name}</div>
-                                            <div className="text-xs text-zinc-500 font-bold uppercase tracking-widest">
+                                            <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate" style={{ fontWeight: 500 }}>
+                                                {athlete.full_name}
+                                            </div>
+                                            <div className="text-xs text-muted uppercase tracking-wider2 mt-0.5" style={{ fontWeight: 300 }}>
                                                 {PROGRAM_LABEL[athlete.program_type]}
-                                                {athlete.rate_override != null && <span className="ml-2 text-volt-hover">Override {fmtMoney(athlete.rate_override)}</span>}
+                                                {athlete.rate_override != null && <span className="ml-2 text-accent">Override {fmtMoney(athlete.rate_override)}</span>}
                                             </div>
                                         </div>
-                                        {marks[athlete.id] && (
-                                            <div className="text-right">
-                                                <span
-                                                    className={`eat-pill ${ATTENDANCE_STYLES[marks[athlete.id]].bg} ${ATTENDANCE_STYLES[marks[athlete.id]].text} ${ATTENDANCE_STYLES[marks[athlete.id]].border}`}
-                                                >
-                                                    {ATTENDANCE_STYLES[marks[athlete.id]].label}
-                                                </span>
-                                            </div>
-                                        )}
                                     </div>
                                     <div className="grid grid-cols-5 gap-1.5">
                                         {ATTENDANCE_TYPES.map((t) => {
-                                            const s = ATTENDANCE_STYLES[t];
                                             const active = marks[athlete.id] === t;
+                                            const isAbsent = t === "absent";
                                             return (
                                                 <button
                                                     key={t}
                                                     data-testid={SESSION.chip(athlete.id, t)}
                                                     onClick={() => setMarks((m) => ({ ...m, [athlete.id]: t }))}
-                                                    className={`h-12 border-2 text-[10px] sm:text-xs font-black uppercase tracking-tight transition-all eat-tile-tap ${
-                                                        active ? `${s.bg} ${s.text} ${s.border} shadow-brut-sm` : "bg-white border-zinc-300 text-zinc-500 hover:border-obsidian"
+                                                    className={`h-10 text-[11px] sm:text-xs uppercase tracking-wider2 transition-colors border ${
+                                                        active
+                                                            ? isAbsent
+                                                                ? "bg-transparent text-danger border-danger"
+                                                                : "bg-accent text-ink border-accent"
+                                                            : "bg-mid text-muted border-subtle hover:text-paper hover:border-paper/40"
                                                     }`}
+                                                    style={{ fontWeight: 500 }}
                                                 >
-                                                    {CHIP_ABBREV[t]}
+                                                    {CHIP_LABEL[t]}
                                                 </button>
                                             );
                                         })}
@@ -202,12 +202,12 @@ export default function SessionDetail() {
                     )}
 
                     {roster.length > 0 && (
-                        <div className="sticky bottom-24 md:bottom-6 mt-6">
+                        <div className="sticky bottom-20 md:bottom-6 mt-8">
                             <button
                                 data-testid={SESSION.saveAttendanceBtn}
                                 onClick={saveAttendance}
                                 disabled={saving || Object.keys(marks).length === 0}
-                                className="eat-btn-primary w-full h-14 disabled:opacity-50"
+                                className="eat-btn-primary w-full h-12 disabled:opacity-50"
                             >
                                 {saving ? "Saving…" : `Save Attendance (${Object.keys(marks).length})`}
                             </button>

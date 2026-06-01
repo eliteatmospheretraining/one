@@ -4,10 +4,9 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { ROSTER } from "../lib/testIds";
 import { PROGRAM_LABEL, computeAge, fmtMoney } from "../lib/format";
-import { Search, Plus, Users, Archive, UserPlus } from "lucide-react";
+import { Search, Plus, Archive, UserPlus, Users } from "lucide-react";
 import { AthleteFormModal } from "./AthleteForm";
 import { FamilyFormModal } from "./FamilyForm";
-import { useNavigate } from "react-router-dom";
 
 const PROGRAM_FILTERS = [
     { value: "all", label: "All" },
@@ -23,7 +22,6 @@ const STATUS_FILTERS = [
 ];
 
 export default function Roster() {
-    const nav = useNavigate();
     const [athletes, setAthletes] = useState([]);
     const [families, setFamilies] = useState([]);
     const [q, setQ] = useState("");
@@ -44,7 +42,6 @@ export default function Roster() {
             setLoading(false);
         }
     }
-
     useEffect(() => { load(); }, []);
 
     const famById = useMemo(() => Object.fromEntries(families.map((f) => [f.id, f])), [families]);
@@ -67,61 +64,63 @@ export default function Roster() {
                         <button
                             data-testid={ROSTER.newFamilyBtn}
                             onClick={() => setFamilyFormOpen(true)}
-                            className="eat-btn-ghost h-12 text-sm border-2 border-obsidian"
+                            className="eat-btn-secondary"
                         >
-                            <Users size={16} className="mr-1.5" /> New Family
+                            <Users size={14} className="mr-1.5" strokeWidth={1.75} /> New Family
                         </button>
                         <button
                             data-testid={ROSTER.newBtn}
                             onClick={() => { setEditingAthlete(null); setAthleteFormOpen(true); }}
-                            className="eat-btn-primary h-12 text-sm"
+                            className="eat-btn-primary"
                             disabled={families.length === 0}
                             title={families.length === 0 ? "Create a family first" : ""}
                         >
-                            <UserPlus size={16} className="mr-1.5" /> New Athlete
+                            <UserPlus size={14} className="mr-1.5" strokeWidth={1.75} /> New Athlete
                         </button>
                     </div>
                 }
             />
 
-            <div className="px-4 md:px-8 mt-4 md:mt-6">
+            <div className="px-5 md:px-10 mt-8">
                 {/* Search */}
-                <div className="relative">
-                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <div className="relative mb-5">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" strokeWidth={1.75} />
                     <input
                         data-testid={ROSTER.searchInput}
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         placeholder="Search athletes…"
-                        className="eat-input pl-10"
+                        className="eat-input pl-9"
                     />
                 </div>
 
                 {/* Filters */}
-                <div className="mt-3 space-y-2">
-                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1" data-testid={ROSTER.filterProgram}>
+                <div className="space-y-2.5">
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none" data-testid={ROSTER.filterProgram}>
                         {PROGRAM_FILTERS.map((f) => (
                             <button
                                 key={f.value}
                                 onClick={() => setProgram(f.value)}
                                 data-testid={`filter-program-${f.value}`}
-                                className={`shrink-0 h-9 px-3 border-2 text-xs font-bold uppercase tracking-widest transition-all ${
-                                    program === f.value ? "bg-obsidian text-white border-obsidian" : "bg-white border-obsidian hover:bg-zinc-50"
+                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                    program === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
                                 }`}
+                                style={{ fontWeight: 500 }}
                             >
                                 {f.label}
                             </button>
                         ))}
                     </div>
-                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1" data-testid={ROSTER.filterStatus}>
+                    <div className="flex items-center gap-2 overflow-x-auto scrollbar-none" data-testid={ROSTER.filterStatus}>
                         {STATUS_FILTERS.map((f) => (
                             <button
                                 key={f.value}
                                 onClick={() => setStatus(f.value)}
                                 data-testid={`filter-status-${f.value}`}
-                                className={`shrink-0 h-9 px-3 border-2 text-xs font-bold uppercase tracking-widest transition-all ${
-                                    status === f.value ? "bg-volt text-obsidian border-obsidian" : "bg-white border-obsidian hover:bg-zinc-50"
+                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                    status === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
                                 }`}
+                                style={{ fontWeight: 500 }}
                             >
                                 {f.label}
                             </button>
@@ -129,29 +128,24 @@ export default function Roster() {
                     </div>
                 </div>
 
-                <div className="mt-4 text-xs text-zinc-500 font-bold uppercase tracking-widest">
+                <div className="mt-5 mb-3 eat-eyebrow">
                     {filtered.length} of {athletes.length} athlete{athletes.length === 1 ? "" : "s"}
                 </div>
 
                 {loading ? (
-                    <div className="text-center py-8 text-zinc-400 font-bold uppercase tracking-widest text-sm">Loading…</div>
+                    <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
                 ) : filtered.length === 0 ? (
-                    <div className="mt-4">
-                        <EmptyState
-                            icon={Users}
-                            title={athletes.length === 0 ? "No athletes yet" : "No matches"}
-                            hint={athletes.length === 0
-                                ? "Add a family record first, then add athletes."
-                                : "Adjust your search or filters."}
-                            action={athletes.length === 0 ? (
-                                <button onClick={() => setFamilyFormOpen(true)} className="eat-btn-primary mt-3">
-                                    <Plus size={16} className="mr-1.5" /> New Family
-                                </button>
-                            ) : null}
-                        />
-                    </div>
+                    <EmptyState
+                        title={athletes.length === 0 ? "No athletes yet" : "No matches"}
+                        hint={athletes.length === 0 ? "Add a family record first, then add athletes." : "Adjust your search or filters."}
+                        action={athletes.length === 0 ? (
+                            <button onClick={() => setFamilyFormOpen(true)} className="eat-btn-primary">
+                                <Plus size={14} className="mr-1.5" /> New Family
+                            </button>
+                        ) : null}
+                    />
                 ) : (
-                    <div className="mt-4 flex flex-col gap-3 pb-8">
+                    <div className="flex flex-col gap-2 pb-10">
                         {filtered.map((a) => {
                             const fam = famById[a.family_id];
                             return (
@@ -159,34 +153,38 @@ export default function Roster() {
                                     key={a.id}
                                     data-testid={ROSTER.card(a.id)}
                                     onClick={() => { setEditingAthlete(a); setAthleteFormOpen(true); }}
-                                    className={`eat-card text-left hover:-translate-y-[2px] transition-transform ${a.status === "archived" ? "opacity-60" : ""}`}
+                                    className={`bg-mid border border-subtle p-5 text-left hover:border-paper/30 transition-colors ${a.status === "archived" ? "opacity-50" : ""}`}
                                 >
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-heading text-2xl uppercase tracking-tight truncate">
+                                            <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate leading-none" style={{ fontWeight: 500 }}>
                                                 {a.full_name}
                                             </div>
-                                            <div className="text-xs font-bold uppercase tracking-widest text-zinc-500 mt-1">
+                                            <div className="text-xs text-muted uppercase tracking-wider2 mt-2" style={{ fontWeight: 300 }}>
                                                 {PROGRAM_LABEL[a.program_type]}
                                                 {a.date_of_birth && <span> · Age {computeAge(a.date_of_birth)}</span>}
-                                                {a.status === "archived" && <span className="ml-2 inline-flex items-center gap-1 text-zinc-500"><Archive size={11} /> Archived</span>}
+                                                {a.status === "archived" && (
+                                                    <span className="ml-2 inline-flex items-center gap-1"><Archive size={11} strokeWidth={1.5} /> Archived</span>
+                                                )}
                                             </div>
                                             {fam && (
-                                                <div className="text-xs text-zinc-500 mt-1">{fam.family_name} family</div>
+                                                <div className="text-xs text-muted mt-1 font-light">{fam.family_name} family</div>
                                             )}
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <div className="text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Rate</div>
-                                            <div className="eat-stat-num text-2xl">
-                                                {a.rate_override != null ? fmtMoney(a.rate_override) : <span className="text-zinc-400">—</span>}
+                                            <div className="eat-label">Rate</div>
+                                            <div className="eat-numeral text-2xl mt-0.5">
+                                                {a.rate_override != null ? fmtMoney(a.rate_override) : <span className="text-muted">—</span>}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-600">
-                                        {a.utr != null && <span><span className="text-zinc-400">UTR</span> <b>{a.utr}</b></span>}
-                                        {a.wtn != null && <span><span className="text-zinc-400">WTN</span> <b>{a.wtn}</b></span>}
-                                        {a.shirt_size && <span><span className="text-zinc-400">Shirt</span> <b>{a.shirt_size}</b></span>}
-                                    </div>
+                                    {(a.utr != null || a.wtn != null || a.shirt_size) && (
+                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted font-light">
+                                            {a.utr != null && <span>UTR <span className="text-paper">{a.utr}</span></span>}
+                                            {a.wtn != null && <span>WTN <span className="text-paper">{a.wtn}</span></span>}
+                                            {a.shirt_size && <span>Shirt <span className="text-paper">{a.shirt_size}</span></span>}
+                                        </div>
+                                    )}
                                 </button>
                             );
                         })}

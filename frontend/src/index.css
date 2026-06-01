@@ -1,45 +1,72 @@
-@import "@fontsource/barlow-condensed/700.css";
-@import "@fontsource/barlow-condensed/900.css";
-@import "@fontsource/manrope/400.css";
-@import "@fontsource/manrope/500.css";
-@import "@fontsource/manrope/600.css";
-@import "@fontsource/manrope/700.css";
+@font-face {
+    font-family: 'Thunder';
+    src: url('./assets/fonts/Thunder-Thin.ttf') format('truetype');
+    font-weight: 200;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Thunder';
+    src: url('./assets/fonts/Thunder-Light.ttf') format('truetype');
+    font-weight: 300;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Thunder';
+    src: url('./assets/fonts/Thunder-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+/* Thunder doesn't ship Bold here — alias 700 to Medium so font-bold still resolves */
+@font-face {
+    font-family: 'Thunder';
+    src: url('./assets/fonts/Thunder-Medium.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+html, body {
+    background: #141414;
+    color: #F5F5F5;
+}
+
 body {
     margin: 0;
-    font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    font-family: 'Thunder', Impact, system-ui, -apple-system, sans-serif;
+    font-weight: 300;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #FFFFFF;
-    color: #0A0A0A;
 }
 
 @layer base {
     :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 4%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 4%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 4%;
-        --primary: 0 0% 4%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 0 0% 96%;
-        --secondary-foreground: 0 0% 4%;
-        --muted: 0 0% 96%;
-        --muted-foreground: 0 0% 32%;
-        --accent: 73 100% 50%; /* volt */
-        --accent-foreground: 0 0% 4%;
-        --destructive: 0 84% 60%;
-        --destructive-foreground: 0 0% 100%;
-        --border: 0 0% 4%;
-        --input: 0 0% 90%;
-        --ring: 0 0% 4%;
-        --radius: 0px;
+        --background: 0 0% 8%;        /* #141414 */
+        --foreground: 0 0% 96%;       /* #F5F5F5 */
+        --card: 0 0% 12%;             /* #1E1E1E */
+        --card-foreground: 0 0% 96%;
+        --popover: 0 0% 12%;
+        --popover-foreground: 0 0% 96%;
+        --primary: 73 100% 50%;       /* #CBFF00 accent */
+        --primary-foreground: 0 0% 8%;
+        --secondary: 0 0% 16%;        /* #2A2A2A */
+        --secondary-foreground: 0 0% 96%;
+        --muted: 0 0% 16%;
+        --muted-foreground: 0 0% 53%;
+        --accent: 73 100% 50%;
+        --accent-foreground: 0 0% 8%;
+        --destructive: 0 100% 64%;
+        --destructive-foreground: 0 0% 96%;
+        --border: 0 0% 16%;           /* #2A2A2A */
+        --input: 0 0% 12%;
+        --ring: 0 0% 96%;
+        --radius: 2px;
     }
 }
 
@@ -48,69 +75,127 @@ body {
         @apply border-border;
     }
     body {
-        @apply bg-background text-foreground;
+        @apply bg-ink text-paper;
     }
-    h1, h2, h3, h4 {
-        font-family: 'Barlow Condensed', Impact, sans-serif;
-        letter-spacing: -0.01em;
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
+        letter-spacing: -0.005em;
     }
     ::selection {
-        background: #CCFF00;
-        color: #0A0A0A;
+        background: #CBFF00;
+        color: #141414;
+    }
+    /* native form widgets */
+    input, select, textarea, button {
+        font-family: 'Thunder', Impact, sans-serif;
+    }
+    input[type="date"], input[type="time"] {
+        color-scheme: dark;
     }
 }
 
 @layer components {
+    /* Surfaces */
     .eat-card {
-        @apply bg-white border-2 border-obsidian p-4 shadow-brut;
+        @apply bg-mid border border-subtle p-5;
     }
     .eat-card-flat {
-        @apply bg-white border-2 border-obsidian p-4;
+        @apply bg-mid border border-subtle p-5;
     }
+    .eat-surface {
+        @apply bg-ink;
+    }
+
+    /* Inputs */
     .eat-input {
-        @apply h-12 w-full bg-white border-2 border-obsidian px-4 text-base font-medium placeholder:text-zinc-400 focus:outline-none focus:ring-0 focus:bg-white;
-        font-family: 'Manrope', sans-serif;
+        @apply w-full h-11 bg-mid border border-subtle px-3.5 text-paper text-base font-light placeholder:text-muted focus:outline-none focus:border-paper transition-colors;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 300;
     }
-    .eat-input:focus {
-        box-shadow: 4px 4px 0px 0px #CCFF00;
-    }
+    .eat-input:focus { outline: none; }
+
+    /* Buttons */
     .eat-btn {
-        @apply h-12 px-6 inline-flex items-center justify-center font-bold uppercase tracking-widest border-2 border-obsidian transition-all duration-100;
+        @apply h-11 px-5 inline-flex items-center justify-center font-medium uppercase tracking-wider2 text-sm transition-colors;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
     }
     .eat-btn-primary {
-        @apply eat-btn bg-volt text-obsidian shadow-brut hover:bg-volt-hover active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
+        @apply eat-btn bg-accent text-ink hover:bg-accent-soft;
     }
     .eat-btn-secondary {
-        @apply eat-btn bg-obsidian text-white hover:bg-obsidian-hover shadow-brut-volt active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
+        @apply eat-btn bg-transparent text-paper border border-subtle hover:border-paper;
     }
     .eat-btn-ghost {
-        @apply eat-btn bg-transparent border-transparent text-obsidian hover:bg-zinc-100 shadow-none;
+        @apply eat-btn bg-transparent text-paper border-0 hover:text-accent;
+    }
+    .eat-btn-danger {
+        @apply eat-btn bg-transparent text-danger border border-danger/60 hover:border-danger;
+    }
+
+    /* Labels */
+    .eat-eyebrow {
+        @apply text-xs uppercase tracking-wider3 text-muted;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 300;
     }
     .eat-label {
-        @apply text-xs font-bold uppercase tracking-[0.15em] text-zinc-500;
+        @apply text-[11px] uppercase tracking-wider3 text-muted;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 300;
     }
     .eat-h1 {
-        @apply text-4xl sm:text-5xl font-black uppercase tracking-tight;
-        font-family: 'Barlow Condensed', Impact, sans-serif;
+        @apply text-5xl sm:text-6xl uppercase tracking-tight leading-[0.92] text-paper;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
     }
     .eat-h2 {
-        @apply text-2xl sm:text-3xl font-bold uppercase tracking-tight;
-        font-family: 'Barlow Condensed', Impact, sans-serif;
+        @apply text-3xl sm:text-4xl uppercase tracking-tight leading-tight text-paper;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
     }
     .eat-h3 {
-        @apply text-xl font-bold uppercase tracking-tight;
-        font-family: 'Barlow Condensed', Impact, sans-serif;
+        @apply text-2xl uppercase tracking-tight leading-tight text-paper;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
     }
-    .eat-stat-num {
-        @apply text-3xl font-black tracking-tighter;
-        font-family: 'Barlow Condensed', Impact, sans-serif;
+    .eat-numeral {
+        @apply text-paper;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
     }
-    .eat-pill {
-        @apply inline-flex items-center px-2.5 py-1 text-xs font-bold uppercase tracking-wider border-2;
+
+    /* Badges */
+    .eat-badge {
+        @apply inline-flex items-center px-2 h-6 text-[11px] uppercase tracking-wider2 leading-none;
+        font-family: 'Thunder', Impact, sans-serif;
+        font-weight: 500;
     }
-    .eat-tile-tap {
-        @apply transition-transform duration-75 active:scale-95;
+    .eat-badge-accent {
+        @apply eat-badge bg-accent text-ink;
     }
+    .eat-badge-paper {
+        @apply eat-badge bg-paper text-ink;
+    }
+    .eat-badge-muted {
+        @apply eat-badge bg-subtle text-muted;
+    }
+    .eat-badge-outline {
+        @apply eat-badge bg-mid text-paper border border-subtle;
+    }
+    .eat-badge-danger {
+        @apply eat-badge bg-transparent text-danger border border-danger/60;
+    }
+
+    /* Divider */
+    .eat-divider {
+        @apply h-px w-full bg-subtle;
+    }
+
+    /* Utility */
     .scrollbar-none::-webkit-scrollbar { display: none; }
     .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
 }

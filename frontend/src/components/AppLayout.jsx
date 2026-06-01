@@ -15,39 +15,38 @@ const NAV_ITEMS = [
 
 export default function AppLayout({ children }) {
     const { coach, signOut } = useAuth();
-    const navigate = useNavigate();
 
     return (
-        <div className="min-h-screen w-full bg-white text-obsidian">
+        <div className="min-h-screen w-full bg-ink text-paper">
             {/* Mobile top bar */}
-            <header className="md:hidden sticky top-0 z-40 bg-white border-b-2 border-obsidian px-4 h-16 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-obsidian flex items-center justify-center">
-                        <img src={LOGO_URL} alt="EAT" className="w-8 h-8 object-contain invert" />
-                    </div>
+            <header className="md:hidden sticky top-0 z-40 bg-ink border-b border-subtle px-5 h-14 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                    <img src={LOGO_URL} alt="EAT" className="w-8 h-8 object-contain invert" />
                     <div className="leading-tight">
-                        <div className="font-heading font-black text-base uppercase tracking-tight">EAT Portal</div>
-                        <div className="text-[10px] uppercase tracking-widest text-zinc-500">Coach Console</div>
+                        <div className="font-thunder uppercase text-base tracking-tight text-paper" style={{ fontWeight: 500 }}>EAT Portal</div>
                     </div>
                 </div>
-                <button data-testid={NAV.logout} onClick={signOut} aria-label="Sign out" className="w-10 h-10 border-2 border-obsidian flex items-center justify-center hover:bg-volt">
-                    <LogOut size={18} />
+                <button
+                    data-testid={NAV.logout}
+                    onClick={signOut}
+                    aria-label="Sign out"
+                    className="h-9 px-2 flex items-center gap-1.5 text-muted hover:text-paper uppercase text-xs tracking-wider2"
+                >
+                    <LogOut size={14} /> Out
                 </button>
             </header>
 
             <div className="md:flex">
                 {/* Desktop sidebar */}
-                <aside className="hidden md:flex flex-col w-64 border-r-2 border-obsidian min-h-screen sticky top-0 p-6 bg-white">
-                    <div className="flex items-center gap-3 mb-10">
-                        <div className="w-12 h-12 bg-obsidian flex items-center justify-center">
-                            <img src={LOGO_URL} alt="EAT" className="w-10 h-10 object-contain invert" />
-                        </div>
+                <aside className="hidden md:flex flex-col w-56 bg-ink border-r border-subtle min-h-screen sticky top-0 py-8 px-5">
+                    <div className="flex items-center gap-2.5 mb-12 px-1">
+                        <img src={LOGO_URL} alt="EAT" className="w-9 h-9 object-contain invert" />
                         <div>
-                            <div className="font-heading font-black text-lg uppercase tracking-tight leading-none">EAT</div>
-                            <div className="text-[10px] uppercase tracking-widest text-zinc-500">Portal</div>
+                            <div className="font-thunder uppercase text-lg leading-none tracking-tight text-paper" style={{ fontWeight: 500 }}>EAT</div>
+                            <div className="text-[10px] uppercase tracking-wider3 text-muted mt-0.5">Coach Console</div>
                         </div>
                     </div>
-                    <nav className="flex flex-col gap-1 flex-1">
+                    <nav className="flex flex-col gap-0.5 flex-1">
                         {NAV_ITEMS.map(({ to, label, icon: Icon, testid, end }) => (
                             <NavLink
                                 key={to}
@@ -55,58 +54,58 @@ export default function AppLayout({ children }) {
                                 end={end}
                                 data-testid={testid}
                                 className={({ isActive }) =>
-                                    `flex items-center gap-3 px-4 h-12 font-bold uppercase tracking-widest text-sm border-2 transition-all ${
-                                        isActive
-                                            ? "bg-obsidian text-white border-obsidian"
-                                            : "bg-white border-transparent hover:border-obsidian"
+                                    `relative flex items-center gap-3 px-3 h-10 uppercase tracking-wider2 text-sm transition-colors font-thunder ${
+                                        isActive ? "text-paper" : "text-muted hover:text-paper"
                                     }`
                                 }
+                                style={{ fontWeight: 500 }}
                             >
-                                <Icon size={18} />
-                                {label}
+                                {({ isActive }) => (
+                                    <>
+                                        {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent" />}
+                                        <Icon size={16} className={isActive ? "text-accent" : ""} strokeWidth={1.75} />
+                                        {label}
+                                    </>
+                                )}
                             </NavLink>
                         ))}
                     </nav>
-                    <div className="mt-auto pt-6 border-t-2 border-zinc-200">
-                        <div className="text-xs uppercase tracking-widest text-zinc-500">Signed in</div>
-                        <div className="font-bold mt-1 text-sm truncate" title={coach?.email}>{coach?.email}</div>
+                    <div className="mt-auto pt-6">
+                        <div className="eat-label mb-1">Signed in</div>
+                        <div className="text-sm text-paper truncate" title={coach?.email} style={{ fontWeight: 300 }}>{coach?.email}</div>
                         <button
                             data-testid={`${NAV.logout}-desktop`}
                             onClick={signOut}
-                            className="mt-4 eat-btn-ghost h-10 w-full text-sm justify-start gap-2"
+                            className="mt-3 inline-flex items-center gap-2 text-xs uppercase tracking-wider2 text-muted hover:text-paper font-thunder"
+                            style={{ fontWeight: 500 }}
                         >
-                            <LogOut size={16} /> Sign out
+                            <LogOut size={13} /> Sign out
                         </button>
                     </div>
                 </aside>
 
-                <main className="flex-1 min-h-screen pb-28 md:pb-12 animate-fade-in">{children}</main>
+                <main className="flex-1 min-h-screen pb-24 md:pb-12 bg-ink animate-fade-in">{children}</main>
             </div>
 
             {/* Mobile bottom nav */}
-            <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white border-t-2 border-obsidian flex justify-around items-center z-50 md:hidden">
+            <nav className="fixed bottom-0 left-0 right-0 h-16 bg-ink border-t border-subtle flex justify-around items-stretch z-50 md:hidden">
                 {NAV_ITEMS.map(({ to, label, icon: Icon, testid, end }) => (
                     <NavLink
                         key={to}
                         to={to}
                         end={end}
                         data-testid={`${testid}-mobile`}
-                        className={({ isActive }) =>
-                            `flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px] ${
-                                isActive ? "text-obsidian" : "text-zinc-500"
-                            }`
-                        }
+                        className="flex-1 flex flex-col items-center justify-center gap-1"
                     >
                         {({ isActive }) => (
                             <>
-                                <div
-                                    className={`w-10 h-10 flex items-center justify-center border-2 transition-all ${
-                                        isActive ? "bg-volt border-obsidian shadow-brut-sm" : "border-transparent"
-                                    }`}
+                                <Icon size={18} strokeWidth={1.75} className={isActive ? "text-accent" : "text-muted"} />
+                                <span
+                                    className={`text-[10px] uppercase tracking-wider2 font-thunder ${isActive ? "text-paper" : "text-muted"}`}
+                                    style={{ fontWeight: 500 }}
                                 >
-                                    <Icon size={20} />
-                                </div>
-                                <span className="text-[10px] font-bold uppercase tracking-widest">{label}</span>
+                                    {label}
+                                </span>
                             </>
                         )}
                     </NavLink>

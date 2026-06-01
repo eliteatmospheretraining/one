@@ -6,8 +6,15 @@ import { EmptyState } from "../components/EmptyState";
 import { SessionStatusPill } from "../components/Pills";
 import { CALENDAR } from "../lib/testIds";
 import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, todayISO, weekStart } from "../lib/format";
-import { Calendar, ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
+
+// Each program type gets a left accent bar color
+const TYPE_BAR = {
+    full_time: "bg-accent",
+    private: "bg-paper",
+    semi_private: "bg-subtle",
+};
 
 export default function CalendarPage() {
     const nav = useNavigate();
@@ -23,9 +30,8 @@ export default function CalendarPage() {
 
     async function load() {
         setLoading(true);
-        // Load 2-week window (current + next) for week strip view counts.
         const start = weekDays[0];
-        const end = addDays(weekDays[6], 0);
+        const end = weekDays[6];
         try {
             const [s, a] = await Promise.all([
                 api.get(`/sessions`, { params: { start_date: start, end_date: end } }),
@@ -52,7 +58,9 @@ export default function CalendarPage() {
         return map;
     }, [sessions]);
 
-    const daySessions = (sessionsByDay[selected] || []).sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
+    const daySessions = (sessionsByDay[selected] || []).sort(
+        (a, b) => (a.start_time || "").localeCompare(b.start_time || "")
+    );
 
     return (
         <div>
@@ -64,39 +72,39 @@ export default function CalendarPage() {
                     <button
                         data-testid={CALENDAR.newSessionBtn}
                         onClick={() => setFormOpen(true)}
-                        className="eat-btn-primary h-12 text-sm"
+                        className="eat-btn-primary"
                     >
-                        <Plus size={18} className="mr-2" /> New Session
+                        <Plus size={16} className="mr-1.5" strokeWidth={2} /> New Session
                     </button>
                 }
             />
 
-            <div className="px-4 md:px-8 mt-4 md:mt-6">
+            <div className="px-5 md:px-10 mt-8">
                 {/* Week navigator */}
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-5">
                     <button
                         data-testid="calendar-prev-week"
                         onClick={() => setWeekAnchor(addDays(weekAnchor, -7))}
-                        className="w-10 h-10 border-2 border-obsidian flex items-center justify-center hover:bg-volt"
+                        className="w-9 h-9 flex items-center justify-center text-muted hover:text-paper"
                         aria-label="Previous week"
                     >
-                        <ChevronLeft size={18} />
+                        <ChevronLeft size={18} strokeWidth={1.75} />
                     </button>
-                    <div className="font-heading uppercase tracking-tight text-lg">
+                    <div className="font-thunder uppercase tracking-tight text-lg text-paper" style={{ fontWeight: 500 }}>
                         {fmtDate(weekDays[0], { month: "short", day: "numeric" })} – {fmtDate(weekDays[6], { month: "short", day: "numeric", year: "numeric" })}
                     </div>
                     <button
                         data-testid="calendar-next-week"
                         onClick={() => setWeekAnchor(addDays(weekAnchor, 7))}
-                        className="w-10 h-10 border-2 border-obsidian flex items-center justify-center hover:bg-volt"
+                        className="w-9 h-9 flex items-center justify-center text-muted hover:text-paper"
                         aria-label="Next week"
                     >
-                        <ChevronRight size={18} />
+                        <ChevronRight size={18} strokeWidth={1.75} />
                     </button>
                 </div>
 
-                {/* Week strip */}
-                <div className="grid grid-cols-7 gap-1.5 mb-6">
+                {/* Week strip — minimal columns, accent dot/underline for selected */}
+                <div className="grid grid-cols-7 gap-px bg-subtle border border-subtle mb-10">
                     {weekDays.map((d) => {
                         const isSelected = d === selected;
                         const isToday = d === today;
@@ -106,72 +114,74 @@ export default function CalendarPage() {
                                 key={d}
                                 data-testid={CALENDAR.weekStripDay(d)}
                                 onClick={() => setSelected(d)}
-                                className={`relative flex flex-col items-center py-2.5 border-2 transition-all ${
-                                    isSelected ? "bg-obsidian text-white border-obsidian shadow-brut-volt" : "bg-white border-obsidian hover:bg-zinc-50"
-                                }`}
+                                className="bg-ink flex flex-col items-center py-3 hover:bg-mid transition-colors relative"
                             >
-                                <span className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? "text-volt" : "text-zinc-500"}`}>
+                                <span className={`text-[10px] uppercase tracking-wider2 ${isSelected ? "text-accent" : "text-muted"}`} style={{ fontWeight: 500 }}>
                                     {fmtDay(d)}
                                 </span>
-                                <span className="eat-stat-num text-2xl leading-none mt-1">{fmtDayNum(d)}</span>
-                                {count > 0 && (
-                                    <span className={`mt-1 w-1.5 h-1.5 rounded-full ${isSelected ? "bg-volt" : "bg-obsidian"}`} />
-                                )}
-                                {isToday && !isSelected && (
-                                    <span className="absolute top-1 right-1 text-[8px] font-black text-volt-hover">●</span>
-                                )}
+                                <span className={`eat-numeral text-3xl leading-none mt-1 ${isSelected ? "text-paper" : isToday ? "text-paper" : "text-muted"}`}>
+                                    {fmtDayNum(d)}
+                                </span>
+                                <span className="mt-2 h-0.5 w-6 flex items-center justify-center">
+                                    {isSelected ? (
+                                        <span className="block w-full h-0.5 bg-accent" />
+                                    ) : count > 0 ? (
+                                        <span className="block w-1 h-1 rounded-full bg-muted" />
+                                    ) : null}
+                                </span>
                             </button>
                         );
                     })}
                 </div>
 
-                <div className="mb-3 flex items-center justify-between">
-                    <div className="eat-label">
-                        {fmtDate(selected, { weekday: "long", month: "long", day: "numeric" })}
+                <div className="mb-4 flex items-center justify-between">
+                    <div className="eat-eyebrow">{fmtDate(selected, { weekday: "long", month: "long", day: "numeric" })}</div>
+                    <div className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
+                        {daySessions.length} session{daySessions.length === 1 ? "" : "s"}
                     </div>
-                    <div className="text-xs text-zinc-500 font-bold">{daySessions.length} session{daySessions.length === 1 ? "" : "s"}</div>
                 </div>
 
                 {loading ? (
-                    <div className="text-center text-zinc-400 py-8 font-bold uppercase tracking-widest text-sm">Loading…</div>
+                    <div className="text-center text-muted py-10 uppercase tracking-wider2 text-sm">Loading…</div>
                 ) : daySessions.length === 0 ? (
                     <EmptyState
-                        icon={Calendar}
-                        title="No sessions today"
+                        title="Nothing on this day"
                         hint="Tap “New Session” to schedule training, a private, or a semi-private."
                         action={
-                            <button onClick={() => setFormOpen(true)} className="eat-btn-primary mt-3" data-testid={CALENDAR.emptyState}>
-                                <Plus size={18} className="mr-2" /> New Session
+                            <button onClick={() => setFormOpen(true)} className="eat-btn-primary mt-2" data-testid={CALENDAR.emptyState}>
+                                <Plus size={16} className="mr-1.5" /> New Session
                             </button>
                         }
                     />
                 ) : (
-                    <div className="flex flex-col gap-3 pb-8">
+                    <div className="flex flex-col gap-3 pb-10">
                         {daySessions.map((s) => (
                             <button
                                 key={s.id}
                                 data-testid={CALENDAR.sessionCard(s.id)}
                                 onClick={() => nav(`/sessions/${s.id}`)}
-                                className="eat-card text-left hover:-translate-y-[2px] transition-transform"
+                                className="relative bg-mid border border-subtle p-5 text-left hover:border-paper/30 transition-colors flex items-start gap-4"
                             >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                        <div className="font-heading text-2xl uppercase tracking-tight">
-                                            {s.start_time || "—"}{s.end_time ? ` – ${s.end_time}` : ""}
+                                <span className={`absolute left-0 top-0 bottom-0 w-0.5 ${TYPE_BAR[s.session_type]}`} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-thunder text-3xl uppercase tracking-tight text-paper leading-none" style={{ fontWeight: 500 }}>
+                                                {s.start_time || "—"}
+                                                {s.end_time && <span className="text-muted text-2xl"> – {s.end_time}</span>}
+                                            </div>
+                                            <div className="eat-eyebrow mt-2">{PROGRAM_LABEL[s.session_type]}</div>
                                         </div>
-                                        <div className="font-bold uppercase tracking-widest text-xs mt-1 text-zinc-500">
-                                            {PROGRAM_LABEL[s.session_type]}
-                                        </div>
+                                        <SessionStatusPill status={s.status} />
                                     </div>
-                                    <SessionStatusPill status={s.status} />
-                                </div>
-                                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                                    {s.location && (
-                                        <span className="inline-flex items-center gap-1.5 text-zinc-600"><MapPin size={14} />{s.location}</span>
-                                    )}
-                                    <span className="inline-flex items-center gap-1.5 text-zinc-600">
-                                        <Users size={14} /> {(s.athlete_ids || []).length} expected
-                                    </span>
+                                    <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light">
+                                        {s.location && (
+                                            <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {s.location}</span>
+                                        )}
+                                        <span className="inline-flex items-center gap-1.5">
+                                            <Users size={13} strokeWidth={1.5} /> {(s.athlete_ids || []).length} expected
+                                        </span>
+                                    </div>
                                 </div>
                             </button>
                         ))}

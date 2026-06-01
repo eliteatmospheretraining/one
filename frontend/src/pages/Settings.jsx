@@ -14,37 +14,38 @@ export default function Settings() {
 
     return (
         <div>
-            <PageHeader subtitle="System" title="Settings" testId="page-settings-header" />
-            <div className="px-4 md:px-8 mt-4 md:mt-6 max-w-3xl pb-8 flex flex-col gap-5">
-                <div className="eat-card">
-                    <div className="eat-label">Signed In As</div>
-                    <div className="font-heading text-2xl uppercase tracking-tight mt-1">{coach?.name}</div>
-                    <div className="text-sm text-zinc-600">{coach?.email}</div>
-                    <div className="mt-3 text-xs text-zinc-500">Role: <span className="font-bold uppercase tracking-widest">{coach?.role}</span></div>
-                </div>
+            <PageHeader subtitle="Settings" title="Settings" testId="page-settings-header" />
+            <div className="px-5 md:px-10 mt-8 max-w-3xl pb-10 flex flex-col gap-8">
+                <section>
+                    <div className="eat-label mb-2">Signed In</div>
+                    <div className="font-thunder text-3xl uppercase tracking-tight text-paper leading-none" style={{ fontWeight: 500 }}>{coach?.name}</div>
+                    <div className="text-sm text-muted mt-1.5 font-light">{coach?.email}</div>
+                    <div className="text-xs text-muted mt-1 uppercase tracking-wider2" style={{ fontWeight: 300 }}>Role · <span className="text-paper">{coach?.role}</span></div>
+                </section>
 
-                <div className="eat-card">
-                    <h2 className="eat-h2 mb-3">Rate Card</h2>
+                <section>
+                    <div className="eat-label mb-3">Rate Card</div>
                     {!card ? (
-                        <div className="text-zinc-400 text-sm">Loading…</div>
+                        <div className="text-muted text-sm">Loading…</div>
                     ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="border-t border-subtle">
                             {Object.entries(card).map(([k, v]) => (
-                                <div key={k} className="flex justify-between border-b border-zinc-200 py-2">
-                                    <span className="font-bold uppercase text-xs tracking-widest">{k.replace(/_/g, " ")}</span>
-                                    <span className="eat-stat-num text-xl">{fmtMoney(v)}</span>
+                                <div key={k} className="flex justify-between items-baseline py-3 border-b border-subtle">
+                                    <span className="uppercase tracking-wider2 text-sm text-paper" style={{ fontWeight: 500 }}>{k.replace(/_/g, " ")}</span>
+                                    <span className="eat-numeral text-2xl">{fmtMoney(v)}</span>
                                 </div>
                             ))}
                         </div>
                     )}
-                    <p className="text-xs text-zinc-500 mt-3">Rates can be overridden per athlete on their profile.</p>
-                </div>
+                    <p className="text-xs text-muted mt-3 font-light">Rates can be overridden per athlete on their profile.</p>
+                </section>
 
-                <div className="eat-card-flat bg-zinc-50">
-                    <div className="eat-label">Business</div>
-                    <div className="font-bold mt-1">Elite Atmosphere Training</div>
-                    <div className="text-sm text-zinc-600">1000 Brickell Ave Ste 715 PMB 5042, Miami, FL 33131</div>
-                </div>
+                <section>
+                    <div className="eat-label mb-2">Business</div>
+                    <div className="text-paper" style={{ fontWeight: 500 }}>Elite Atmosphere Training</div>
+                    <div className="text-sm text-muted font-light">1000 Brickell Ave Ste 715 PMB 5042</div>
+                    <div className="text-sm text-muted font-light">Miami, FL 33131</div>
+                </section>
             </div>
         </div>
     );
