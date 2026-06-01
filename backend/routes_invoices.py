@@ -32,6 +32,9 @@ router = APIRouter(prefix="/invoices", tags=["invoices"], dependencies=[Depends(
 SENDER_EMAIL = os.environ["SENDER_EMAIL"]
 APP_BASE_URL = os.environ["APP_BASE_URL"].rstrip("/")
 resend.api_key = os.environ["RESEND_API_KEY"]
+ZELLE_EMAIL = os.environ.get("ZELLE_EMAIL", "")
+ZELLE_PHONE = os.environ.get("ZELLE_PHONE", "")
+ZELLE_NAME = os.environ.get("ZELLE_NAME", "")
 
 
 async def _next_invoice_number() -> str:
@@ -257,6 +260,23 @@ async def send_invoice(invoice_id: str):
     inv = ctx["invoice"]
     family = ctx["family"]
 
+    zelle_rows = ""
+    if ZELLE_NAME:
+        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Pay to</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_NAME}</td></tr>'
+    if ZELLE_EMAIL:
+        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Email</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_EMAIL}</td></tr>'
+    if ZELLE_PHONE:
+        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Phone</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_PHONE}</td></tr>'
+    zelle_section = f"""
+    <table cellpadding="0" cellspacing="0" style="margin-top:24px;width:100%;border-top:1px solid #E4E4E7;padding-top:16px;">
+      <tr><td>
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;font-weight:700;color:#0A0A0A;margin-bottom:10px;">Pay via Zelle</div>
+        <table cellpadding="0" cellspacing="0">{zelle_rows}</table>
+        <div style="font-size:11px;color:#71717A;margin-top:10px;">Open your bank app · send via Zelle · enter the amount above.</div>
+      </td></tr>
+    </table>
+    """ if zelle_rows else ""
+
     html = f"""
 <!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#0A0A0A;font-family:Arial,Helvetica,sans-serif;">
@@ -270,9 +290,9 @@ async def send_invoice(invoice_id: str):
           <p style="font-size:15px;color:#52525B;line-height:1.6;margin:0 0 16px 0;">
             Hi {family['guardian_name']},<br><br>
             Please find your invoice attached for the training period {inv['period_start']} – {inv['period_end']}.<br><br>
-            <strong>Total: ${float(inv['total']):,.2f}</strong><br>
-            Payment method: Zelle
+            <strong>Total: ${float(inv['total']):,.2f}</strong>
           </p>
+          {zelle_section}
           <p style="font-size:13px;color:#71717A;line-height:1.6;margin:24px 0 0 0;">
             Thanks for being part of the EAT family.<br>— Coach Rico
           </p>

@@ -14,6 +14,9 @@ from weasyprint import HTML
 BUSINESS_NAME = os.environ.get("BUSINESS_NAME", "Elite Atmosphere Training")
 BUSINESS_ADDRESS = os.environ.get("BUSINESS_ADDRESS", "")
 LOGO_URL = os.environ.get("LOGO_URL", "")
+ZELLE_EMAIL = os.environ.get("ZELLE_EMAIL", "")
+ZELLE_PHONE = os.environ.get("ZELLE_PHONE", "")
+ZELLE_NAME = os.environ.get("ZELLE_NAME", "")
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 ASSETS_DIR.mkdir(exist_ok=True)
@@ -81,6 +84,23 @@ def render_invoice_pdf(
         <div class="paid-note">Payment received in full on {payment_date.strftime('%B %d, %Y')} via {payment_method or 'Zelle'}.</div>
         """
 
+    # Zelle block — only when invoice isn't paid yet, prompts the guardian to send via Zelle
+    zelle_block = ""
+    if not paid and (ZELLE_EMAIL or ZELLE_PHONE):
+        rows = ""
+        if ZELLE_EMAIL:
+            rows += f'<tr><td class="zelle-key">Email</td><td class="zelle-val">{ZELLE_EMAIL}</td></tr>'
+        if ZELLE_PHONE:
+            rows += f'<tr><td class="zelle-key">Phone</td><td class="zelle-val">{ZELLE_PHONE}</td></tr>'
+        name_row = f'<tr><td class="zelle-key">Pay to</td><td class="zelle-val">{ZELLE_NAME}</td></tr>' if ZELLE_NAME else ""
+        zelle_block = f"""
+        <div class="zelle-block">
+          <div class="zelle-title">Pay via Zelle</div>
+          <table class="zelle-table">{name_row}{rows}</table>
+          <div class="zelle-hint">Open your bank app · Send via Zelle · Enter the amount above</div>
+        </div>
+        """
+
     logo_html = f'<img class="logo" src="{logo}" />' if logo else '<div class="logo-text">EAT</div>'
 
     html_str = f"""<!DOCTYPE html>
@@ -103,6 +123,13 @@ def render_invoice_pdf(
   .title-block .val {{ font-size: 11pt; font-weight: 600; }}
 
   .paid-note {{ margin-top: 22px; padding: 12px 16px; border: 2px solid #0A0A0A; background: #CCFF00; font-weight: 700; }}
+  .zelle-block {{ margin-top: 22px; padding: 14px 16px; border: 1px solid #0A0A0A; }}
+  .zelle-title {{ font-size: 9pt; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-bottom: 8px; }}
+  .zelle-table {{ border-collapse: collapse; }}
+  .zelle-table td {{ padding: 3px 0; font-size: 10.5pt; }}
+  .zelle-key {{ color: #71717A; text-transform: uppercase; font-size: 8pt; letter-spacing: 1.5px; padding-right: 14px !important; vertical-align: top; }}
+  .zelle-val {{ font-weight: 700; }}
+  .zelle-hint {{ margin-top: 8px; font-size: 8.5pt; color: #71717A; }}
 
   table.items {{ width: 100%; border-collapse: collapse; margin-top: 28px; }}
   table.items thead th {{ font-size: 8pt; text-transform: uppercase; letter-spacing: 2px; padding: 10px 8px; border-bottom: 2px solid #0A0A0A; text-align: left; color: #0A0A0A; }}
@@ -152,6 +179,7 @@ def render_invoice_pdf(
 </div>
 
 {paid_block}
+{zelle_block}
 
 <table class="items">
   <thead><tr>

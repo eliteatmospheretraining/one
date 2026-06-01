@@ -47,7 +47,6 @@ body {
 
 @layer base {
     :root {
-        --background: 0 0% 8%;        /* #141414 */
         --foreground: 0 0% 96%;       /* #F5F5F5 */
         --card: 0 0% 12%;             /* #1E1E1E */
         --card-foreground: 0 0% 96%;
@@ -198,4 +197,12 @@ body {
     /* Utility */
     .scrollbar-none::-webkit-scrollbar { display: none; }
     .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* SmoothCursor — visible on fine pointer (desktop), hidden on touch */
+.smooth-cursor { display: none; }
+@media (pointer: fine) {
+    .smooth-cursor { display: block; }
+    html, body, * { cursor: none !important; }
+    input, textarea, select { cursor: text !important; }
 }

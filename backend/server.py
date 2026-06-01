@@ -42,6 +42,17 @@ async def get_rate_card():
     return RATE_CARD
 
 
+@api_router.get("/business-info")
+async def business_info():
+    return {
+        "name": os.environ.get("BUSINESS_NAME", ""),
+        "address": os.environ.get("BUSINESS_ADDRESS", ""),
+        "zelle_email": os.environ.get("ZELLE_EMAIL", ""),
+        "zelle_phone": os.environ.get("ZELLE_PHONE", ""),
+        "zelle_name": os.environ.get("ZELLE_NAME", ""),
+    }
+
+
 api_router.include_router(auth_router)
 api_router.include_router(families_router)
 api_router.include_router(family_summary_router)

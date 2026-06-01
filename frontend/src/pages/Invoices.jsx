@@ -7,8 +7,18 @@ import { DateField } from "../components/DateField";
 import { InvoiceStatusPill } from "../components/Pills";
 import { INVOICES } from "../lib/testIds";
 import { fmtDate, fmtMoney, todayISO } from "../lib/format";
-import { Plus, FileDown, Send, Trash2, DollarSign } from "lucide-react";
+import { Plus, FileDown, Send, Trash2, DollarSign, Copy } from "lucide-react";
 import { toast } from "sonner";
+
+function copyText(t) {
+    if (!t) return;
+    try {
+        navigator.clipboard.writeText(t);
+        toast.success("Copied");
+    } catch {
+        toast.error("Copy failed");
+    }
+}
 
 export default function Invoices() {
     const [invoices, setInvoices] = useState([]);
@@ -177,14 +187,16 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
 
 function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [data, setData] = useState(null);
+    const [biz, setBiz] = useState(null);
     const [loading, setLoading] = useState(true);
     const [payOpen, setPayOpen] = useState(false);
 
     async function load() {
         setLoading(true);
         try {
-            const r = await api.get(`/invoices/${invoiceId}`);
+            const [r, b] = await Promise.all([api.get(`/invoices/${invoiceId}`), api.get(`/business-info`)]);
             setData(r.data);
+            setBiz(b.data);
         } catch (e) {
             toast.error("Could not load invoice");
         } finally {
@@ -281,6 +293,42 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                                     <div className="text-xs text-muted font-light">{fmtDate(p.received_date)}</div>
                                 </div>
                             ))}
+                        </div>
+                    )}
+
+                    {data.invoice.status !== "paid" && biz && (biz.zelle_email || biz.zelle_phone) && (
+                        <div className="border border-subtle p-4" data-testid="invoice-zelle-block">
+                            <div className="eat-label mb-2">Pay via Zelle</div>
+                            {biz.zelle_name && <div className="text-paper mb-2" style={{ fontWeight: 500 }}>{biz.zelle_name}</div>}
+                            {biz.zelle_email && (
+                                <button
+                                    type="button"
+                                    onClick={() => copyText(biz.zelle_email)}
+                                    data-testid="zelle-copy-email"
+                                    className="flex items-center justify-between w-full py-2 border-b border-subtle text-left hover:bg-ink/40 transition-colors"
+                                >
+                                    <div>
+                                        <div className="eat-label">Email</div>
+                                        <div className="text-paper" style={{ fontWeight: 500 }}>{biz.zelle_email}</div>
+                                    </div>
+                                    <Copy size={14} strokeWidth={1.75} className="text-muted" />
+                                </button>
+                            )}
+                            {biz.zelle_phone && (
+                                <button
+                                    type="button"
+                                    onClick={() => copyText(biz.zelle_phone)}
+                                    data-testid="zelle-copy-phone"
+                                    className="flex items-center justify-between w-full py-2 text-left hover:bg-ink/40 transition-colors"
+                                >
+                                    <div>
+                                        <div className="eat-label">Phone</div>
+                                        <div className="text-paper" style={{ fontWeight: 500 }}>{biz.zelle_phone}</div>
+                                    </div>
+                                    <Copy size={14} strokeWidth={1.75} className="text-muted" />
+                                </button>
+                            )}
+                            <div className="text-[11px] text-muted mt-2 font-light">Open your bank app · Send via Zelle · Enter {fmtMoney(data.invoice.total)}.</div>
                         </div>
                     )}
 

@@ -7,9 +7,11 @@ import { fmtMoney } from "../lib/format";
 export default function Settings() {
     const { coach } = useAuth();
     const [card, setCard] = useState(null);
+    const [biz, setBiz] = useState(null);
 
     useEffect(() => {
         api.get("/rate-card").then((r) => setCard(r.data));
+        api.get("/business-info").then((r) => setBiz(r.data));
     }, []);
 
     return (
@@ -40,11 +42,37 @@ export default function Settings() {
                     <p className="text-xs text-muted mt-3 font-light">Rates can be overridden per athlete on their profile.</p>
                 </section>
 
+                {biz && (biz.zelle_email || biz.zelle_phone) && (
+                    <section>
+                        <div className="eat-label mb-3">Zelle Receiving</div>
+                        <div className="border-t border-subtle">
+                            {biz.zelle_name && (
+                                <div className="flex justify-between items-baseline py-3 border-b border-subtle">
+                                    <span className="eat-label">Pay to</span>
+                                    <span className="text-paper" style={{ fontWeight: 500 }}>{biz.zelle_name}</span>
+                                </div>
+                            )}
+                            {biz.zelle_email && (
+                                <div className="flex justify-between items-baseline py-3 border-b border-subtle">
+                                    <span className="eat-label">Email</span>
+                                    <span className="text-paper" style={{ fontWeight: 500 }}>{biz.zelle_email}</span>
+                                </div>
+                            )}
+                            {biz.zelle_phone && (
+                                <div className="flex justify-between items-baseline py-3 border-b border-subtle">
+                                    <span className="eat-label">Phone</span>
+                                    <span className="text-paper" style={{ fontWeight: 500 }}>{biz.zelle_phone}</span>
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-xs text-muted mt-3 font-light">These appear on invoice PDFs and the guardian email. Update in <span className="text-paper">backend/.env</span>.</p>
+                    </section>
+                )}
+
                 <section>
                     <div className="eat-label mb-2">Business</div>
-                    <div className="text-paper" style={{ fontWeight: 500 }}>Elite Atmosphere Training</div>
-                    <div className="text-sm text-muted font-light">1000 Brickell Ave Ste 715 PMB 5042</div>
-                    <div className="text-sm text-muted font-light">Miami, FL 33131</div>
+                    <div className="text-paper" style={{ fontWeight: 500 }}>{biz?.name || "Elite Atmosphere Training"}</div>
+                    <div className="text-sm text-muted font-light">{biz?.address || "1000 Brickell Ave Ste 715 PMB 5042, Miami, FL 33131"}</div>
                 </section>
             </div>
         </div>

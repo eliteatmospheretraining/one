@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { AuthProvider } from "./lib/auth";
 import RequireAuth from "./components/RequireAuth";
 import AppLayout from "./components/AppLayout";
+import { SmoothCursor } from "./components/magicui/smooth-cursor";
 
 import Login from "./pages/Login";
 import CalendarPage from "./pages/CalendarPage";
@@ -17,6 +18,7 @@ import SessionDetail from "./pages/SessionDetail";
 export default function App() {
     return (
         <div className="App">
+            <SmoothCursor />
             <BrowserRouter>
                 <AuthProvider>
                     <Routes>
