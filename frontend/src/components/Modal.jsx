@@ -1,7 +1,7 @@
 import React from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 
-export function Modal({ open, onOpenChange, title, children, maxW = "max-w-lg" }) {
+export function Modal({ open, onOpenChange, title, description, children, maxW = "max-w-lg" }) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
@@ -9,6 +9,7 @@ export function Modal({ open, onOpenChange, title, children, maxW = "max-w-lg" }
             >
                 <DialogHeader className="p-5 border-b-2 border-obsidian">
                     <DialogTitle className="font-heading text-2xl uppercase tracking-tight">{title}</DialogTitle>
+                    <DialogDescription className="sr-only">{description || title}</DialogDescription>
                 </DialogHeader>
                 <div className="p-5 max-h-[70vh] overflow-y-auto">{children}</div>
             </DialogContent>
