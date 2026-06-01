@@ -1,7 +1,8 @@
 import React from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { Calendar, Users, FileText, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../lib/auth";
+import { useGreeting } from "../lib/greeting";
 import { NAV } from "../lib/testIds";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_eat-admin-portal/artifacts/jnekghwj_EAT%20Logo.%20%285%29.png";
@@ -15,15 +16,20 @@ const NAV_ITEMS = [
 
 export default function AppLayout({ children }) {
     const { coach, signOut } = useAuth();
+    const greeting = useGreeting();
+    const firstName = (coach?.name || "").split(" ")[0];
 
     return (
         <div className="min-h-screen w-full bg-ink text-paper">
             {/* Mobile top bar */}
             <header className="md:hidden sticky top-0 z-40 bg-ink border-b border-subtle px-5 h-14 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                    <img src={LOGO_URL} alt="EAT" className="w-8 h-8 object-contain invert" />
-                    <div className="leading-tight">
-                        <div className="font-thunder uppercase text-base tracking-tight text-paper" style={{ fontWeight: 500 }}>EAT Portal</div>
+                <div className="flex items-center gap-3 min-w-0">
+                    <img src={LOGO_URL} alt="EAT" className="w-8 h-8 object-contain invert shrink-0" />
+                    <div className="leading-tight min-w-0">
+                        <div className="text-[10px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>{greeting}</div>
+                        <div className="font-thunder uppercase text-sm tracking-tight text-paper truncate" style={{ fontWeight: 500 }}>
+                            {firstName || "Coach"}<span className="text-accent">.</span>
+                        </div>
                     </div>
                 </div>
                 <button
@@ -39,11 +45,13 @@ export default function AppLayout({ children }) {
             <div className="md:flex">
                 {/* Desktop sidebar */}
                 <aside className="hidden md:flex flex-col w-56 bg-ink border-r border-subtle min-h-screen sticky top-0 py-8 px-5">
-                    <div className="flex items-center gap-2.5 mb-12 px-1">
-                        <img src={LOGO_URL} alt="EAT" className="w-9 h-9 object-contain invert" />
-                        <div>
-                            <div className="font-thunder uppercase text-lg leading-none tracking-tight text-paper" style={{ fontWeight: 500 }}>EAT</div>
-                            <div className="text-[10px] uppercase tracking-wider3 text-muted mt-0.5">Coach Console</div>
+                    <div className="mb-12 px-1">
+                        <img src={LOGO_URL} alt="EAT" className="w-12 h-12 object-contain invert" />
+                        <div className="mt-5">
+                            <div className="eat-eyebrow">{greeting}</div>
+                            <div className="font-thunder uppercase text-2xl leading-none tracking-tight text-paper mt-1.5 truncate" style={{ fontWeight: 500 }}>
+                                {firstName || "Coach"}<span className="text-accent">.</span>
+                            </div>
                         </div>
                     </div>
                     <nav className="flex flex-col gap-0.5 flex-1">

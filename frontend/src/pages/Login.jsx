@@ -63,12 +63,9 @@ export default function Login() {
                 <div className="w-full max-w-md">
                     {/* Brand */}
                     <div className="mb-10">
-                        <div className="flex items-center gap-3 mb-8">
-                            <img src={LOGO_URL} alt="EAT" className="w-9 h-9 object-contain invert" />
-                            <div className="eat-eyebrow">Coach Console</div>
-                        </div>
+                        <img src={LOGO_URL} alt="EAT" className="w-9 h-9 object-contain invert mb-8" />
                         <div className="font-thunder uppercase text-paper leading-[0.92] tracking-tight text-6xl sm:text-7xl" style={{ fontWeight: 500 }}>
-                            Elite<br />Atmosphere<br /><span className="text-accent">Training</span>
+                            EAT<span className="text-accent">.</span>
                         </div>
                     </div>
 
