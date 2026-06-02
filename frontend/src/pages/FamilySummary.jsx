@@ -26,13 +26,27 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                 <div className="flex flex-col gap-6">
                     {/* Guardian */}
                     <section>
-                        <div className="eat-label mb-1">Guardian</div>
+                        <div className="eat-label mb-1">Parent One</div>
                         <div className="text-paper" style={{ fontWeight: 500 }}>{data.family.guardian_name}</div>
                         <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light mt-1">
                             <span className="inline-flex items-center gap-1.5"><Mail size={12} strokeWidth={1.5} />{data.family.guardian_email}</span>
                             <span className="inline-flex items-center gap-1.5"><Phone size={12} strokeWidth={1.5} />{data.family.guardian_phone}</span>
                         </div>
                     </section>
+                    {data.family.guardian_name_secondary && (
+                        <section>
+                            <div className="eat-label mb-1">Parent Two</div>
+                            <div className="text-paper" style={{ fontWeight: 500 }}>{data.family.guardian_name_secondary}</div>
+                            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light mt-1">
+                                {data.family.guardian_email_secondary && (
+                                    <span className="inline-flex items-center gap-1.5"><Mail size={12} strokeWidth={1.5} />{data.family.guardian_email_secondary}</span>
+                                )}
+                                {data.family.guardian_phone_secondary && (
+                                    <span className="inline-flex items-center gap-1.5"><Phone size={12} strokeWidth={1.5} />{data.family.guardian_phone_secondary}</span>
+                                )}
+                            </div>
+                        </section>
+                    )}
 
                     {/* Totals */}
                     <section className="grid grid-cols-3 gap-3">

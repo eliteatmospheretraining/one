@@ -19,7 +19,7 @@ export default function Login() {
     const [err, setErr] = useState(null);
 
     useEffect(() => {
-        if (coach) nav("/", { replace: true });
+        if (coach) nav("/home", { replace: true });
     }, [coach, nav]);
 
     useEffect(() => {
@@ -34,7 +34,7 @@ export default function Login() {
         try {
             const r = await axios.post(`${API}/auth/verify-magic-link`, { token });
             signIn(r.data.token, r.data.coach);
-            nav("/", { replace: true });
+            nav("/home", { replace: true });
         } catch (e) {
             setErr(e.response?.data?.detail || "Could not verify link");
         } finally {

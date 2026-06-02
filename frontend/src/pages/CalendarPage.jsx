@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { SessionStatusPill } from "../components/Pills";
 import { CALENDAR } from "../lib/testIds";
-import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, todayISO, weekStart } from "../lib/format";
+import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, fmtTime, todayISO, weekStart } from "../lib/format";
 import { ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 
@@ -167,8 +167,8 @@ export default function CalendarPage() {
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
                                             <div className="font-thunder text-3xl uppercase tracking-tight text-paper leading-none" style={{ fontWeight: 500 }}>
-                                                {s.start_time || "—"}
-                                                {s.end_time && <span className="text-muted text-2xl"> – {s.end_time}</span>}
+                                                {fmtTime(s.start_time) || "—"}
+                                                {s.end_time && <span className="text-muted text-2xl"> – {fmtTime(s.end_time)}</span>}
                                             </div>
                                             <div className="eat-eyebrow mt-2">{PROGRAM_LABEL[s.session_type]}</div>
                                         </div>

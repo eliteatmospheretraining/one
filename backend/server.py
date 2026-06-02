@@ -14,6 +14,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 # Imports that need env loaded
 from auth import ensure_admin_seeded, router as auth_router  # noqa: E402
+from google_calendar import router as google_router  # noqa: E402
 from models import RATE_CARD  # noqa: E402
 from routes_athletes import router as athletes_router  # noqa: E402
 from routes_families import router as families_router  # noqa: E402
@@ -54,6 +55,7 @@ async def business_info():
 
 
 api_router.include_router(auth_router)
+api_router.include_router(google_router)
 api_router.include_router(families_router)
 api_router.include_router(family_summary_router)
 api_router.include_router(athletes_router)

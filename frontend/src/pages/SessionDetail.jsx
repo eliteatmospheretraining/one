@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { SessionStatusPill } from "../components/Pills";
-import { ATTENDANCE_TYPES, PROGRAM_LABEL, fmtDate, fmtMoney } from "../lib/format";
+import { ATTENDANCE_TYPES, PROGRAM_LABEL, fmtDate, fmtMoney, fmtTime } from "../lib/format";
 import { SESSION } from "../lib/testIds";
 import { CheckCircle2, ChevronLeft, ClipboardCopy, MapPin, Pencil, Trash2, X } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
@@ -123,7 +123,7 @@ export default function SessionDetail() {
                 }
                 title={
                     <span className="flex items-baseline gap-4 flex-wrap">
-                        <span>{session.start_time || "—"}</span>
+                        <span>{fmtTime(session.start_time) || "—"}</span>
                         <span className="text-3xl text-muted" style={{ fontWeight: 300 }}>{PROGRAM_LABEL[session.session_type]}</span>
                     </span>
                 }
@@ -139,7 +139,7 @@ export default function SessionDetail() {
                     {session.location && (
                         <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {session.location}</span>
                     )}
-                    {session.end_time && <span>Ends {session.end_time}</span>}
+                    {session.end_time && <span>Ends {fmtTime(session.end_time)}</span>}
                 </div>
 
                 {/* Actions */}

@@ -73,6 +73,22 @@ export function fmtDate(iso, opts = { month: "short", day: "numeric" }) {
     return d.toLocaleDateString("en-US", opts);
 }
 
+export function fmtTime(value) {
+    if (!value) return "";
+    const time = String(value).trim();
+    if (!time.includes(":")) return time;
+    if (/[ap]m$/i.test(time)) return time;
+
+    const [hourPart, minutePart] = time.split(":");
+    const hour = Number(hourPart);
+    const minute = Number(minutePart);
+    if (Number.isNaN(hour) || Number.isNaN(minute)) return time;
+
+    const d = new Date();
+    d.setHours(hour, minute, 0, 0);
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 export function fmtDay(iso) {
     if (!iso) return "";
     const d = new Date(iso + "T00:00:00");

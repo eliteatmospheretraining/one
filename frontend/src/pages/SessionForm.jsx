@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { SESSION_FORM } from "../lib/testIds";
 import { PROGRAM_LABEL } from "../lib/format";
 import { toast } from "sonner";
@@ -95,9 +96,16 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
 
                 <div>
                     <label className="eat-label">Program Type</label>
-                    <select data-testid={SESSION_FORM.type} value={type} onChange={(e) => setType(e.target.value)} className="eat-input mt-1.5">
-                        {Object.entries(PROGRAM_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
+                    <Select value={type} onValueChange={(v) => setType(v)}>
+                        <SelectTrigger data-testid={SESSION_FORM.type} className="mt-1.5 h-11">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(PROGRAM_LABEL).map(([v, l]) => (
+                                <SelectItem key={v} value={v}>{l}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
 
                 <div>

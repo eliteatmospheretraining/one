@@ -65,6 +65,9 @@ class FamilyBase(BaseModel):
     guardian_name: str
     guardian_email: EmailStr
     guardian_phone: str
+    guardian_name_secondary: Optional[str] = None
+    guardian_email_secondary: Optional[EmailStr] = None
+    guardian_phone_secondary: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_email: Optional[EmailStr] = None
@@ -85,6 +88,9 @@ class FamilyUpdate(BaseModel):
     guardian_name: Optional[str] = None
     guardian_email: Optional[EmailStr] = None
     guardian_phone: Optional[str] = None
+    guardian_name_secondary: Optional[str] = None
+    guardian_email_secondary: Optional[EmailStr] = None
+    guardian_phone_secondary: Optional[str] = None
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     emergency_contact_email: Optional[EmailStr] = None
@@ -101,6 +107,7 @@ class AthleteBase(BaseModel):
     utr: Optional[float] = None
     wtn: Optional[float] = None
     shirt_size: Optional[str] = None
+    medical_conditions: Optional[str] = None
     rate_type: RateType = RateType.daily
     rate_override: Optional[float] = None  # null = use rate card default
     family_id: str
@@ -125,6 +132,7 @@ class AthleteUpdate(BaseModel):
     utr: Optional[float] = None
     wtn: Optional[float] = None
     shirt_size: Optional[str] = None
+    medical_conditions: Optional[str] = None
     rate_type: Optional[RateType] = None
     rate_override: Optional[float] = None
     family_id: Optional[str] = None

@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { ROSTER } from "../lib/testIds";
-import { PROGRAM_LABEL, computeAge, fmtMoney } from "../lib/format";
+import { PROGRAM_LABEL, computeAge } from "../lib/format";
 import { Search, Plus, Archive, UserPlus, Users } from "lucide-react";
 import { AthleteFormModal } from "./AthleteForm";
 import { FamilyFormModal } from "./FamilyForm";
@@ -170,35 +170,37 @@ function AthletesView({ athletes, famById, q, setQ, program, setProgram, status,
 
             {/* Filters */}
             <div className="space-y-2.5">
-                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none" data-testid={ROSTER.filterProgram}>
-                    {PROGRAM_FILTERS.map((f) => (
-                        <button
-                            key={f.value}
-                            onClick={() => setProgram(f.value)}
-                            data-testid={`filter-program-${f.value}`}
-                            className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
-                                program === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
-                            }`}
-                            style={{ fontWeight: 500 }}
-                        >
-                            {f.label}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto scrollbar-none" data-testid={ROSTER.filterStatus}>
-                    {STATUS_FILTERS.map((f) => (
-                        <button
-                            key={f.value}
-                            onClick={() => setStatus(f.value)}
-                            data-testid={`filter-status-${f.value}`}
-                            className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
-                                status === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
-                            }`}
-                            style={{ fontWeight: 500 }}
-                        >
-                            {f.label}
-                        </button>
-                    ))}
+                <div className="flex flex-wrap items-center justify-between gap-2" data-testid={ROSTER.filterProgram}>
+                    <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
+                        {PROGRAM_FILTERS.map((f) => (
+                            <button
+                                key={f.value}
+                                onClick={() => setProgram(f.value)}
+                                data-testid={`filter-program-${f.value}`}
+                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                    program === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
+                                }`}
+                                style={{ fontWeight: 500 }}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none">
+                        {STATUS_FILTERS.map((f) => (
+                            <button
+                                key={f.value}
+                                onClick={() => setStatus(f.value)}
+                                data-testid={`filter-status-${f.value}`}
+                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                    status === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
+                                }`}
+                                style={{ fontWeight: 500 }}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -242,12 +244,6 @@ function AthletesView({ athletes, famById, q, setQ, program, setProgram, status,
                                             )}
                                         </div>
                                         {fam && <div className="text-xs text-muted mt-1 font-light">{fam.family_name} family</div>}
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <div className="eat-label">Rate</div>
-                                        <div className="eat-numeral text-2xl mt-0.5">
-                                            {a.rate_override != null ? fmtMoney(a.rate_override) : <span className="text-muted">—</span>}
-                                        </div>
                                     </div>
                                 </div>
                                 {(a.utr != null || a.wtn != null || a.shirt_size) && (

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { ATHLETE_FORM } from "../lib/testIds";
 import { toast } from "sonner";
 
@@ -13,12 +14,6 @@ const PROGRAMS = [
 const STATUSES = [
     { value: "active", label: "Active" },
     { value: "archived", label: "Archived" },
-];
-const RATE_TYPES = [
-    { value: "daily", label: "Daily" },
-    { value: "half_day", label: "Half-Day" },
-    { value: "monthly", label: "Monthly" },
-    { value: "per_session", label: "Per Session" },
 ];
 
 export function AthleteFormModal({ open, onOpenChange, athlete, families, onSaved }) {
@@ -35,6 +30,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             utr: "",
             wtn: "",
             shirt_size: "",
+            medical_conditions: "",
             rate_type: "daily",
             rate_override: "",
             family_id: families[0]?.id || "",
@@ -53,6 +49,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                     utr: athlete.utr ?? "",
                     wtn: athlete.wtn ?? "",
                     shirt_size: athlete.shirt_size || "",
+                    medical_conditions: athlete.medical_conditions || "",
                     rate_type: athlete.rate_type || "daily",
                     rate_override: athlete.rate_override ?? "",
                     family_id: athlete.family_id || families[0]?.id || "",
@@ -77,6 +74,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             utr: form.utr === "" ? null : Number(form.utr),
             wtn: form.wtn === "" ? null : Number(form.wtn),
             shirt_size: form.shirt_size || null,
+            medical_conditions: form.medical_conditions || null,
             rate_type: form.rate_type,
             rate_override: form.rate_override === "" ? null : Number(form.rate_override),
             family_id: form.family_id,
@@ -109,6 +107,35 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
     return (
         <Modal open={open} onOpenChange={onOpenChange} title={isEdit ? "Edit Athlete" : "New Athlete"}>
             <form onSubmit={submit} className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="eat-label">Program</label>
+                        <Select value={form.program_type} onValueChange={(v) => set("program_type", v)}>
+                            <SelectTrigger data-testid={ATHLETE_FORM.program} className="mt-1.5 h-11">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PROGRAMS.map((p) => (
+                                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div>
+                        <label className="eat-label">Status</label>
+                        <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                            <SelectTrigger data-testid={ATHLETE_FORM.status} className="mt-1.5 h-11">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {STATUSES.map((p) => (
+                                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+
                 <div>
                     <label className="eat-label">Full Name</label>
                     <input data-testid={ATHLETE_FORM.nameInput} required value={form.full_name} onChange={(e) => set("full_name", e.target.value)} className="eat-input mt-1.5" />
@@ -125,42 +152,6 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                     </div>
                 </div>
 
-                <div>
-                    <label className="eat-label">Family</label>
-                    <select data-testid={ATHLETE_FORM.family} required value={form.family_id} onChange={(e) => set("family_id", e.target.value)} className="eat-input mt-1.5">
-                        <option value="">Select…</option>
-                        {families.map((f) => <option key={f.id} value={f.id}>{`${f.family_name} (${f.guardian_name})`}</option>)}
-                    </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="eat-label">Program</label>
-                        <select data-testid={ATHLETE_FORM.program} value={form.program_type} onChange={(e) => set("program_type", e.target.value)} className="eat-input mt-1.5">
-                            {PROGRAMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="eat-label">Status</label>
-                        <select data-testid={ATHLETE_FORM.status} value={form.status} onChange={(e) => set("status", e.target.value)} className="eat-input mt-1.5">
-                            {STATUSES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="eat-label">Rate Type</label>
-                        <select data-testid={ATHLETE_FORM.rateType} value={form.rate_type} onChange={(e) => set("rate_type", e.target.value)} className="eat-input mt-1.5">
-                            {RATE_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="eat-label">Rate Override ($)</label>
-                        <input data-testid={ATHLETE_FORM.rateOverride} type="number" step="0.01" placeholder="default" value={form.rate_override} onChange={(e) => set("rate_override", e.target.value)} className="eat-input mt-1.5" />
-                    </div>
-                </div>
-
                 <div className="grid grid-cols-3 gap-3">
                     <div>
                         <label className="eat-label">UTR</label>
@@ -174,6 +165,30 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                         <label className="eat-label">Shirt</label>
                         <input data-testid={ATHLETE_FORM.shirt} value={form.shirt_size} onChange={(e) => set("shirt_size", e.target.value)} className="eat-input mt-1.5" />
                     </div>
+                </div>
+                <div>
+                    <label className="eat-label">Family</label>
+                    <Select value={form.family_id} onValueChange={(v) => set("family_id", v)}>
+                        <SelectTrigger data-testid={ATHLETE_FORM.family} className="mt-1.5 h-11">
+                            <SelectValue placeholder="Select…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {families.map((f) => (
+                                <SelectItem key={f.id} value={f.id}>{`${f.family_name} (${f.guardian_name})`}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                <div>
+                    <label className="eat-label">Allergies / Medical Conditions</label>
+                    <textarea
+                        data-testid={ATHLETE_FORM.medicalConditions}
+                        value={form.medical_conditions}
+                        onChange={(e) => set("medical_conditions", e.target.value)}
+                        className="eat-input mt-1.5 min-h-[5.5rem] resize-none"
+                        placeholder="E.g. asthma, peanut allergy, knee surgery"
+                    />
                 </div>
 
                 <button data-testid={ATHLETE_FORM.submit} type="submit" className="eat-btn-primary w-full mt-2 h-12">

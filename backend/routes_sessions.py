@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import get_current_coach
 from billing import compute_billed_rate
 from db import db, now, serialize
+from google_calendar import delete_session_event, push_session
 from models import (
     AttendanceRecord,
     AttendanceSave,
@@ -46,6 +47,7 @@ async def list_sessions(
 async def create_session(payload: SessionCreate):
     s = TrainingSession(**payload.model_dump())
     await db.sessions.insert_one(serialize(s.model_dump()))
+    await push_session(s.id)
     return s
 
 
@@ -77,15 +79,18 @@ async def update_session(session_id: str, payload: SessionUpdate):
         res = await db.sessions.update_one({"id": session_id}, {"$set": updates})
         if res.matched_count == 0:
             raise HTTPException(404, "Session not found")
+    await push_session(session_id)
     return await db.sessions.find_one({"id": session_id}, {"_id": 0})
 
 
 @router.delete("/{session_id}")
 async def delete_session(session_id: str):
-    await db.attendance_records.delete_many({"session_id": session_id})
-    res = await db.sessions.delete_one({"id": session_id})
-    if res.deleted_count == 0:
+    s = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not s:
         raise HTTPException(404, "Session not found")
+    await delete_session_event(s)
+    await db.attendance_records.delete_many({"session_id": session_id})
+    await db.sessions.delete_one({"id": session_id})
     return {"status": "ok"}
 
 

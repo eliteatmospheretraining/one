@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Calendar, Users, FileText, Settings, LogOut } from "lucide-react";
+import { Home, Calendar, Users, FileText, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { NAV } from "../lib/testIds";
@@ -8,6 +8,7 @@ import { NAV } from "../lib/testIds";
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_eat-admin-portal/artifacts/jnekghwj_EAT%20Logo.%20%285%29.png";
 
 const NAV_ITEMS = [
+    { to: "/home", label: "Home", icon: Home, testid: "nav-home", end: true },
     { to: "/", label: "Schedule", icon: Calendar, testid: NAV.calendar, end: true },
     { to: "/roster", label: "Roster", icon: Users, testid: NAV.roster },
     { to: "/invoices", label: "Invoices", icon: FileText, testid: NAV.invoices },
@@ -20,7 +21,7 @@ export default function AppLayout({ children }) {
     const firstName = (coach?.name || "").split(" ")[0];
 
     return (
-        <div className="min-h-screen w-full bg-ink text-paper">
+        <div className="h-screen w-full bg-ink text-paper">
             {/* Mobile top bar */}
             <header className="md:hidden sticky top-0 z-40 bg-ink border-b border-subtle px-5 h-14 flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0">
@@ -42,17 +43,11 @@ export default function AppLayout({ children }) {
                 </button>
             </header>
 
-            <div className="md:flex">
+            <div className="md:flex h-screen">
                 {/* Desktop sidebar */}
-                <aside className="hidden md:flex flex-col w-56 bg-ink border-r border-subtle min-h-screen sticky top-0 py-8 px-5">
+                <aside className="hidden md:flex flex-col w-56 bg-ink border-r border-subtle h-screen sticky top-0 pt-10 pb-8 px-5">
                     <div className="mb-12 px-1">
-                        <img src={LOGO_URL} alt="EAT" className="w-12 h-12 object-contain invert" />
-                        <div className="mt-5">
-                            <div className="eat-eyebrow">{greeting}</div>
-                            <div className="font-thunder uppercase text-2xl leading-none tracking-tight text-paper mt-1.5 truncate" style={{ fontWeight: 500 }}>
-                                {firstName || "Coach"}<span className="text-accent">.</span>
-                            </div>
-                        </div>
+                        <img src={LOGO_URL} alt="EAT" className="w-[70px] h-[70px] object-contain invert" />
                     </div>
                     <nav className="flex flex-col gap-0.5 flex-1">
                         {NAV_ITEMS.map(({ to, label, icon: Icon, testid, end }) => (
@@ -92,7 +87,7 @@ export default function AppLayout({ children }) {
                     </div>
                 </aside>
 
-                <main className="flex-1 min-h-screen pb-24 md:pb-12 bg-ink animate-fade-in">{children}</main>
+                <main className="flex-1 h-screen overflow-y-auto pb-24 md:pb-12 bg-ink animate-fade-in">{children}</main>
             </div>
 
             {/* Mobile bottom nav */}

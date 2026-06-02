@@ -9,6 +9,7 @@ import AppLayout from "./components/AppLayout";
 import { SmoothCursor } from "./components/magicui/smooth-cursor";
 
 import Login from "./pages/Login";
+import Home from "./pages/Home";
 import CalendarPage from "./pages/CalendarPage";
 import Roster from "./pages/Roster";
 import Invoices from "./pages/Invoices";
@@ -24,6 +25,16 @@ export default function App() {
                     <Routes>
                         <Route path="/login" element={<Login />} />
                         <Route path="/verify" element={<Login />} />
+                        <Route
+                            path="/home"
+                            element={
+                                <RequireAuth>
+                                    <AppLayout>
+                                        <Home />
+                                    </AppLayout>
+                                </RequireAuth>
+                            }
+                        />
                         <Route
                             path="/"
                             element={
