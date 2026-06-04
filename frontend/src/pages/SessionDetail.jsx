@@ -11,7 +11,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { ATTENDANCE_CHIP_LABEL, PROGRAM_LABEL, SESSION_STATUS_STYLES, attendanceOptionsForAthlete, fmtDate, fmtMoney, fmtTime, formatAthletePrograms, uiAttendanceType } from "../lib/format";
 import { SESSION } from "../lib/testIds";
-import { CheckCircle2, ClipboardCopy, MapPin, RotateCcw } from "lucide-react";
+import { CheckCircle2, MapPin, RotateCcw } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 import { toast } from "sonner";
 
@@ -146,30 +146,6 @@ export default function SessionDetail() {
         }
     }
 
-    async function copyFromPrevious() {
-        try {
-            const r = await api.get(`/sessions/${id}/last-attendance`);
-            if (!r.data.source || (r.data.entries || []).length === 0) {
-                toast.info("No previous session to copy from");
-                return;
-            }
-            const rosterIds = new Set(roster.map((x) => x.athlete.id));
-            const next = { ...marks };
-            let copied = 0;
-            r.data.entries.forEach((e) => {
-                if (rosterIds.has(e.athlete_id)) {
-                    const athlete = roster.find((x) => x.athlete.id === e.athlete_id)?.athlete;
-                    next[e.athlete_id] = uiAttendanceType(e.attendance_type, session, athlete);
-                    copied += 1;
-                }
-            });
-            setMarks(next);
-            toast.success(`Copied ${copied} from ${r.data.source.date}`);
-        } catch (e) {
-            toast.error("Could not load previous session");
-        }
-    }
-
     const attendanceComplete = Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
     const hasSavedAttendance = (data.records || []).length > 0 || Boolean(session.attendance_logged_at);
 
@@ -295,7 +271,7 @@ export default function SessionDetail() {
                             </span>
                         )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 shrink-0 ml-auto">
+                    <div className="hidden md:flex flex-wrap items-center gap-x-5 gap-y-2 shrink-0 ml-auto">
                         <button
                             type="button"
                             data-testid={SESSION.editBtn}
@@ -322,14 +298,6 @@ export default function SessionDetail() {
                     <div className="flex items-end justify-between mb-4 flex-wrap gap-2">
                         <h2 className="eat-h2">Attendance</h2>
                         <div className="flex items-center gap-3">
-                            <button
-                                data-testid="session-copy-previous-btn"
-                                onClick={copyFromPrevious}
-                                className="eat-btn-ghost h-9 text-xs px-2"
-                                title="Copy attendance from the most recent prior session of the same type"
-                            >
-                                <ClipboardCopy size={12} className="mr-1" strokeWidth={1.75} /> Copy previous
-                            </button>
                             {hasSavedAttendance && (
                                 <button
                                     data-testid="session-reset-attendance-btn"
@@ -399,8 +367,8 @@ export default function SessionDetail() {
                         </div>
                     )}
 
-                    {roster.length > 0 && (
-                        <div className="mt-8 pt-6 border-t border-subtle">
+                    <div className="mt-8 pt-6 border-t border-subtle space-y-3">
+                        {roster.length > 0 && (
                             <button
                                 data-testid={SESSION.saveAttendanceBtn}
                                 onClick={saveAttendance}
@@ -409,8 +377,28 @@ export default function SessionDetail() {
                             >
                                 {saving ? "Saving…" : `Save Attendance (${Object.keys(marks).length})`}
                             </button>
+                        )}
+                        <div className="flex flex-col gap-3 md:hidden">
+                            <button
+                                type="button"
+                                data-testid={SESSION.editBtn}
+                                onClick={() => setEditOpen(true)}
+                                className="eat-btn-primary w-full h-12"
+                                style={{ fontWeight: 500 }}
+                            >
+                                Edit Session
+                            </button>
+                            <button
+                                type="button"
+                                data-testid={SESSION.deleteBtn}
+                                onClick={() => setDeleteOpen(true)}
+                                className="eat-btn-primary w-full h-12"
+                                style={{ fontWeight: 500 }}
+                            >
+                                Delete Session
+                            </button>
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
