@@ -2,7 +2,7 @@ import React from "react";
 import { BRAND_LOGO_WHITE, BRAND_NAME } from "../constants/brand";
 
 const SIDEBAR_LOGO =
-    "h-8 w-auto sm:h-9 md:h-10 lg:h-11 xl:h-12 block shrink-0 opacity-50";
+    "h-10 w-auto sm:h-10 md:h-12 lg:h-14 xl:h-16 block shrink-0 opacity-50";
 
 const LOGIN_LOGO =
     "h-20 sm:h-24 w-auto mx-auto block shrink-0 eat-brand-logo-login max-w-[min(100%,18rem)]";
