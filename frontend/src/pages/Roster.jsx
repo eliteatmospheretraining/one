@@ -78,7 +78,7 @@ export default function Roster() {
                                 </button>
                             ))}
                         </div>
-                        <div className="flex flex-wrap max-md:flex-nowrap items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
+                        <div className="hidden md:flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
                             {STATUS_FILTERS.map((f) => (
                                 <button
                                     key={f.value}
