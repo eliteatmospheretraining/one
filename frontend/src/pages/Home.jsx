@@ -6,7 +6,7 @@ import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { SessionStatusPill } from "../components/Pills";
 import WeatherIcon from "../components/WeatherIcon";
-import { fmtMoney, sessionPresentLabel, todayISO, fmtTime, formatAthletePrograms } from "../lib/format";
+import { fmtMoney, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms } from "../lib/format";
 import { AthleteFormModal } from "./AthleteForm";
 
 const TYPE_BAR = {
@@ -223,7 +223,10 @@ export default function Home() {
             const map = {};
             responses.forEach((resp, index) => {
                 if (!resp || !resp.data) return;
-                map[todaySessions[index].id] = resp.data.records || [];
+                map[todaySessions[index].id] = {
+                    records: resp.data.records || [],
+                    roster: resp.data.roster || [],
+                };
             });
             setAttendanceMap(map);
         }
@@ -290,10 +293,11 @@ export default function Home() {
                     ) : (
                         <div className="flex flex-col gap-3">
                             {sessionCards.map((session) => {
-                                const attendanceLabel = sessionPresentLabel(
-                                    session.athlete_ids?.length || 0,
-                                    attendanceMap[session.id]
-                                );
+                                const att = attendanceMap[session.id] || {};
+                                const attendanceLabel = sessionRosterPreviewLabel(session, {
+                                    records: att.records,
+                                    roster: att.roster,
+                                });
                                 return (
                                     <button
                                         key={session.id}
@@ -321,10 +325,12 @@ export default function Home() {
                                                     </div>
                                                 </div>
                                                 <div className="self-start shrink-0">
-                                                    <SessionStatusPill status={session.status} />
+                                                    <SessionStatusPill session={session} />
                                                 </div>
                                             </div>
-                                            <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-muted font-light">{attendanceLabel}</div>
+                                            {attendanceLabel ? (
+                                                <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-muted font-light">{attendanceLabel}</div>
+                                            ) : null}
                                         </div>
                                     </button>
                                 );

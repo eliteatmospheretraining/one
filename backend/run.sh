@@ -14,5 +14,8 @@ fi
 echo "Installing dependencies (requirements-local.txt) ..."
 "$VENV/bin/python" -m pip install -q -r requirements-local.txt
 
-echo "Starting backend on http://127.0.0.1:8001 ..."
-exec "$VENV/bin/python" -m uvicorn server:app --reload --host 0.0.0.0 --port 8001 "$@"
+echo "Starting backend on port ${PORT:-8001} ..."
+if [[ -n "${RAILWAY_ENVIRONMENT:-}${RAILWAY_PROJECT_ID:-}" ]]; then
+  exec "$VENV/bin/python" -m uvicorn server:app --host 0.0.0.0 --port "${PORT:-8001}" "$@"
+fi
+exec "$VENV/bin/python" -m uvicorn server:app --reload --host 0.0.0.0 --port "${PORT:-8001}" "$@"

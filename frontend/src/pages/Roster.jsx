@@ -59,8 +59,11 @@ export default function Roster() {
 
             <div className="px-5 md:px-10 mt-8">
                 <div className="space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2" data-testid={ROSTER.filterProgram}>
-                        <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
+                    <div
+                        className="flex flex-wrap items-center justify-between gap-2 max-md:flex-nowrap max-md:overflow-x-auto max-md:scrollbar-none max-md:-mx-5 max-md:px-5"
+                        data-testid={ROSTER.filterProgram}
+                    >
+                        <div className="flex flex-wrap max-md:flex-nowrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
                             {PROGRAM_FILTERS.map((f) => (
                                 <button
                                     key={f.value}
@@ -75,7 +78,7 @@ export default function Roster() {
                                 </button>
                             ))}
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none">
+                        <div className="flex flex-wrap max-md:flex-nowrap items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
                             {STATUS_FILTERS.map((f) => (
                                 <button
                                     key={f.value}

@@ -5,7 +5,17 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { SessionStatusPill } from "../components/Pills";
 import { CALENDAR } from "../lib/testIds";
-import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, fmtTime, sessionPresentLabel, todayISO, weekStart } from "../lib/format";
+import {
+    PROGRAM_LABEL,
+    addDays,
+    fmtDate,
+    fmtDay,
+    fmtDayNum,
+    fmtTime,
+    sessionRosterPreviewLabel,
+    todayISO,
+    weekStart,
+} from "../lib/format";
 import { ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 
@@ -15,6 +25,24 @@ const TYPE_BAR = {
     private: "bg-paper",
     semi_private: "bg-subtle",
 };
+
+function NewSessionButton({ onClick, className = "" }) {
+    return (
+        <button
+            type="button"
+            data-testid={CALENDAR.newSessionBtn}
+            onClick={onClick}
+            aria-label="New session"
+            className={`shrink-0 inline-flex items-center justify-center eat-btn-primary h-9 w-9 p-0 md:h-auto md:w-auto md:px-4 md:py-2.5 ${className}`}
+        >
+            <Plus size={18} strokeWidth={1.75} className="md:hidden" />
+            <Plus size={16} strokeWidth={1.75} className="hidden md:block md:mr-1.5" />
+            <span className="hidden md:inline uppercase tracking-wider2 text-sm" style={{ fontWeight: 500 }}>
+                New Session
+            </span>
+        </button>
+    );
+}
 
 export default function CalendarPage() {
     const nav = useNavigate();
@@ -67,6 +95,11 @@ export default function CalendarPage() {
         [sessionsByDay, selected]
     );
 
+    const athletesById = useMemo(
+        () => Object.fromEntries(athletes.map((a) => [a.id, a])),
+        [athletes]
+    );
+
     useEffect(() => {
         if (!daySessions.length) {
             setAttendanceBySession({});
@@ -84,7 +117,10 @@ export default function CalendarPage() {
             if (cancelled) return;
             const map = {};
             responses.forEach((resp, index) => {
-                map[daySessions[index].id] = resp?.data?.records || [];
+                map[daySessions[index].id] = {
+                    records: resp?.data?.records || [],
+                    roster: resp?.data?.roster || [],
+                };
             });
             setAttendanceBySession(map);
         }
@@ -97,20 +133,7 @@ export default function CalendarPage() {
 
     return (
         <div>
-            <PageHeader
-                subtitle="Schedule"
-                title="On Court"
-                testId="page-calendar-header"
-                actions={
-                    <button
-                        data-testid={CALENDAR.newSessionBtn}
-                        onClick={() => setFormOpen(true)}
-                        className="eat-btn-primary"
-                    >
-                        <Plus size={16} className="mr-1.5" strokeWidth={2} /> New Session
-                    </button>
-                }
-            />
+            <PageHeader subtitle="Schedule" title="On Court" testId="page-calendar-header" />
 
             <div className="px-5 md:px-10 mt-8">
                 {/* Week navigator */}
@@ -167,10 +190,18 @@ export default function CalendarPage() {
                     })}
                 </div>
 
-                <div className="mb-4 flex items-center justify-between">
-                    <div className="eat-eyebrow">{fmtDate(selected, { weekday: "long", month: "long", day: "numeric" })}</div>
-                    <div className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
+                <div className="mb-4 flex items-center gap-3">
+                    <div className="eat-eyebrow min-w-0 flex-1 truncate">
+                        {fmtDate(selected, { weekday: "long", month: "long", day: "numeric" })}
+                    </div>
+                    <div
+                        className="text-xs text-muted uppercase tracking-wider2 shrink-0 text-center flex-1"
+                        style={{ fontWeight: 300 }}
+                    >
                         {daySessions.length} session{daySessions.length === 1 ? "" : "s"}
+                    </div>
+                    <div className="flex flex-1 justify-end">
+                        <NewSessionButton onClick={() => setFormOpen(true)} />
                     </div>
                 </div>
 
@@ -205,19 +236,27 @@ export default function CalendarPage() {
                                             </div>
                                             <div className="eat-eyebrow mt-2">{PROGRAM_LABEL[s.session_type]}</div>
                                         </div>
-                                        <SessionStatusPill status={s.status} />
+                                        <SessionStatusPill session={s} />
                                     </div>
                                     <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light">
                                         {s.location && (
                                             <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {s.location}</span>
                                         )}
-                                        <span className="inline-flex items-center gap-1.5">
-                                            <Users size={13} strokeWidth={1.5} />
-                                            {sessionPresentLabel(
-                                                (s.athlete_ids || []).length,
-                                                attendanceBySession[s.id]
-                                            )}
-                                        </span>
+                                        {(() => {
+                                            const att = attendanceBySession[s.id] || {};
+                                            const preview = sessionRosterPreviewLabel(s, {
+                                                records: att.records,
+                                                roster: att.roster,
+                                                athletesById,
+                                            });
+                                            if (!preview) return null;
+                                            return (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <Users size={13} strokeWidth={1.5} />
+                                                    {preview}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </button>
@@ -231,7 +270,15 @@ export default function CalendarPage() {
                 onOpenChange={setFormOpen}
                 defaultDate={selected}
                 athletes={athletes}
-                onSaved={() => { setFormOpen(false); load(); }}
+                onSaved={(meta) => {
+                    setFormOpen(false);
+                    const first = meta?.createdDates?.[0];
+                    if (first) {
+                        setWeekAnchor(weekStart(first));
+                        setSelected(first);
+                    }
+                    load();
+                }}
             />
         </div>
     );

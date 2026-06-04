@@ -30,8 +30,14 @@ export function AuthProvider({ children }) {
         window.location.href = "/login";
     };
 
+    const refreshCoach = async () => {
+        const r = await api.get("/auth/me");
+        setCoach(r.data);
+        return r.data;
+    };
+
     return (
-        <AuthCtx.Provider value={{ coach, loading, signIn, signOut }}>{children}</AuthCtx.Provider>
+        <AuthCtx.Provider value={{ coach, loading, signIn, signOut, refreshCoach }}>{children}</AuthCtx.Provider>
     );
 }
 

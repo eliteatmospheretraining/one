@@ -5,9 +5,13 @@ import os
 from datetime import date, datetime, timezone
 from typing import Any, Dict
 
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 
-_client = AsyncIOMotorClient(os.environ["MONGO_URL"])
+_client = AsyncIOMotorClient(
+    os.environ["MONGO_URL"],
+    tlsCAFile=certifi.where(),
+)
 db = _client[os.environ["DB_NAME"]]
 
 

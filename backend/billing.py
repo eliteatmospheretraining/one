@@ -169,6 +169,40 @@ def per_session_charge(
     return round(hourly * hours, 2), hours, hourly
 
 
+def _full_time_present_billing_type(session: dict) -> AttendanceType:
+    """AM/PM blocks bill half-day; a full-day block bills full-day."""
+    card = get_rate_card()
+    full_hours = float(card.get("full_day_hours", 5.0))
+    start = session.get("start_time")
+    end = session.get("end_time")
+    if start and end:
+        start_m = _parse_clock_minutes(start)
+        end_m = _parse_clock_minutes(end)
+        if end_m <= start_m:
+            end_m += 24 * 60
+        duration = (end_m - start_m) / 60.0
+        if duration >= full_hours - 0.25:
+            return AttendanceType.full
+        return AttendanceType.half
+    return AttendanceType.full
+
+
+def resolve_attendance_type(
+    attendance_type: AttendanceType,
+    *,
+    program_type: ProgramType,
+    session: dict,
+) -> AttendanceType:
+    """Map coach-facing attendance marks to billable attendance types."""
+    if attendance_type == AttendanceType.absent:
+        return AttendanceType.absent
+    if attendance_type == AttendanceType.present:
+        if program_type == ProgramType.full_time:
+            return _full_time_present_billing_type(session)
+        return AttendanceType.full
+    return attendance_type
+
+
 def billing_program_type(athlete: dict, session: dict) -> ProgramType:
     """Use the session program when the athlete is enrolled in it."""
     session_pt = ProgramType(session["session_type"])

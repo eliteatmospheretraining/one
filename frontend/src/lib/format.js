@@ -7,7 +7,56 @@ export const SESSION_STATUS_STYLES = {
     rescheduled: { bg: "bg-blue-500", text: "text-white", border: "border-blue-700", label: "Rescheduled" },
 };
 
+/** Business timezone for session schedule (Eastern). */
+export const SESSION_TIME_ZONE = "America/New_York";
+
+function estNowParts(now = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: SESSION_TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).formatToParts(now);
+    const pick = (type) => parts.find((p) => p.type === type)?.value ?? "";
+    let hour = parseInt(pick("hour"), 10);
+    if (hour === 24) hour = 0;
+    return {
+        year: parseInt(pick("year"), 10),
+        month: parseInt(pick("month"), 10),
+        day: parseInt(pick("day"), 10),
+        hour,
+        minute: parseInt(pick("minute"), 10),
+    };
+}
+
+function ymdHmKey({ year, month, day, hour, minute }) {
+    return year * 1e8 + month * 1e6 + day * 1e4 + hour * 100 + minute;
+}
+
+/** True when session date + end_time (wall clock in Eastern) is at or before now. */
+export function sessionHasEndedInEst(session, now = new Date()) {
+    if (!session?.date || !session?.end_time) return false;
+    const [year, month, day] = session.date.split("-").map((n) => parseInt(n, 10));
+    const [hour, minute] = session.end_time.slice(0, 5).split(":").map((n) => parseInt(n, 10));
+    const endKey = ymdHmKey({ year, month, day, hour, minute });
+    const nowKey = ymdHmKey(estNowParts(now));
+    return nowKey >= endKey;
+}
+
+/** Display status: scheduled → completed once Eastern end time has passed. */
+export function effectiveSessionStatus(session, now = new Date()) {
+    const status = session?.status || "scheduled";
+    if (status === "scheduled" && sessionHasEndedInEst(session, now)) {
+        return "completed";
+    }
+    return status;
+}
+
 export const ATTENDANCE_STYLES = {
+    present: { bg: "bg-obsidian", text: "text-white", border: "border-obsidian", label: "PRESENT" },
     full: { bg: "bg-obsidian", text: "text-white", border: "border-obsidian", label: "FULL" },
     half: { bg: "bg-zinc-500", text: "text-white", border: "border-zinc-700", label: "HALF" },
     drop_in_full: { bg: "bg-volt", text: "text-obsidian", border: "border-obsidian", label: "DI FULL" },
@@ -55,6 +104,38 @@ export const RATE_TYPE_LABEL = {
 
 export const ATTENDANCE_TYPES = ["full", "half", "drop_in_full", "drop_in_half", "absent"];
 
+export const ATTENDANCE_CHIP_LABEL = {
+    present: "Present",
+    full: "Full",
+    half: "Half",
+    drop_in_full: "DI · Full",
+    drop_in_half: "DI · Half",
+    absent: "Absent",
+};
+
+/** Coach-facing chips for a session + athlete (Eat w/ EAT → Present | Absent). */
+export function attendanceOptionsForAthlete(session, athlete) {
+    if (session?.session_type === "full_time" && athleteHasProgram(athlete, "full_time")) {
+        return ["present", "absent"];
+    }
+    if (session?.session_type === "full_time") {
+        return ["drop_in_full", "drop_in_half", "absent"];
+    }
+    return ["present", "absent"];
+}
+
+/** Map stored attendance to UI chip (legacy full/half → present for full-time). */
+export function uiAttendanceType(storedType, session, athlete) {
+    if (!storedType || storedType === "absent") return "absent";
+    if (session?.session_type === "full_time" && athleteHasProgram(athlete, "full_time")) {
+        return "present";
+    }
+    if (session?.session_type !== "full_time" && (storedType === "full" || storedType === "half")) {
+        return "present";
+    }
+    return storedType;
+}
+
 /** Attendance types that count as showed up (not absent). */
 export function isPresentAttendance(type) {
     return type && type !== "absent";
@@ -68,6 +149,27 @@ export function sessionPresentLabel(expectedCount, records = []) {
     const expected = expectedCount || 0;
     const present = countPresentAttendance(records);
     return `${present}/${expected} present`;
+}
+
+/** Training/home session card: client names for private & semi-private; present count for group sessions. */
+export function sessionRosterPreviewLabel(session, { records = [], roster = [], athletesById = {} } = {}) {
+    const type = session?.session_type;
+    if (type === "private" || type === "semi_private") {
+        const names = [];
+        const seen = new Set();
+        const add = (name) => {
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            names.push(name);
+        };
+        if (roster.length) {
+            roster.forEach((row) => add(row.athlete?.full_name));
+        } else {
+            (session?.athlete_ids || []).forEach((id) => add(athletesById[id]?.full_name));
+        }
+        return names.join(", ");
+    }
+    return sessionPresentLabel((session?.athlete_ids || []).length, records);
 }
 
 export function fmtMoney(v) {
@@ -112,29 +214,42 @@ export function computeAge(dob) {
 }
 
 export function todayISO() {
-    return new Date().toISOString().slice(0, 10);
+    return toLocalISO(new Date());
+}
+
+/** YYYY-MM-DD in local calendar (avoids UTC shift from toISOString). */
+export function toLocalISO(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
+export function parseLocalISO(iso) {
+    const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
 }
 
 export function addDays(iso, n) {
-    const d = new Date(iso + "T00:00:00");
+    const d = parseLocalISO(iso);
     d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
+    return toLocalISO(d);
 }
 
 export function weekStart(iso) {
-    const d = new Date(iso + "T00:00:00");
+    const d = parseLocalISO(iso);
     const day = d.getDay(); // 0 = Sun
     d.setDate(d.getDate() - day);
-    return d.toISOString().slice(0, 10);
+    return toLocalISO(d);
 }
 
 /** Monday (ISO) of the week containing `iso`. */
 export function mondayOfWeek(iso) {
-    const d = new Date(iso + "T00:00:00");
+    const d = parseLocalISO(iso);
     const day = d.getDay();
     const offset = day === 0 ? -6 : 1 - day;
     d.setDate(d.getDate() + offset);
-    return d.toISOString().slice(0, 10);
+    return toLocalISO(d);
 }
 
 export const REPEAT_FREQUENCIES = [
@@ -177,7 +292,6 @@ export function buildRecurringSessionDates({
 
     const span = clampRepeatSpan(duration);
     const step = clampRepeatInterval(interval);
-    const start = new Date(`${startIso}T00:00:00`);
     const out = [];
     const seen = new Set();
 
@@ -204,7 +318,7 @@ export function buildRecurringSessionDates({
         for (let w = 0; w < span; w += step) {
             for (let d = 0; d < 7; d += 1) {
                 const iso = addDays(week0, w * 7 + d);
-                const dow = new Date(`${iso}T00:00:00`).getDay();
+                const dow = parseLocalISO(iso).getDay();
                 if (weekdays[dow]) push(iso);
             }
         }
@@ -213,18 +327,18 @@ export function buildRecurringSessionDates({
 
     if (frequency === "monthly") {
         for (let m = 0; m < span; m += step) {
-            const d = new Date(start);
+            const d = parseLocalISO(startIso);
             d.setMonth(d.getMonth() + m);
-            push(d.toISOString().slice(0, 10));
+            push(toLocalISO(d));
         }
         return out;
     }
 
     if (frequency === "yearly") {
         for (let y = 0; y < span; y += step) {
-            const d = new Date(start);
+            const d = parseLocalISO(startIso);
             d.setFullYear(d.getFullYear() + y);
-            push(d.toISOString().slice(0, 10));
+            push(toLocalISO(d));
         }
         return out;
     }
@@ -307,15 +421,35 @@ export function snapTimeToQuarterHour(value) {
 }
 
 /**
- * Default session start: next full hour from now (8:42 → 09:00, 3:30 PM → 4:00 PM).
+ * Default session start: next full hour from now in Eastern (8:42 → 09:00, 12:08 PM → 1:00 PM).
  */
-export function nextHourStartFromNow() {
-    const d = new Date();
-    if (d.getMinutes() > 0 || d.getSeconds() > 0 || d.getMilliseconds() > 0) {
-        d.setHours(d.getHours() + 1);
+export function nextHourStartFromNow(now = new Date()) {
+    const parts = estNowParts(now);
+    let hour = parts.hour;
+    if (parts.minute > 0) {
+        hour = (hour + 1) % 24;
     }
-    d.setMinutes(0, 0, 0);
-    return formatTime24(d.getHours(), 0);
+    return formatTime24(hour, 0);
+}
+
+/** Settings password row — Eastern date + 12-hour time. */
+export function fmtPasswordUpdated(iso) {
+    if (!iso) return "Last updated never";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "Last updated never";
+    const date = d.toLocaleDateString("en-US", {
+        timeZone: SESSION_TIME_ZONE,
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+    const time = d.toLocaleTimeString("en-US", {
+        timeZone: SESSION_TIME_ZONE,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    });
+    return `Last updated ${date} at ${time}`;
 }
 
 /** Add hours to HH:mm, keeping 15-minute increments and same-day cap at 23:45. */

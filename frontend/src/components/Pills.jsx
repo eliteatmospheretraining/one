@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { effectiveSessionStatus } from "../lib/format";
 
 const SESSION_STATUS = {
     scheduled: { cls: "eat-badge-outline", label: "Scheduled" },
@@ -14,6 +15,7 @@ const INVOICE_STATUS = {
 };
 
 const ATTENDANCE_BADGE = {
+    present: { cls: "eat-badge-accent", label: "Present" },
     full: { cls: "eat-badge-accent", label: "Full" },
     half: { cls: "eat-badge-paper", label: "Half" },
     drop_in_full: { cls: "eat-badge-accent", label: "DI · Full" },
@@ -21,8 +23,15 @@ const ATTENDANCE_BADGE = {
     absent: { cls: "eat-badge-danger", label: "Absent" },
 };
 
-export function SessionStatusPill({ status }) {
-    const s = SESSION_STATUS[status] || SESSION_STATUS.scheduled;
+export function SessionStatusPill({ status, session }) {
+    const [, tick] = useState(0);
+    useEffect(() => {
+        const id = setInterval(() => tick((n) => n + 1), 60_000);
+        return () => clearInterval(id);
+    }, []);
+
+    const resolved = session ? effectiveSessionStatus(session) : status;
+    const s = SESSION_STATUS[resolved] || SESSION_STATUS.scheduled;
     return <span className={s.cls}>{s.label}</span>;
 }
 

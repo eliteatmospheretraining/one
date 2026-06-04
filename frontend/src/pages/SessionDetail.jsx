@@ -9,19 +9,13 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
-import { ATTENDANCE_TYPES, PROGRAM_LABEL, SESSION_STATUS_STYLES, fmtDate, fmtMoney, fmtTime, formatAthletePrograms } from "../lib/format";
+import { ATTENDANCE_CHIP_LABEL, PROGRAM_LABEL, SESSION_STATUS_STYLES, attendanceOptionsForAthlete, fmtDate, fmtMoney, fmtTime, formatAthletePrograms, uiAttendanceType } from "../lib/format";
 import { SESSION } from "../lib/testIds";
-import { CheckCircle2, ChevronLeft, ClipboardCopy, MapPin } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, MapPin } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 import { toast } from "sonner";
 
-const CHIP_LABEL = {
-    full: "Full",
-    half: "Half",
-    drop_in_full: "DI · Full",
-    drop_in_half: "DI · Half",
-    absent: "Absent",
-};
+const CHIP_LABEL = ATTENDANCE_CHIP_LABEL;
 
 const META_ACTION_CLASS =
     "uppercase tracking-wider2 text-paper text-sm hover:text-accent transition-colors disabled:opacity-40 disabled:pointer-events-none";
@@ -52,8 +46,18 @@ export default function SessionDetail() {
         try {
             const r = await api.get(`/sessions/${id}/attendance`);
             setData(r.data);
+            const sessionDoc = r.data.session;
+            const rosterById = Object.fromEntries(
+                (r.data.roster || []).map((row) => [row.athlete.id, row.athlete])
+            );
             const m = {};
-            (r.data.records || []).forEach((rec) => { m[rec.athlete_id] = rec.attendance_type; });
+            (r.data.records || []).forEach((rec) => {
+                m[rec.athlete_id] = uiAttendanceType(
+                    rec.attendance_type,
+                    sessionDoc,
+                    rosterById[rec.athlete_id]
+                );
+            });
             setMarks(m);
             const [ath, bill] = await Promise.all([
                 api.get(`/athletes`),
@@ -133,7 +137,8 @@ export default function SessionDetail() {
             let copied = 0;
             r.data.entries.forEach((e) => {
                 if (rosterIds.has(e.athlete_id)) {
-                    next[e.athlete_id] = e.attendance_type;
+                    const athlete = roster.find((x) => x.athlete.id === e.athlete_id)?.athlete;
+                    next[e.athlete_id] = uiAttendanceType(e.attendance_type, session, athlete);
                     copied += 1;
                 }
             });
@@ -191,11 +196,6 @@ export default function SessionDetail() {
     return (
         <div>
             <PageHeader
-                subtitle={
-                    <button onClick={() => nav("/")} className="inline-flex items-center gap-1 hover:text-paper">
-                        <ChevronLeft size={13} /> Back to Schedule
-                    </button>
-                }
                 title={
                     <span className="flex items-baseline gap-4 flex-wrap">
                         <span>{fmtTime(session.start_time) || "—"}</span>
@@ -332,8 +332,14 @@ export default function SessionDetail() {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-5 gap-1.5">
-                                        {ATTENDANCE_TYPES.map((t) => {
+                                    <div
+                                        className={`grid gap-1.5 ${
+                                            attendanceOptionsForAthlete(session, athlete).length <= 2
+                                                ? "grid-cols-2"
+                                                : "grid-cols-3"
+                                        }`}
+                                    >
+                                        {attendanceOptionsForAthlete(session, athlete).map((t) => {
                                             const active = marks[athlete.id] === t;
                                             const isAbsent = t === "absent";
                                             return (
@@ -361,7 +367,7 @@ export default function SessionDetail() {
                     )}
 
                     {roster.length > 0 && (
-                        <div className="sticky bottom-20 md:bottom-6 mt-8">
+                        <div className="mt-8 pt-6 border-t border-subtle">
                             <button
                                 data-testid={SESSION.saveAttendanceBtn}
                                 onClick={saveAttendance}

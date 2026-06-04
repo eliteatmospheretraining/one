@@ -56,6 +56,24 @@ async def create_session(payload: SessionCreate):
     return s
 
 
+@router.post("/batch", response_model=List[TrainingSession])
+async def create_sessions_batch(payload: List[SessionCreate]):
+    """Create many sessions (recurring schedule) in one request."""
+    if not payload:
+        raise HTTPException(400, "No sessions to create")
+    if len(payload) > 200:
+        raise HTTPException(400, "Maximum 200 sessions per batch")
+
+    created: list[TrainingSession] = []
+    for item in payload:
+        s = TrainingSession(**item.model_dump())
+        await db.sessions.insert_one(serialize(s.model_dump()))
+        created.append(s)
+    for s in created:
+        await push_session(s.id)
+    return created
+
+
 @router.get("/{session_id}", response_model=TrainingSession)
 async def get_session(session_id: str):
     s = await db.sessions.find_one({"id": session_id}, {"_id": 0})
@@ -191,9 +209,14 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
         if not athlete:
             continue
         try:
-            from billing import billing_program_type, compute_billed_rate
+            from billing import billing_program_type, compute_billed_rate, resolve_attendance_type
 
             program_type = billing_program_type(athlete, session)
+            billing_type = resolve_attendance_type(
+                entry.attendance_type,
+                program_type=program_type,
+                session=session,
+            )
         except ValueError as e:
             raise HTTPException(400, f"Invalid program type for {athlete.get('full_name', entry.athlete_id)}") from e
         override = athlete.get("rate_override")
@@ -204,7 +227,7 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
                 raise HTTPException(400, f"Invalid rate override for {athlete.get('full_name', entry.athlete_id)}") from e
         try:
             rate = compute_billed_rate(
-                entry.attendance_type,
+                billing_type,
                 program_type,
                 override,
                 session=session,
@@ -215,7 +238,7 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
         rec = AttendanceRecord(
             session_id=session_id,
             athlete_id=entry.athlete_id,
-            attendance_type=entry.attendance_type,
+            attendance_type=billing_type,
             billed_rate=rate,
         )
         new_records.append(serialize(rec.model_dump()))

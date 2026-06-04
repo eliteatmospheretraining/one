@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { useAuth } from "../lib/auth";
-import { fmtMoney } from "../lib/format";
+import { fmtMoney, fmtPasswordUpdated } from "../lib/format";
 import { SETTINGS } from "../lib/testIds";
 import {
     BookOpen,
@@ -151,7 +151,7 @@ function AdminBadge() {
 }
 
 export default function Settings() {
-    const { coach } = useAuth();
+    const { coach, refreshCoach } = useAuth();
     const nav = useNavigate();
     const loc = useLocation();
     const [card, setCard] = useState(null);
@@ -312,6 +312,7 @@ export default function Settings() {
                 current_password: currentPassword,
                 new_password: newPassword,
             });
+            await refreshCoach();
             toast.success("Password updated");
             setPasswordModalOpen(false);
         } catch (err) {
@@ -361,7 +362,7 @@ export default function Settings() {
                                     <IconCircle>
                                         <Lock size={16} strokeWidth={1.75} />
                                     </IconCircle>
-                                    <RowCopy title="Password" subtitle="Last updated never" />
+                                    <RowCopy title="Password" subtitle={fmtPasswordUpdated(coach?.password_updated_at)} />
                                     <TextAction testId={SETTINGS.updatePasswordBtn} onClick={openPasswordModal}>
                                         Update
                                     </TextAction>

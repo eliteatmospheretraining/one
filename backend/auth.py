@@ -202,8 +202,12 @@ async def change_password(req: PasswordChangeRequest, coach: dict = Depends(get_
     if not _verify_password(req.current_password, stored["password_hash"]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
 
+    updated_at = now()
     await db.coaches.update_one(
         {"id": coach["id"]},
-        {"$set": {"password_hash": _hash_password(req.new_password)}},
+        {"$set": {
+            "password_hash": _hash_password(req.new_password),
+            "password_updated_at": updated_at.isoformat(),
+        }},
     )
-    return {"status": "ok"}
+    return {"status": "ok", "password_updated_at": updated_at.isoformat()}

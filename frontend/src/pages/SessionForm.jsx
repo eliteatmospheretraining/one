@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api";
+import { api, formatApiError } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
 import { LocationField } from "../components/LocationField";
@@ -17,6 +17,7 @@ import {
     defaultRepeatWeekdays,
     fmtDate,
     nextHourStartFromNow,
+    parseLocalISO,
     snapTimeToQuarterHour,
 } from "../lib/format";
 import { toast } from "sonner";
@@ -124,7 +125,7 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             setRepeatFrequency("weekly");
             setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
         } else if (date) {
-            const dow = new Date(`${date}T00:00:00`).getDay();
+            const dow = parseLocalISO(date).getDay();
             const days = defaultRepeatWeekdays();
             days[dow] = true;
             setRepeatWeekdays(days);
@@ -142,8 +143,13 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             notes: notes || null,
             athlete_ids: selectedIds,
         };
-        const dates = !isEdit && repeat && date ? recurringDates : [date];
-        if (!isEdit && (!dates.length || !dates[0])) {
+        const dates =
+            !isEdit && repeat && date && recurringDates.length > 0
+                ? recurringDates
+                : date
+                  ? [date]
+                  : [];
+        if (!isEdit && !dates.length) {
             toast.error(repeat ? "Choose repeat days or a valid date" : "Choose a date");
             return;
         }
@@ -152,20 +158,28 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             if (isEdit) {
                 await api.patch(`/sessions/${session.id}`, payload);
                 toast.success("Session updated");
+                if (location?.trim()) addLocationPreset(type, location);
+                onSaved?.();
+            } else if (dates.length === 1) {
+                await api.post("/sessions", { ...payload, date: dates[0] });
+                toast.success("Session created");
+                if (location?.trim()) addLocationPreset(type, location);
+                onSaved?.({ createdDates: dates });
             } else {
-                await Promise.all(
-                    dates.map((sessionDate) =>
-                        api.post(`/sessions`, { ...payload, date: sessionDate })
-                    )
-                );
+                const batch = dates.map((sessionDate) => ({ ...payload, date: sessionDate }));
+                const r = await api.post("/sessions/batch", batch);
+                const count = r.data?.length ?? dates.length;
                 toast.success(
-                    dates.length === 1 ? "Session created" : `Created ${dates.length} sessions`
+                    `Created ${count} sessions · ${fmtDate(dates[0], { month: "short", day: "numeric" })} – ${fmtDate(
+                        dates[dates.length - 1],
+                        { month: "short", day: "numeric", year: "numeric" }
+                    )}`
                 );
+                if (location?.trim()) addLocationPreset(type, location);
+                onSaved?.({ createdDates: dates });
             }
-            if (location?.trim()) addLocationPreset(type, location);
-            onSaved?.();
         } catch (e) {
-            toast.error(e.response?.data?.detail || "Failed to save");
+            toast.error(formatApiError(e) || "Failed to save");
         } finally {
             setSaving(false);
         }

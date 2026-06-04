@@ -1,4 +1,4 @@
-"""Invoice PDF generation with WeasyPrint."""
+"""EAT Invoice PDF — brand layout via WeasyPrint, Thunder fonts, and EAT SVG logo."""
 from __future__ import annotations
 
 import base64
@@ -8,39 +8,48 @@ from io import BytesIO
 from pathlib import Path
 from typing import Iterable, Optional
 
-import requests
+BASE = Path(__file__).parent
 
-BUSINESS_NAME = os.environ.get("BUSINESS_NAME", "Elite Atmosphere Training")
-BUSINESS_ADDRESS = os.environ.get("BUSINESS_ADDRESS", "")
-LOGO_URL = os.environ.get("LOGO_URL", "")
-ZELLE_EMAIL = os.environ.get("ZELLE_EMAIL", "")
-ZELLE_PHONE = os.environ.get("ZELLE_PHONE", "")
-ZELLE_NAME = os.environ.get("ZELLE_NAME", "")
-
-ASSETS_DIR = Path(__file__).parent / "assets"
-ASSETS_DIR.mkdir(exist_ok=True)
-LOGO_CACHE = ASSETS_DIR / "logo.png"
+_FONT_FILES: dict[int, list[str]] = {
+    800: ["Thunder-ExtraBoldLC.otf"],
+    500: ["Thunder-MediumLC.otf", "Thunder-Medium.ttf"],
+    300: ["Thunder-LightLC.otf", "Thunder-Light.ttf"],
+}
 
 
-def _logo_data_uri() -> str:
-    """Download and cache the logo, return as data URI."""
-    if not LOGO_URL:
+def _font_b64(name: str) -> str:
+    path = BASE / name
+    if not path.exists():
         return ""
-    if not LOGO_CACHE.exists():
-        try:
-            r = requests.get(LOGO_URL, timeout=10)
-            r.raise_for_status()
-            LOGO_CACHE.write_bytes(r.content)
-        except Exception:
-            return ""
-    try:
-        data = LOGO_CACHE.read_bytes()
-        return "data:image/png;base64," + base64.b64encode(data).decode()
-    except Exception:
-        return ""
+    return base64.b64encode(path.read_bytes()).decode()
 
 
-def _fmt_money(v: float) -> str:
+def _font_face(weight: int) -> str:
+    for name in _FONT_FILES.get(weight, []):
+        b64 = _font_b64(name)
+        if not b64:
+            continue
+        if name.endswith(".otf"):
+            return (
+                f"@font-face {{ font-family:'Thunder'; "
+                f"src:url('data:font/otf;base64,{b64}') format('opentype'); font-weight:{weight}; }}\n"
+            )
+        return (
+            f"@font-face {{ font-family:'Thunder'; "
+            f"src:url('data:font/ttf;base64,{b64}') format('truetype'); font-weight:{weight}; }}\n"
+        )
+    return ""
+
+
+def _svg_b64() -> str:
+    for name in ("EAT_black.svg", "assets/EAT_black.svg"):
+        path = BASE / name
+        if path.exists():
+            return base64.b64encode(path.read_bytes()).decode()
+    return ""
+
+
+def _fmt(v: float) -> str:
     return f"${v:,.2f}"
 
 
@@ -54,154 +63,473 @@ def render_invoice_pdf(
     guardian_name: str,
     guardian_email: str,
     athlete_names: Iterable[str],
-    line_items: list[dict],  # [{date, description, quantity, unit_price, amount}]
+    line_items: list[dict],
     subtotal: float,
     total: float,
-    payment_date: Optional[date],
-    payment_method: Optional[str],
-    paid: bool,
+    payment_date: Optional[date] = None,
+    payment_method: Optional[str] = None,
+    paid: bool = False,
+    business_name: str = "",
+    business_address: str = "",
+    zelle_name: str = "",
+    zelle_email: str = "",
+    zelle_phone: str = "",
 ) -> bytes:
-    logo = _logo_data_uri()
+    business_name = business_name or os.environ.get("BUSINESS_NAME", "Elite Atmosphere Training")
+    business_address = business_address or os.environ.get("BUSINESS_ADDRESS", "")
+    zelle_name = zelle_name or os.environ.get("ZELLE_NAME", "")
+    zelle_email = zelle_email or os.environ.get("ZELLE_EMAIL", "")
+    zelle_phone = zelle_phone or os.environ.get("ZELLE_PHONE", "")
+
+    font_faces = "".join(_font_face(w) for w in (800, 500, 300))
+    logo = _svg_b64()
     athletes_str = ", ".join(athlete_names)
 
     rows_html = "".join(
-        f"""
-        <tr>
-          <td class="cell date">{li.get('date', '')}</td>
-          <td class="cell desc">{li['description']}</td>
-          <td class="cell qty">{li['quantity']:g}</td>
-          <td class="cell price">{_fmt_money(li['unit_price'])}</td>
-          <td class="cell amt">{_fmt_money(li['amount'])}</td>
-        </tr>
-        """
+        f"""<tr>
+          <td class="td desc">{li['description']}</td>
+          <td class="td num">{li['quantity']:g}</td>
+          <td class="td num">{_fmt(li['unit_price'])}</td>
+          <td class="td num bold">{_fmt(li['amount'])}</td>
+        </tr>"""
         for li in line_items
     )
 
-    paid_block = ""
+    paid_banner = ""
     if paid and payment_date:
-        paid_block = f"""
-        <div class="paid-note">Payment received in full on {payment_date.strftime('%m-%d-%Y')} via {payment_method or 'Zelle'}.</div>
-        """
+        method = payment_method or "Zelle"
+        paid_banner = f"""
+        <div class="paid-banner">
+          Payment received in full on {payment_date.strftime('%B %d, %Y')} via {method}.
+        </div>"""
 
-    # Zelle block — only when invoice isn't paid yet, prompts the guardian to send via Zelle
     zelle_block = ""
-    if not paid and (ZELLE_EMAIL or ZELLE_PHONE):
-        rows = ""
-        if ZELLE_EMAIL:
-            rows += f'<tr><td class="zelle-key">Email</td><td class="zelle-val">{ZELLE_EMAIL}</td></tr>'
-        if ZELLE_PHONE:
-            rows += f'<tr><td class="zelle-key">Phone</td><td class="zelle-val">{ZELLE_PHONE}</td></tr>'
-        name_row = f'<tr><td class="zelle-key">Pay to</td><td class="zelle-val">{ZELLE_NAME}</td></tr>' if ZELLE_NAME else ""
+    if not paid:
         zelle_block = f"""
         <div class="zelle-block">
           <div class="zelle-title">Pay via Zelle</div>
-          <table class="zelle-table">{name_row}{rows}</table>
-          <div class="zelle-hint">Open your bank app · Send via Zelle · Enter the amount above</div>
-        </div>
-        """
+          <table class="zelle-table">
+            <tr><td class="zk">Pay to</td><td class="zv">{zelle_name}</td></tr>
+            <tr><td class="zk">Email</td><td class="zv">{zelle_email}</td></tr>
+            <tr><td class="zk">Phone</td><td class="zv">{zelle_phone}</td></tr>
+          </table>
+          <div class="zelle-flexible"><strong>We're flexible.</strong> If Zelle doesn't work for you, let us know.</div>
+        </div>"""
 
-    logo_html = f'<img class="logo" src="{logo}" />' if logo else '<div class="logo-text">EAT</div>'
+    total_label = "TOTAL PAID" if paid else "TOTAL DUE"
+    logo_html = (
+        f'<img class="logo" src="data:image/svg+xml;base64,{logo}" />'
+        if logo
+        else '<div class="logo-text">EAT.</div>'
+    )
 
-    html_str = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-  @page {{ size: Letter; margin: 0.6in; }}
-  body {{ font-family: 'Helvetica', 'Arial', sans-serif; color: #0A0A0A; font-size: 11pt; }}
-  .header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0A0A0A; padding-bottom: 18px; }}
-  .brand .logo {{ width: 130px; }}
-  .brand .logo-text {{ font-size: 36pt; font-weight: 900; letter-spacing: -2px; }}
-  .brand .biz-name {{ font-size: 9pt; text-transform: uppercase; letter-spacing: 2px; margin-top: 6px; color: #52525B; }}
-  .brand .biz-addr {{ font-size: 9pt; color: #71717A; margin-top: 2px; max-width: 220px; }}
-  .meta {{ text-align: right; }}
-  .meta .label {{ font-size: 8pt; text-transform: uppercase; letter-spacing: 2px; color: #71717A; }}
-  .meta .invoice-no {{ font-size: 22pt; font-weight: 900; letter-spacing: -0.5px; margin-top: 4px; }}
-  .meta .issued {{ font-size: 10pt; color: #52525B; margin-top: 8px; }}
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+{font_faces}
 
-  .title-block {{ margin-top: 28px; display: flex; justify-content: space-between; }}
-  .title-block .col {{ width: 48%; }}
-  .title-block .label {{ font-size: 8pt; text-transform: uppercase; letter-spacing: 2px; color: #71717A; margin-bottom: 4px; }}
-  .title-block .val {{ font-size: 11pt; font-weight: 600; }}
+@page {{
+  size: Letter;
+  margin: 0;
+}}
 
-  .paid-note {{ margin-top: 22px; padding: 12px 16px; border: 2px solid #0A0A0A; background: #CCFF00; font-weight: 700; }}
-  .zelle-block {{ margin-top: 22px; padding: 14px 16px; border: 1px solid #0A0A0A; }}
-  .zelle-title {{ font-size: 9pt; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-bottom: 8px; }}
-  .zelle-table {{ border-collapse: collapse; }}
-  .zelle-table td {{ padding: 3px 0; font-size: 10.5pt; }}
-  .zelle-key {{ color: #71717A; text-transform: uppercase; font-size: 8pt; letter-spacing: 1.5px; padding-right: 14px !important; vertical-align: top; }}
-  .zelle-val {{ font-weight: 700; }}
-  .zelle-hint {{ margin-top: 8px; font-size: 8.5pt; color: #71717A; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
-  table.items {{ width: 100%; border-collapse: collapse; margin-top: 28px; }}
-  table.items thead th {{ font-size: 8pt; text-transform: uppercase; letter-spacing: 2px; padding: 10px 8px; border-bottom: 2px solid #0A0A0A; text-align: left; color: #0A0A0A; }}
-  table.items thead th.qty, table.items thead th.price, table.items thead th.amt {{ text-align: right; }}
-  table.items .cell {{ padding: 10px 8px; border-bottom: 1px solid #E4E4E7; font-size: 10pt; vertical-align: top; }}
-  table.items .cell.date {{ width: 70px; color: #71717A; font-size: 9pt; white-space: nowrap; }}
-  table.items .cell.qty, table.items .cell.price, table.items .cell.amt {{ text-align: right; white-space: nowrap; }}
-  table.items .cell.amt {{ font-weight: 700; }}
+body {{
+  background: #ffffff;
+  color: #0d0d0d;
+  font-family: 'Thunder', 'Helvetica Neue', sans-serif;
+  font-weight: 300;
+  font-size: 10pt;
+}}
 
-  .totals {{ display: flex; justify-content: flex-end; margin-top: 18px; }}
-  .totals table {{ min-width: 280px; }}
-  .totals td {{ padding: 6px 8px; font-size: 11pt; }}
-  .totals td.lbl {{ text-align: right; color: #52525B; }}
-  .totals td.val {{ text-align: right; font-weight: 700; white-space: nowrap; }}
-  .totals .total-row td {{ border-top: 2px solid #0A0A0A; padding-top: 10px; font-size: 14pt; font-weight: 900; text-transform: uppercase; }}
+.page {{
+  width: 8.5in;
+  height: 11in;
+  background: #ffffff;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}}
 
-  .footer {{ margin-top: 48px; padding-top: 16px; border-top: 1px solid #E4E4E7; font-size: 8pt; color: #71717A; text-align: center; letter-spacing: 1px; text-transform: uppercase; }}
-</style></head>
+.header {{
+  padding: 36pt 48pt 24pt 48pt;
+  border-bottom: 1pt solid #e5e5e5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}}
+
+.logo {{
+  width: 88pt;
+  height: auto;
+  margin-left: -14pt;
+}}
+
+.logo-text {{
+  font-weight: 800;
+  font-size: 32pt;
+  text-transform: uppercase;
+  color: #0d0d0d;
+  letter-spacing: 0.02em;
+}}
+
+.meta-right {{
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+}}
+
+.meta-eyebrow {{
+  font-weight: 500;
+  font-size: 8pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #999999;
+  margin-bottom: 4pt;
+}}
+
+.invoice-number {{
+  font-weight: 800;
+  font-size: 30pt;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #0d0d0d;
+  line-height: 1;
+}}
+
+.issued-date {{
+  font-weight: 300;
+  font-size: 9pt;
+  color: #888888;
+  margin-top: 5pt;
+}}
+
+.biz-strip {{
+  padding: 10pt 48pt;
+  border-bottom: 1pt solid #ebebeb;
+}}
+
+.biz-name {{
+  font-weight: 500;
+  font-size: 9pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #999999;
+}}
+
+.biz-addr {{
+  font-weight: 300;
+  font-size: 8.5pt;
+  color: #bbbbbb;
+  margin-top: 2pt;
+}}
+
+.title-block {{
+  padding: 22pt 48pt;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1pt solid #ebebeb;
+}}
+
+.tb-col {{ width: 48%; }}
+
+.tb-label {{
+  font-weight: 500;
+  font-size: 8pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #999999;
+  margin-bottom: 5pt;
+}}
+
+.tb-val {{
+  font-weight: 500;
+  font-size: 11pt;
+  color: #0d0d0d;
+  line-height: 1.3;
+}}
+
+.tb-sub {{
+  font-weight: 300;
+  font-size: 9pt;
+  color: #888888;
+  margin-top: 2pt;
+}}
+
+.tb-spacer {{ margin-top: 12pt; }}
+
+.paid-banner {{
+  margin: 0 48pt;
+  margin-top: 18pt;
+  padding: 11pt 16pt;
+  background: #c8f000;
+  color: #0d0d0d;
+  font-weight: 500;
+  font-size: 9pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}}
+
+.zelle-block {{
+  margin: 18pt 48pt 0;
+  padding: 14pt 18pt;
+  border: 1pt solid #e5e5e5;
+}}
+
+.zelle-flexible {{
+  font-weight: 300;
+  font-size: 8.5pt;
+  color: #888888;
+  margin-top: 10pt;
+}}
+
+.zelle-flexible strong {{
+  font-weight: 500;
+  color: #0d0d0d;
+}}
+
+.zelle-title {{
+  font-weight: 500;
+  font-size: 8pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #0d0d0d;
+  margin-bottom: 10pt;
+}}
+
+.zelle-table {{ border-collapse: collapse; }}
+
+.zk {{
+  font-weight: 500;
+  font-size: 7.5pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #999999;
+  padding-right: 18pt;
+  padding-bottom: 5pt;
+  vertical-align: top;
+}}
+
+.zv {{
+  font-weight: 300;
+  font-size: 10pt;
+  color: #0d0d0d;
+  padding-bottom: 5pt;
+}}
+
+.items-wrap {{ margin: 22pt 48pt 0; }}
+
+.items-table {{ width: 100%; border-collapse: collapse; }}
+
+.th {{
+  font-weight: 500;
+  font-size: 7.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #999999;
+  padding: 8pt 6pt;
+  border-bottom: 1pt solid #0d0d0d;
+  text-align: left;
+}}
+
+.th.num {{ text-align: right; }}
+
+.td {{
+  padding: 10pt 6pt;
+  border-bottom: 1pt solid #ebebeb;
+  font-weight: 300;
+  font-size: 10pt;
+  color: #333333;
+  vertical-align: top;
+}}
+
+.td.num {{ text-align: right; white-space: nowrap; }}
+
+.td.bold {{ font-weight: 500; color: #0d0d0d; }}
+
+.totals-wrap {{
+  display: flex;
+  justify-content: flex-end;
+  margin: 16pt 48pt 0;
+}}
+
+.totals-table {{ min-width: 260pt; border-collapse: collapse; }}
+
+.tot-lbl {{
+  font-weight: 300;
+  font-size: 9pt;
+  color: #999999;
+  text-align: right;
+  padding: 5pt 8pt;
+}}
+
+.tot-val {{
+  font-weight: 500;
+  font-size: 9pt;
+  color: #333333;
+  text-align: right;
+  padding: 5pt 0;
+  white-space: nowrap;
+}}
+
+.tot-total-lbl {{
+  font-weight: 500;
+  font-size: 14pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #0d0d0d;
+  text-align: right;
+  padding: 10pt 8pt 6pt;
+  border-top: 1pt solid #0d0d0d;
+}}
+
+.tot-total-val {{
+  font-weight: 500;
+  font-size: 14pt;
+  color: #0d0d0d;
+  text-align: right;
+  padding: 10pt 0 6pt;
+  border-top: 1pt solid #0d0d0d;
+  white-space: nowrap;
+}}
+
+.footer {{
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0 48pt;
+  height: 28pt;
+  border-top: 1pt solid #ebebeb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}}
+
+.footer span {{
+  font-weight: 500;
+  font-size: 7.5pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #bbbbbb;
+}}
+</style>
+</head>
 <body>
+<div class="page">
 
-<div class="header">
-  <div class="brand">
+  <div class="header">
     {logo_html}
-    <div class="biz-name">{BUSINESS_NAME}</div>
-    <div class="biz-addr">{BUSINESS_ADDRESS}</div>
+    <div class="meta-right">
+      <div class="meta-eyebrow">Invoice</div>
+      <div class="invoice-number">{invoice_number}</div>
+      <div class="issued-date">Issued {issue_date.strftime('%B %d, %Y')}</div>
+    </div>
   </div>
-  <div class="meta">
-    <div class="label">Invoice</div>
-    <div class="invoice-no">{invoice_number}</div>
-    <div class="issued">Issued {issue_date.strftime('%m-%d-%Y')}</div>
+
+  <div class="biz-strip">
+    <div class="biz-name">{business_name}</div>
+    <div class="biz-addr">{business_address}</div>
   </div>
-</div>
 
-<div class="title-block">
-  <div class="col">
-    <div class="label">Billed To</div>
-    <div class="val">{family_name} Family</div>
-    <div style="font-size:10pt;color:#52525B;margin-top:2px;">{guardian_name}</div>
-    <div style="font-size:10pt;color:#52525B;">{guardian_email}</div>
+  <div class="title-block">
+    <div class="tb-col">
+      <div class="tb-label">Billed To</div>
+      <div class="tb-val">{family_name} Family</div>
+      <div class="tb-sub">{guardian_name}</div>
+      <div class="tb-sub">{guardian_email}</div>
+    </div>
+    <div class="tb-col">
+      <div class="tb-label">Period</div>
+      <div class="tb-val">{period_start.strftime('%b %d')} – {period_end.strftime('%b %d, %Y')}</div>
+      <div class="tb-spacer"></div>
+      <div class="tb-label">Athlete(s)</div>
+      <div class="tb-val">{athletes_str}</div>
+    </div>
   </div>
-  <div class="col">
-    <div class="label">Period</div>
-    <div class="val">{period_start.strftime('%m-%d-%Y')} – {period_end.strftime('%m-%d-%Y')}</div>
-    <div class="label" style="margin-top:10px;">Athlete(s)</div>
-    <div class="val">{athletes_str}</div>
+
+  {paid_banner}
+  {zelle_block}
+
+  <div class="items-wrap">
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th class="th">Service</th>
+          <th class="th num">Qty</th>
+          <th class="th num">Price</th>
+          <th class="th num">Amount</th>
+        </tr>
+      </thead>
+      <tbody>{rows_html}</tbody>
+    </table>
   </div>
+
+  <div class="totals-wrap">
+    <table class="totals-table">
+      <tr>
+        <td class="tot-lbl">Subtotal</td>
+        <td class="tot-val">{_fmt(subtotal)}</td>
+      </tr>
+      <tr>
+        <td class="tot-total-lbl">{total_label}</td>
+        <td class="tot-total-val">{_fmt(total)}</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="footer">
+    <span>{business_name}.</span>
+    <span>{invoice_number}</span>
+  </div>
+
 </div>
+</body>
+</html>"""
 
-{paid_block}
-{zelle_block}
-
-<table class="items">
-  <thead><tr>
-    <th>Date</th><th>Service</th><th class="qty">Qty</th><th class="price">Price</th><th class="amt">Amount</th>
-  </tr></thead>
-  <tbody>{rows_html}</tbody>
-</table>
-
-<div class="totals">
-  <table>
-    <tr><td class="lbl">Subtotal</td><td class="val">{_fmt_money(subtotal)}</td></tr>
-    <tr class="total-row"><td class="lbl">{'Total Paid' if paid else 'Total Due'}</td><td class="val">{_fmt_money(total)}</td></tr>
-  </table>
-</div>
-
-<div class="footer">
-  {BUSINESS_NAME} · {BUSINESS_ADDRESS}
-</div>
-
-</body></html>"""
-
-    from weasyprint import HTML  # lazy: needs cairo/pango (brew on macOS)
+    from weasyprint import HTML  # lazy: needs cairo/pango on Railway
 
     out = BytesIO()
-    HTML(string=html_str).write_pdf(out)
+    HTML(string=html, base_url=str(BASE)).write_pdf(out)
     return out.getvalue()
+
+
+if __name__ == "__main__":
+    sample_lines = [
+        {"description": "Carlos Hernandez — Full-Time Training — Full Day", "quantity": 1, "unit_price": 60.00, "amount": 60.00},
+        {"description": "Carlos Hernandez — Full-Time Training — Full Day", "quantity": 1, "unit_price": 60.00, "amount": 60.00},
+        {"description": "Carlos Hernandez — Full-Time Training — Half Day", "quantity": 1, "unit_price": 30.00, "amount": 30.00},
+        {"description": "Carlos Hernandez — Full-Time Training — Full Day", "quantity": 1, "unit_price": 60.00, "amount": 60.00},
+        {"description": "Carlos Hernandez — Full-Time Training — Full Day", "quantity": 1, "unit_price": 60.00, "amount": 60.00},
+    ]
+    common = dict(
+        invoice_number="EAT-000001",
+        issue_date=date(2026, 6, 2),
+        period_start=date(2026, 5, 26),
+        period_end=date(2026, 5, 30),
+        family_name="Hernandez",
+        guardian_name="Maria Hernandez",
+        guardian_email="maria@example.com",
+        athlete_names=["Carlos Hernandez"],
+        line_items=sample_lines,
+        subtotal=270.00,
+        total=270.00,
+    )
+    out_dir = BASE / "samples"
+    out_dir.mkdir(exist_ok=True)
+    (out_dir / "EAT_Invoice_Sample.pdf").write_bytes(render_invoice_pdf(**common, paid=False))
+    (out_dir / "EAT_Invoice_Sample_PAID.pdf").write_bytes(
+        render_invoice_pdf(
+            **common,
+            paid=True,
+            payment_date=date(2026, 6, 3),
+            payment_method="Zelle",
+        )
+    )
+    print(f"Wrote {out_dir}/EAT_Invoice_Sample.pdf")
+    print(f"Wrote {out_dir}/EAT_Invoice_Sample_PAID.pdf")

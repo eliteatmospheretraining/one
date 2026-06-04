@@ -33,6 +33,19 @@ import { toast } from "sonner";
 /** First calendar year with billing data — revenue view won't go earlier than this. */
 const FIRST_DATA_YEAR = 2026;
 
+const DESKTOP_INVOICE_FILTERS = [
+    { value: "this_month", label: "This Month" },
+    { value: "last_month", label: "Last Month" },
+    { value: "last_3_months", label: "Last 3 Months" },
+    { value: "all", label: "All" },
+];
+
+const MOBILE_INVOICE_FILTERS = [
+    { value: "this_month", label: "This Month" },
+    { value: "last_month", label: "Last Month" },
+    { value: "all", label: "All" },
+];
+
 function lastDayOfMonthIso(iso) {
     const [y, m] = String(iso).slice(0, 10).split("-").map(Number);
     return new Date(y, m, 0).toISOString().slice(0, 10);
@@ -49,7 +62,7 @@ export default function Invoices() {
     const currentCalendarYear = new Date().getFullYear();
     const revenueYearMax = Math.max(FIRST_DATA_YEAR, currentCalendarYear);
     const [selectedYear, setSelectedYear] = useState(revenueYearMax);
-    const [invoiceFilter, setInvoiceFilter] = useState("all"); // "this_month", "last_month", "last_3_months", "all"
+    const [invoiceFilter, setInvoiceFilter] = useState("this_month");
 
     async function load() {
         setLoading(true);
@@ -69,6 +82,18 @@ export default function Invoices() {
         }
     }
     useEffect(() => { load(); }, []);
+
+    useEffect(() => {
+        const mq = window.matchMedia("(max-width: 767px)");
+        const sync = () => {
+            if (mq.matches && invoiceFilter === "last_3_months") {
+                setInvoiceFilter("all");
+            }
+        };
+        sync();
+        mq.addEventListener("change", sync);
+        return () => mq.removeEventListener("change", sync);
+    }, [invoiceFilter]);
 
     useEffect(() => {
         const next = new URLSearchParams(searchParams);
@@ -143,28 +168,13 @@ export default function Invoices() {
                 threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
                 return issueDate >= threeMonthsAgo;
             }
-            // "all"
             return true;
         });
     }, [invoices, invoiceFilter]);
 
     return (
         <div>
-            <PageHeader
-                subtitle="Billing"
-                title="Revenue"
-                testId="page-invoices-header"
-                actions={
-                    <button
-                        data-testid={INVOICES.newBtn}
-                        onClick={() => setGenerateOpen(true)}
-                        className="eat-btn-primary"
-                        disabled={families.length === 0}
-                    >
-                        <Plus size={14} className="mr-1.5" strokeWidth={1.75} /> New Invoice
-                    </button>
-                }
-            />
+            <PageHeader subtitle="Billing" title="Revenue" testId="page-invoices-header" />
 
             <div className="w-full px-5 md:px-10 lg:px-12 mt-8 pb-10 flex flex-col gap-6">
                 <section className="border border-subtle">
@@ -214,32 +224,59 @@ export default function Invoices() {
                     </div>
                 </section>
 
-                {/* Invoices list with date filters */}
-                <div className="flex items-center gap-2 flex-wrap">
-                    <div className="text-sm text-muted uppercase tracking-wider2" style={{ fontWeight: 500 }}>Filter:</div>
-                    {["this_month", "last_month", "last_3_months", "all"].map((f) => (
-                        <button
-                            key={f}
-                            onClick={() => setInvoiceFilter(f)}
-                            className={`text-xs uppercase tracking-wider2 px-3 py-1 rounded transition-colors ${invoiceFilter === f ? "bg-paper text-ink" : "border border-subtle text-paper hover:text-accent"}`}
-                        >
-                            {f === "this_month" ? "This Month" : f === "last_month" ? "Last Month" : f === "last_3_months" ? "Last 3 Months" : "All"}
-                        </button>
-                    ))}
+                <div className="flex items-center justify-between gap-3 w-full">
+                    <div className="flex items-center gap-2 min-w-0 overflow-x-auto scrollbar-none flex-nowrap md:overflow-visible md:flex-wrap">
+                        <div className="text-sm text-muted uppercase tracking-wider2 shrink-0" style={{ fontWeight: 500 }}>Filter:</div>
+                        <div className="hidden md:flex items-center gap-2 flex-wrap">
+                            {DESKTOP_INVOICE_FILTERS.map((f) => (
+                                <button
+                                    key={f.value}
+                                    type="button"
+                                    onClick={() => setInvoiceFilter(f.value)}
+                                    className={`shrink-0 text-xs uppercase tracking-wider2 px-3 py-1 rounded transition-colors ${
+                                        invoiceFilter === f.value ? "bg-paper text-ink" : "border border-subtle text-paper hover:text-accent"
+                                    }`}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex md:hidden items-center gap-2 flex-nowrap">
+                            {MOBILE_INVOICE_FILTERS.map((f) => (
+                                <button
+                                    key={f.value}
+                                    type="button"
+                                    onClick={() => setInvoiceFilter(f.value)}
+                                    className={`shrink-0 text-xs uppercase tracking-wider2 px-3 py-1 rounded transition-colors ${
+                                        invoiceFilter === f.value ? "bg-paper text-ink" : "border border-subtle text-paper hover:text-accent"
+                                    }`}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        data-testid={INVOICES.newBtn}
+                        onClick={() => setGenerateOpen(true)}
+                        disabled={families.length === 0}
+                        aria-label="New invoice"
+                        className="shrink-0 inline-flex items-center justify-center eat-btn-primary disabled:opacity-50 h-9 w-9 p-0 md:h-auto md:w-auto md:px-4 md:py-2.5"
+                    >
+                        <Plus size={18} strokeWidth={1.75} className="md:hidden" />
+                        <Plus size={14} strokeWidth={1.75} className="hidden md:block mr-1.5" />
+                        <span className="hidden md:inline uppercase tracking-wider2 text-sm" style={{ fontWeight: 500 }}>
+                            New Invoice
+                        </span>
+                    </button>
                 </div>
                 {loading ? (
                     <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
                 ) : filteredInvoices.length === 0 ? (
                     <div className="bg-mid border border-subtle p-5 text-center text-muted">
                         {invoices.length === 0 ? (
-                            <>
-                                <div className="font-light">No invoices yet</div>
-                                {families.length > 0 && (
-                                    <button onClick={() => setGenerateOpen(true)} className="eat-btn-primary mt-3">
-                                        <Plus size={14} className="mr-1.5" /> New Invoice
-                                    </button>
-                                )}
-                            </>
+                            <div className="font-light">No invoices yet</div>
                         ) : (
                             <div className="font-light">No invoices match the selected filter</div>
                         )}

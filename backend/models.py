@@ -46,6 +46,7 @@ class SessionStatus(str, Enum):
 
 
 class AttendanceType(str, Enum):
+    present = "present"  # UI: coach marks showed up; billing resolves to full/half/drop-in
     full = "full"
     half = "half"
     drop_in_full = "drop_in_full"
@@ -421,6 +422,7 @@ class Coach(BaseModel):
     email: EmailStr
     role: str = "admin"
     created_at: datetime = Field(default_factory=_now)
+    password_updated_at: Optional[datetime] = None
 
 
 # ---------- Rate Card ----------
