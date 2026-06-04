@@ -242,6 +242,22 @@ body {
         width: 0;
         height: 0;
     }
+
+    .eat-time-picker-row {
+        @apply block shrink-0 h-9 w-full text-sm tracking-wider2 transition-colors text-paper touch-manipulation;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .eat-time-picker-row[aria-selected="true"] {
+        @apply bg-accent text-ink;
+    }
+    @media (hover: hover) and (pointer: fine) {
+        .eat-time-picker-row:not([aria-selected="true"]):hover {
+            @apply bg-subtle;
+        }
+        .eat-time-picker-row[aria-selected="true"]:hover {
+            @apply bg-accent text-ink;
+        }
+    }
 }
 
 /* SmoothCursor — visible on fine pointer (desktop), hidden on touch */

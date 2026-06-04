@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { TIME_MINUTE_OPTIONS, formatTime24, from12Hour, parseTime24, to12Hour } from "../lib/format";
+import { TIME_MINUTE_OPTIONS, formatTime24, from12Hour, parseTime24, snapMinuteToQuarter, to12Hour } from "../lib/format";
 
 const PANEL_H = "h-[15.75rem]";
 const SCROLL_COL =
@@ -9,8 +9,18 @@ const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const SCROLL_PAD = "h-[4.5rem] shrink-0 pointer-events-none";
 const ROW_PX = 36;
 const HOUR_REPEAT = 31;
-const ROW_CLASS =
-    "block shrink-0 h-9 w-full text-sm tracking-wider2 transition-colors hover:bg-subtle";
+const ROW_CLASS = "eat-time-picker-row";
+
+function normalizeMinute(value) {
+    return snapMinuteToQuarter(Number(value));
+}
+
+function pickerRowProps(selected) {
+    return {
+        className: ROW_CLASS,
+        "aria-selected": selected ? true : undefined,
+    };
+}
 
 function keepScrollTouch(e) {
     e.stopPropagation();
@@ -66,19 +76,17 @@ function TimeScrollColumn({ label, items, active, onPick, format, itemKey }) {
                 <div className="flex flex-col w-full">
                     <div className={SCROLL_PAD} aria-hidden />
                     {items.map((item) => {
-                        const selected = item.value === active;
+                        const selected = normalizeMinute(item.value) === normalizeMinute(active);
                         return (
                             <button
                                 key={itemKey(item)}
                                 type="button"
+                                {...pickerRowProps(selected)}
                                 data-selected={selected ? "true" : undefined}
                                 onClick={() => {
                                     userPicked.current = true;
                                     onPick(item.value);
                                 }}
-                                className={`${ROW_CLASS} ${
-                                    selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
-                                }`}
                             >
                                 {format(item.value)}
                             </button>
@@ -194,6 +202,7 @@ function HourInfiniteScrollColumn({ active, onPick }) {
                             <button
                                 key={`${item.cycle}-${item.value}`}
                                 type="button"
+                                {...pickerRowProps(selected)}
                                 data-hour={item.value}
                                 data-cycle={item.cycle}
                                 data-selected={selected ? "true" : undefined}
@@ -201,9 +210,6 @@ function HourInfiniteScrollColumn({ active, onPick }) {
                                     userPicked.current = true;
                                     onPick(item.value);
                                 }}
-                                className={`${ROW_CLASS} ${
-                                    selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
-                                }`}
                             >
                                 {item.value}
                             </button>
@@ -223,6 +229,7 @@ function HourInfiniteScrollColumn({ active, onPick }) {
 export function EatTimePicker({ value, onChange }) {
     const { hour24, minute } = parseTime24(value);
     const { hour12, pm } = to12Hour(hour24);
+    const activeMinute = normalizeMinute(minute);
 
     const minuteItems = useMemo(
         () => TIME_MINUTE_OPTIONS.map((m) => ({ value: m })),
@@ -230,22 +237,17 @@ export function EatTimePicker({ value, onChange }) {
     );
 
     function emit(h12, min, isPm) {
-        onChange(formatTime24(from12Hour(h12, isPm), min));
+        onChange(formatTime24(from12Hour(h12, isPm), normalizeMinute(min)));
     }
-
-    const periodClass = (active) =>
-        `h-9 w-full text-sm uppercase tracking-wider2 transition-colors hover:bg-subtle ${
-            active ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
-        }`;
 
     return (
         <div className="p-3 w-full min-w-0 box-border">
             <div className="flex gap-2 w-full min-h-0 items-stretch">
-                <HourInfiniteScrollColumn active={hour12} onPick={(h) => emit(h, minute, pm)} />
+                <HourInfiniteScrollColumn active={hour12} onPick={(h) => emit(h, activeMinute, pm)} />
                 <TimeScrollColumn
                     label="Min"
                     items={minuteItems}
-                    active={minute}
+                    active={activeMinute}
                     onPick={(m) => emit(hour12, m, pm)}
                     format={(m) => String(m).padStart(2, "0")}
                     itemKey={(item) => `min-${item.value}`}
@@ -253,10 +255,20 @@ export function EatTimePicker({ value, onChange }) {
                 <div className="flex flex-col w-14 shrink-0">
                     <div className="text-[10px] uppercase tracking-wider2 text-muted text-center mb-2">&nbsp;</div>
                     <div className={`flex flex-col gap-1 ${PANEL_H}`}>
-                        <button type="button" className={periodClass(!pm)} onClick={() => emit(hour12, minute, false)}>
+                        <button
+                            type="button"
+                            {...pickerRowProps(!pm)}
+                            className={`${ROW_CLASS} uppercase tracking-wider2`}
+                            onClick={() => emit(hour12, activeMinute, false)}
+                        >
                             AM
                         </button>
-                        <button type="button" className={periodClass(pm)} onClick={() => emit(hour12, minute, true)}>
+                        <button
+                            type="button"
+                            {...pickerRowProps(pm)}
+                            className={`${ROW_CLASS} uppercase tracking-wider2`}
+                            onClick={() => emit(hour12, activeMinute, true)}
+                        >
                             PM
                         </button>
                     </div>
