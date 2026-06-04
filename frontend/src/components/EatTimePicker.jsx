@@ -2,11 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { TIME_MINUTE_OPTIONS, formatTime24, from12Hour, parseTime24, to12Hour } from "../lib/format";
 
 const PANEL_H = "h-[15.75rem]";
+const SCROLL_COL =
+    `eat-year-scroll w-full min-h-0 max-h-[15.75rem] ${PANEL_H} overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y`;
 /** Clock order: 12 first, then 1–11. */
 const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-const SCROLL_PAD = "h-[4.5rem] shrink-0";
+const SCROLL_PAD = "h-[4.5rem] shrink-0 pointer-events-none";
 const ROW_PX = 36;
 const HOUR_REPEAT = 31;
+const ROW_CLASS =
+    "block shrink-0 h-9 w-full text-sm tracking-wider2 transition-colors hover:bg-subtle";
+
+function keepScrollTouch(e) {
+    e.stopPropagation();
+}
 
 function TimeScrollColumn({ label, items, active, onPick, format, itemKey }) {
     const scrollRef = useRef(null);
@@ -46,34 +54,38 @@ function TimeScrollColumn({ label, items, active, onPick, format, itemKey }) {
     }, [items.length]);
 
     return (
-        <div className="flex-1 flex flex-col min-w-0">
-            <div className="text-[10px] uppercase tracking-wider2 text-muted text-center mb-2">{label}</div>
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className="text-[10px] uppercase tracking-wider2 text-muted text-center mb-2 shrink-0">{label}</div>
             <div
                 ref={scrollRef}
                 tabIndex={-1}
-                className={`eat-year-scroll overflow-y-auto overscroll-contain ${PANEL_H}`}
+                className={SCROLL_COL}
+                onTouchStart={keepScrollTouch}
+                onTouchMove={keepScrollTouch}
             >
-                <div className={SCROLL_PAD} aria-hidden />
-                {items.map((item) => {
-                    const selected = item.value === active;
-                    return (
-                        <button
-                            key={itemKey(item)}
-                            type="button"
-                            data-selected={selected ? "true" : undefined}
-                            onClick={() => {
-                                userPicked.current = true;
-                                onPick(item.value);
-                            }}
-                            className={`h-9 w-full text-sm tracking-wider2 transition-colors hover:bg-subtle ${
-                                selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
-                            }`}
-                        >
-                            {format(item.value)}
-                        </button>
-                    );
-                })}
-                <div className={SCROLL_PAD} aria-hidden />
+                <div className="flex flex-col w-full">
+                    <div className={SCROLL_PAD} aria-hidden />
+                    {items.map((item) => {
+                        const selected = item.value === active;
+                        return (
+                            <button
+                                key={itemKey(item)}
+                                type="button"
+                                data-selected={selected ? "true" : undefined}
+                                onClick={() => {
+                                    userPicked.current = true;
+                                    onPick(item.value);
+                                }}
+                                className={`${ROW_CLASS} ${
+                                    selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
+                                }`}
+                            >
+                                {format(item.value)}
+                            </button>
+                        );
+                    })}
+                    <div className={SCROLL_PAD} aria-hidden />
+                </div>
             </div>
         </div>
     );
@@ -165,36 +177,40 @@ function HourInfiniteScrollColumn({ active, onPick }) {
     }, []);
 
     return (
-        <div className="flex-1 flex flex-col min-w-0">
-            <div className="text-[10px] uppercase tracking-wider2 text-muted text-center mb-2">Hour</div>
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className="text-[10px] uppercase tracking-wider2 text-muted text-center mb-2 shrink-0">Hour</div>
             <div
                 ref={scrollRef}
                 tabIndex={-1}
-                className={`eat-year-scroll overflow-y-auto overscroll-contain ${PANEL_H}`}
+                className={SCROLL_COL}
+                onTouchStart={keepScrollTouch}
+                onTouchMove={keepScrollTouch}
             >
-                <div className={SCROLL_PAD} aria-hidden />
-                {items.map((item) => {
-                    const selected = item.value === active;
-                    return (
-                        <button
-                            key={`${item.cycle}-${item.value}`}
-                            type="button"
-                            data-hour={item.value}
-                            data-cycle={item.cycle}
-                            data-selected={selected ? "true" : undefined}
-                            onClick={() => {
-                                userPicked.current = true;
-                                onPick(item.value);
-                            }}
-                            className={`h-9 w-full text-sm tracking-wider2 transition-colors hover:bg-subtle ${
-                                selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
-                            }`}
-                        >
-                            {item.value}
-                        </button>
-                    );
-                })}
-                <div className={SCROLL_PAD} aria-hidden />
+                <div className="flex flex-col w-full">
+                    <div className={SCROLL_PAD} aria-hidden />
+                    {items.map((item) => {
+                        const selected = item.value === active;
+                        return (
+                            <button
+                                key={`${item.cycle}-${item.value}`}
+                                type="button"
+                                data-hour={item.value}
+                                data-cycle={item.cycle}
+                                data-selected={selected ? "true" : undefined}
+                                onClick={() => {
+                                    userPicked.current = true;
+                                    onPick(item.value);
+                                }}
+                                className={`${ROW_CLASS} ${
+                                    selected ? "bg-accent text-ink hover:bg-accent hover:text-ink" : "text-paper"
+                                }`}
+                            >
+                                {item.value}
+                            </button>
+                        );
+                    })}
+                    <div className={SCROLL_PAD} aria-hidden />
+                </div>
             </div>
         </div>
     );
@@ -223,8 +239,8 @@ export function EatTimePicker({ value, onChange }) {
         }`;
 
     return (
-        <div className="p-3 w-full box-border">
-            <div className="flex gap-2 w-full">
+        <div className="p-3 w-full min-w-0 box-border">
+            <div className="flex gap-2 w-full min-h-0 items-stretch">
                 <HourInfiniteScrollColumn active={hour12} onPick={(h) => emit(h, minute, pm)} />
                 <TimeScrollColumn
                     label="Min"

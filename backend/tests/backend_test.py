@@ -410,6 +410,14 @@ class TestSessionsAttendance:
         after3 = requests.get(f"{API}/sessions/{sid2}/attendance", headers=auth_headers).json()
         assert len(after3["records"]) == 1
         assert after3["records"][0]["billed_rate"] == 0
+        roster_after = {r["athlete"]["id"] for r in after3["roster"]}
+        assert {a1["id"], a2["id"], a4["id"]} <= roster_after
+
+        clear = requests.delete(f"{API}/sessions/{sid2}/attendance", headers=auth_headers)
+        assert clear.status_code == 200, clear.text
+        after_clear = requests.get(f"{API}/sessions/{sid2}/attendance", headers=auth_headers).json()
+        assert after_clear["records"] == []
+        assert {a1["id"], a2["id"], a4["id"]} <= {r["athlete"]["id"] for r in after_clear["roster"]}
 
         # cleanup
         requests.delete(f"{API}/sessions/{sid2}", headers=auth_headers)

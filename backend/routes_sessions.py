@@ -165,9 +165,15 @@ async def get_attendance(session_id: str):
         raise HTTPException(404, "Session not found")
     records = await db.attendance_records.find({"session_id": session_id}, {"_id": 0}).to_list(500)
 
-    # Build roster: prefer session.athlete_ids; if empty, fall back to active athletes of session_type
-    if session.get("athlete_ids"):
-        athletes = await db.athletes.find({"id": {"$in": session["athlete_ids"]}}, {"_id": 0}).to_list(500)
+    # Build roster from expected attendees (session.athlete_ids) plus anyone already logged.
+    session_ids = list(session.get("athlete_ids") or [])
+    record_ids = [r["athlete_id"] for r in records]
+    roster_ids = list(dict.fromkeys(session_ids + [aid for aid in record_ids if aid not in session_ids]))
+
+    if roster_ids:
+        athletes = await db.athletes.find({"id": {"$in": roster_ids}}, {"_id": 0}).to_list(500)
+        by_id = {a["id"]: a for a in athletes}
+        athletes = [by_id[i] for i in roster_ids if i in by_id]
     else:
         athletes = await db.athletes.find(
             {
@@ -199,9 +205,13 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
 
     old_records = await db.attendance_records.find({"session_id": session_id}, {"_id": 0}).to_list(500)
     old_id_by_athlete = {r["athlete_id"]: r["id"] for r in old_records}
+    payload_athlete_ids = {e.athlete_id for e in payload.entries}
 
-    # Wipe & re-insert for simplicity (snapshot rates fresh on each save)
-    await db.attendance_records.delete_many({"session_id": session_id})
+    # Replace only athletes included in this save; keep records for everyone else.
+    if payload_athlete_ids:
+        await db.attendance_records.delete_many(
+            {"session_id": session_id, "athlete_id": {"$in": list(payload_athlete_ids)}}
+        )
 
     new_records: list[dict] = []
     for entry in payload.entries:
@@ -245,17 +255,23 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
 
     if new_records:
         await db.attendance_records.insert_many(new_records)
-        new_id_by_athlete = {r["athlete_id"]: r["id"] for r in new_records}
-        await relink_invoice_line_items(old_id_by_athlete, new_id_by_athlete)
+        relink_old = {aid: old_id_by_athlete[aid] for aid in payload_athlete_ids if aid in old_id_by_athlete}
+        relink_new = {r["athlete_id"]: r["id"] for r in new_records}
+        await relink_invoice_line_items(relink_old, relink_new)
     elif payload.entries:
         raise HTTPException(400, "No attendance was saved — check that each athlete still exists on the roster.")
 
-    # Sync session.athlete_ids to reflect logged roster
-    athlete_ids = [r["athlete_id"] for r in new_records]
-    await db.sessions.update_one(
-        {"id": session_id},
-        {"$set": {"athlete_ids": athlete_ids, "attendance_logged_at": now().isoformat()}},
-    )
+    all_records = await db.attendance_records.find({"session_id": session_id}, {"_id": 0}).to_list(500)
+    if all_records:
+        await db.sessions.update_one(
+            {"id": session_id},
+            {"$set": {"attendance_logged_at": now().isoformat()}},
+        )
+    else:
+        await db.sessions.update_one(
+            {"id": session_id},
+            {"$unset": {"attendance_logged_at": ""}},
+        )
 
     invoices = []
     if session.get("status") == SessionStatus.completed.value:
@@ -265,7 +281,34 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
             logger.exception("Invoice auto-sync failed after saving attendance on session %s", session_id)
 
     billing = await billing_status_for_session(session_id)
-    out = {"status": "ok", "count": len(new_records), "billing": billing}
+    out = {"status": "ok", "count": len(all_records), "billing": billing}
+    if invoices:
+        out["invoices_synced"] = invoices
+    return out
+
+
+@router.delete("/{session_id}/attendance")
+async def clear_attendance(session_id: str):
+    """Remove all attendance records for a session so coaches can start over."""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    old_records = await db.attendance_records.find({"session_id": session_id}, {"_id": 0}).to_list(500)
+    if not old_records:
+        return {"status": "ok", "count": 0}
+
+    await db.attendance_records.delete_many({"session_id": session_id})
+    await db.sessions.update_one({"id": session_id}, {"$unset": {"attendance_logged_at": ""}})
+
+    invoices = []
+    if session.get("status") == SessionStatus.completed.value:
+        try:
+            invoices = await auto_sync_invoices_for_session(session_id)
+        except Exception:
+            logger.exception("Invoice auto-sync failed after clearing attendance on session %s", session_id)
+
+    out = {"status": "ok", "count": 0}
     if invoices:
         out["invoices_synced"] = invoices
     return out

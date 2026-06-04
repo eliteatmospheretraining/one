@@ -11,7 +11,7 @@ import {
 } from "../components/ui/dropdown-menu";
 import { ATTENDANCE_CHIP_LABEL, PROGRAM_LABEL, SESSION_STATUS_STYLES, attendanceOptionsForAthlete, fmtDate, fmtMoney, fmtTime, formatAthletePrograms, uiAttendanceType } from "../lib/format";
 import { SESSION } from "../lib/testIds";
-import { CheckCircle2, ClipboardCopy, MapPin } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, MapPin, RotateCcw } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 import { toast } from "sonner";
 
@@ -125,6 +125,27 @@ export default function SessionDetail() {
         }
     }
 
+    async function resetAttendance() {
+        if (!window.confirm("Clear all saved attendance for this session? You can mark everyone again.")) return;
+        setSaving(true);
+        try {
+            const r = await api.delete(`/sessions/${id}/attendance`);
+            const synced = r.data?.invoices_synced || [];
+            if (synced.length > 0) {
+                const nums = synced.map((s) => s.invoice_number).join(", ");
+                toast.success(`Attendance reset · Draft invoice ${nums} updated`);
+            } else {
+                toast.success("Attendance reset");
+            }
+            setMarks({});
+            await load();
+        } catch (e) {
+            toast.error(formatApiError(e) || "Could not reset attendance");
+        } finally {
+            setSaving(false);
+        }
+    }
+
     async function copyFromPrevious() {
         try {
             const r = await api.get(`/sessions/${id}/last-attendance`);
@@ -150,6 +171,7 @@ export default function SessionDetail() {
     }
 
     const attendanceComplete = Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
+    const hasSavedAttendance = (data.records || []).length > 0 || Boolean(session.attendance_logged_at);
 
     async function pickStatus(nextStatus) {
         if (nextStatus === session.status) return;
@@ -308,6 +330,17 @@ export default function SessionDetail() {
                             >
                                 <ClipboardCopy size={12} className="mr-1" strokeWidth={1.75} /> Copy previous
                             </button>
+                            {hasSavedAttendance && (
+                                <button
+                                    data-testid="session-reset-attendance-btn"
+                                    onClick={resetAttendance}
+                                    disabled={saving}
+                                    className="eat-btn-ghost h-9 text-xs px-2"
+                                    title="Clear saved attendance and start over"
+                                >
+                                    <RotateCcw size={12} className="mr-1" strokeWidth={1.75} /> Reset
+                                </button>
+                            )}
                             <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
                                 {Object.keys(marks).length}/{roster.length} marked
                             </span>

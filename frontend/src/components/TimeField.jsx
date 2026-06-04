@@ -37,7 +37,7 @@ export function TimeField({
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle rounded-[2px] text-paper"
+                className="z-[110] w-[max(15.75rem,var(--radix-popover-trigger-width))] min-w-[15.75rem] max-w-[calc(100vw-1.5rem)] p-0 bg-mid border border-subtle rounded-[2px] text-paper overflow-hidden"
             >
                 <EatTimePicker key={open ? "open" : "closed"} value={value} onChange={onChange} />
             </PopoverContent>
