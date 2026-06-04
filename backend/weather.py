@@ -1,4 +1,7 @@
-"""Current weather for the home dashboard (Miami / Brickell default)."""
+"""Current weather for the home dashboard (Miami / Brickell default).
+
+Served at GET /api/weather — Open-Meteo with NOAA NWS fallback.
+"""
 from __future__ import annotations
 
 import logging
