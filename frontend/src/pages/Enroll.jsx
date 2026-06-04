@@ -257,9 +257,9 @@ export default function Enroll() {
 
             <form className="enroll-fb" onSubmit={submit}>
                 <section className="enroll-section" ref={setSectionRef(0)}>
-                <span className="enroll-cl">
+                <div className="enroll-sl">
                     Program of Interest <span className="enroll-rq">*</span>
-                </span>
+                </div>
                 <div className="enroll-cr">
                     {PROGRAMS.map((p) => (
                         <button

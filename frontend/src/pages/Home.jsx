@@ -73,44 +73,11 @@ function WeatherWidget() {
         let mounted = true;
         async function loadWeather() {
             try {
-                const zresp = await fetch("https://api.zippopotam.us/us/33351");
-                if (!zresp.ok) throw new Error("No geo");
-                const zjson = await zresp.json();
-                const place = (zjson.places && zjson.places[0]) || null;
-                const lat = place?.latitude;
-                const lon = place?.longitude;
-                if (!lat || !lon) throw new Error("No coords");
-
-                const wresp = await fetch(
-                    `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current_weather=true&timezone=America%2FNew_York`
-                );
-                if (!wresp.ok) throw new Error("Weather fetch failed");
-                const wjson = await wresp.json();
-                const cw = wjson.current_weather;
-                if (!cw) throw new Error("No current weather");
-                const c = Number(cw.temperature);
-                const f = Math.round((c * 9) / 5 + 32);
-                const code = Number(cw.weathercode);
-                const map = {
-                    0: "Clear",
-                    1: "Mainly clear",
-                    2: "Partly cloudy",
-                    3: "Overcast",
-                    45: "Fog",
-                    48: "Depositing rime fog",
-                    51: "Light drizzle",
-                    53: "Moderate drizzle",
-                    55: "Dense drizzle",
-                    61: "Slight rain",
-                    63: "Moderate rain",
-                    65: "Heavy rain",
-                    80: "Rain showers",
-                    95: "Thunderstorm",
-                };
+                const r = await api.get("/weather");
                 if (!mounted) return;
-                setTempF(f);
-                setWeatherCode(code);
-                setDesc(map[code] || "Weather");
+                setTempF(r.data.temp_f);
+                setWeatherCode(r.data.weathercode);
+                setDesc(r.data.description);
             } catch {
                 if (!mounted) return;
                 setErr(true);

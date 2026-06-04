@@ -25,6 +25,7 @@ from routes_invoice_access import router as invoice_access_router  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
 from routes_sessions import router as sessions_router  # noqa: E402
 from routes_enrollment import router as enrollment_router  # noqa: E402
+from weather import router as weather_router  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +34,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Elite Atmosphere Training Portal")
+
+
+@app.get("/")
+async def health():
+    return {"app": "EAT Portal", "status": "ok"}
+
 
 api_router = APIRouter(prefix="/api")
 
@@ -78,6 +85,7 @@ api_router.include_router(invoices_router)
 api_router.include_router(invoice_access_router)
 api_router.include_router(roster_router)
 api_router.include_router(enrollment_router)
+api_router.include_router(weather_router)
 
 app.include_router(api_router)
 
