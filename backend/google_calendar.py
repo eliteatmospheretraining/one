@@ -60,6 +60,12 @@ async def google_login(coach: dict = Depends(get_current_coach)):
         include_granted_scopes="true",
         state=coach["id"],
     )
+    # PKCE: authorization_url sets flow.code_verifier; callback must send it on token exchange.
+    if flow.code_verifier:
+        await db.coaches.update_one(
+            {"id": coach["id"]},
+            {"$set": {"google_oauth_pkce_verifier": flow.code_verifier}},
+        )
     return {"authorization_url": url}
 
 
@@ -73,43 +79,56 @@ async def google_callback(code: str = Query(...), state: str = Query(...)):
     if not coach:
         raise HTTPException(400, "Unknown coach state")
 
-    token_resp = requests.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "code": code,
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "redirect_uri": REDIRECT_URI,
-            "grant_type": "authorization_code",
-        },
-        timeout=15,
-    ).json()
-    if "error" in token_resp or "access_token" not in token_resp:
-        logger.error(f"Google token exchange failed: {token_resp}")
+    pkce_verifier = coach.get("google_oauth_pkce_verifier")
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=REDIRECT_URI)
+    if pkce_verifier:
+        flow.code_verifier = pkce_verifier
+
+    try:
+        await asyncio.to_thread(flow.fetch_token, code=code)
+    except Exception as exc:
+        logger.error("Google token exchange failed: %s", exc)
+        await db.coaches.update_one(
+            {"id": coach["id"]},
+            {"$unset": {"google_oauth_pkce_verifier": ""}},
+        )
+        return RedirectResponse(f"{APP_BASE_URL}/settings?google=error")
+
+    creds = flow.credentials
+    if not creds or not creds.token:
+        logger.error("Google token exchange returned no credentials")
+        await db.coaches.update_one(
+            {"id": coach["id"]},
+            {"$unset": {"google_oauth_pkce_verifier": ""}},
+        )
         return RedirectResponse(f"{APP_BASE_URL}/settings?google=error")
 
     user_info = requests.get(
         "https://www.googleapis.com/oauth2/v2/userinfo",
-        headers={"Authorization": f"Bearer {token_resp['access_token']}"},
+        headers={"Authorization": f"Bearer {creds.token}"},
         timeout=10,
     ).json()
 
-    # Compute absolute expiry
-    expires_in = token_resp.get("expires_in", 3600)
-    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))).isoformat()
+    if creds.expiry:
+        expires_at = creds.expiry.replace(tzinfo=timezone.utc).isoformat()
+    else:
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=3600)).isoformat()
 
     payload = {
         "google_tokens": {
-            "access_token": token_resp["access_token"],
-            "refresh_token": token_resp.get("refresh_token") or coach.get("google_tokens", {}).get("refresh_token"),
-            "scope": token_resp.get("scope"),
-            "token_type": token_resp.get("token_type", "Bearer"),
+            "access_token": creds.token,
+            "refresh_token": creds.refresh_token or coach.get("google_tokens", {}).get("refresh_token"),
+            "scope": " ".join(creds.scopes) if creds.scopes else None,
+            "token_type": "Bearer",
             "expires_at": expires_at,
         },
         "google_email": user_info.get("email"),
         "google_connected_at": now().isoformat(),
     }
-    await db.coaches.update_one({"id": coach["id"]}, {"$set": payload})
+    await db.coaches.update_one(
+        {"id": coach["id"]},
+        {"$set": payload, "$unset": {"google_oauth_pkce_verifier": ""}},
+    )
 
     # Backfill: push all upcoming sessions on first connect
     asyncio.create_task(backfill_upcoming(coach["id"]))
@@ -133,7 +152,12 @@ async def google_status(coach: dict = Depends(get_current_coach)):
 async def google_disconnect(coach: dict = Depends(get_current_coach)):
     await db.coaches.update_one(
         {"id": coach["id"]},
-        {"$unset": {"google_tokens": "", "google_email": "", "google_connected_at": ""}},
+        {"$unset": {
+            "google_tokens": "",
+            "google_email": "",
+            "google_connected_at": "",
+            "google_oauth_pkce_verifier": "",
+        }},
     )
     return {"status": "disconnected"}
 
