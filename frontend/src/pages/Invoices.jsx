@@ -172,7 +172,7 @@ export default function Invoices() {
                         <button
                             type="button"
                             onClick={() => setSelectedYear((y) => Math.max(FIRST_DATA_YEAR, y - 1))}
-                            className="h-11 px-3 flex items-center justify-center text-muted hover:text-paper hover:bg-subtle/50 disabled:opacity-30 disabled:pointer-events-none border-r border-subtle"
+                            className="h-11 px-3 flex items-center justify-center text-muted hover:text-paper hover:bg-subtle/50 disabled:opacity-30 disabled:pointer-events-none border-r border-s[...]"
                             aria-label="Previous year"
                             disabled={selectedYear <= FIRST_DATA_YEAR}
                         >
@@ -187,7 +187,7 @@ export default function Invoices() {
                         <button
                             type="button"
                             onClick={() => setSelectedYear((y) => Math.min(revenueYearMax, y + 1))}
-                            className="h-11 px-3 flex items-center justify-end text-muted hover:text-paper hover:bg-subtle/50 disabled:opacity-30 disabled:pointer-events-none border-l border-subtle"
+                            className="h-11 px-3 flex items-center justify-end text-muted hover:text-paper hover:bg-subtle/50 disabled:opacity-30 disabled:pointer-events-none border-l border-subt[...]"
                             aria-label="Next year"
                             disabled={selectedYear >= revenueYearMax}
                         >
@@ -221,7 +221,7 @@ export default function Invoices() {
                         <button
                             key={f}
                             onClick={() => setInvoiceFilter(f)}
-                            className={`text-xs uppercase tracking-wider2 px-3 py-1 rounded transition-colors ${invoiceFilter === f ? "bg-paper text-ink" : "border border-subtle text-paper hover:border-paper"}`}
+                            className={`text-xs uppercase tracking-wider2 px-3 py-1 rounded transition-colors ${invoiceFilter === f ? "bg-paper text-ink" : "border border-subtle text-paper hover:[...]`}
                         >
                             {f === "this_month" ? "This Month" : f === "last_month" ? "Last Month" : f === "last_3_months" ? "Last 3 Months" : "All"}
                         </button>
@@ -578,7 +578,7 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
             setLoading(false);
         }
     }
-    useEffect(() => { if (open) load(); /* eslint-disable-next-line */ }, [open, invoiceId]);
+    useEffect(() => { if (open) load(); }, [open, invoiceId]);
 
     async function send() {
         if (!window.confirm("Email the guardian a magic link to view this invoice (PDF attached)?")) return;
@@ -670,7 +670,7 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                         <InvoiceStatusPill status={data.invoice.status} testId={`detail-status-${invoiceId}`} />
                     </div>
                     <div className="flex items-center gap-8 text-sm">
-                        <div><div className="eat-label">Period</div><div className="text-paper mt-0.5" style={{ fontWeight: 500 }}>{fmtInvoiceDate(data.invoice.period_start)} – {fmtInvoiceDate(data.invoice.period_end)}</div></div>
+                        <div><div className="eat-label">Period</div><div className="text-paper mt-0.5" style={{ fontWeight: 500 }}>{fmtInvoiceDate(data.invoice.period_start)} – {fmtInvoiceDate([...]}
                         <div><div className="eat-label">Issued</div><div className="text-paper mt-0.5" style={{ fontWeight: 500 }}>{fmtInvoiceDate(data.invoice.issue_date)}</div></div>
                     </div>
 

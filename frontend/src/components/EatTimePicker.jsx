@@ -37,7 +37,7 @@ function TimeScrollColumn({ label, items, active, onPick, format }) {
         selected?.scrollIntoView({ block: "center" });
     }, [active, items.length]);
 
-    useScrollWheel(scrollRef, [items.length]);
+    useScrollWheel(scrollRef, [scrollRef, items.length]);
 
     return (
         <div className="flex-1 flex flex-col min-w-0">

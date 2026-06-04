@@ -68,7 +68,7 @@ export default function SessionDetail() {
         }
     }
 
-    useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+    useEffect(() => { load(); }, [id]);
 
     if (loading || !data) {
         return <div className="p-10 text-center text-muted uppercase tracking-wider2 text-sm">Loading…</div>;

@@ -5,7 +5,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { fmtDate } from "../lib/format";
 
 /**
- * Dark-themed date field replacing the native `<input type="date">`.
+ * Dark-themed date field replacing the native `<input type="date"`.
  * Value/onChange use ISO yyyy-mm-dd strings to keep the existing form contracts.
  */
 export function DateField({
@@ -27,7 +27,7 @@ export function DateField({
             setViewMonth(selected ?? new Date());
             setPanel("days");
         }
-    }, [open, value]);
+    }, [open, selected]);
 
     function handle(d) {
         if (!d) {
@@ -59,7 +59,7 @@ export function DateField({
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle rounded-[2px] text-paper"
+                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle roun[...]"
             >
                 <EatDatePicker
                     selected={selected}
