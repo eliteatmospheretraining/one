@@ -243,15 +243,17 @@ export default function SessionDetail() {
 
             <div className="px-5 md:px-10 mt-6">
                 {/* Meta row */}
-                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 text-sm text-muted pb-5 border-b border-subtle">
-                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 w-full text-sm text-muted pb-5 border-b border-subtle">
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 min-w-0 flex-1">
                         <span className="uppercase tracking-wider2 text-paper" style={{ fontWeight: 500 }}>
                             {fmtDate(session.date, { weekday: "long", month: "long", day: "numeric" })}
                         </span>
                         {session.location && (
                             <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {session.location}</span>
                         )}
-                        {session.end_time && <span>Ends {fmtTime(session.end_time)}</span>}
+                        {session.end_time && (
+                            <span className="hidden md:inline">Ends {fmtTime(session.end_time)}</span>
+                        )}
                         {billing.length > 0 && (
                             <span className="text-xs text-accent font-light">
                                 On invoice{" "}
@@ -271,6 +273,9 @@ export default function SessionDetail() {
                             </span>
                         )}
                     </div>
+                    {session.end_time && (
+                        <span className="md:hidden shrink-0">Ends {fmtTime(session.end_time)}</span>
+                    )}
                     <div className="hidden md:flex flex-wrap items-center gap-x-5 gap-y-2 shrink-0 ml-auto">
                         <button
                             type="button"
