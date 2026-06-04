@@ -15,12 +15,16 @@ load_dotenv(ROOT_DIR / ".env")
 # Imports that need env loaded
 from auth import ensure_admin_seeded, router as auth_router  # noqa: E402
 from google_calendar import router as google_router  # noqa: E402
-from models import RATE_CARD  # noqa: E402
+from notion_rates import notion_configured, refresh_rate_card_from_notion  # noqa: E402
+from rate_card_store import get_rate_card, get_rate_card_status  # noqa: E402
+from routes_roster import router as roster_router  # noqa: E402
 from routes_athletes import router as athletes_router  # noqa: E402
 from routes_families import router as families_router  # noqa: E402
 from routes_family_summary import router as family_summary_router  # noqa: E402
+from routes_invoice_access import router as invoice_access_router  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
 from routes_sessions import router as sessions_router  # noqa: E402
+from routes_enrollment import router as enrollment_router  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,8 +43,18 @@ async def root():
 
 
 @api_router.get("/rate-card")
-async def get_rate_card():
-    return RATE_CARD
+async def rate_card():
+    return get_rate_card()
+
+
+@api_router.get("/rate-card/status")
+async def rate_card_status():
+    return get_rate_card_status()
+
+
+@api_router.post("/rate-card/refresh")
+async def rate_card_refresh():
+    return await refresh_rate_card_from_notion()
 
 
 @api_router.get("/business-info")
@@ -61,6 +75,9 @@ api_router.include_router(family_summary_router)
 api_router.include_router(athletes_router)
 api_router.include_router(sessions_router)
 api_router.include_router(invoices_router)
+api_router.include_router(invoice_access_router)
+api_router.include_router(roster_router)
+api_router.include_router(enrollment_router)
 
 app.include_router(api_router)
 
@@ -76,4 +93,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     await ensure_admin_seeded()
+    if notion_configured():
+        await refresh_rate_card_from_notion()
+    else:
+        logger.info("Rate card: built-in defaults (Notion not configured)")
     logger.info("EAT Portal backend ready.")

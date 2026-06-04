@@ -22,10 +22,22 @@ api.interceptors.response.use(
     (err) => {
         if (err.response?.status === 401) {
             clearToken();
-            if (!window.location.pathname.startsWith("/login")) {
+            const path = window.location.pathname;
+            if (!path.startsWith("/login") && !path.startsWith("/enroll") && !path.startsWith("/invoice")) {
                 window.location.href = "/login";
             }
         }
         return Promise.reject(err);
     }
 );
+
+/** Human-readable message from a FastAPI / axios error. */
+export function formatApiError(err) {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        return detail.map((item) => item?.msg || JSON.stringify(item)).filter(Boolean).join("; ");
+    }
+    if (err?.message) return err.message;
+    return null;
+}

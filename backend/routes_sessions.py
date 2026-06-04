@@ -1,8 +1,11 @@
 """Sessions + attendance routes."""
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -10,6 +13,8 @@ from auth import get_current_coach
 from billing import compute_billed_rate
 from db import db, now, serialize
 from google_calendar import delete_session_event, push_session
+from invoice_auto import auto_sync_invoices_for_session
+from invoice_billing import billing_status_for_session, relink_invoice_line_items
 from models import (
     AttendanceRecord,
     AttendanceSave,
@@ -59,7 +64,7 @@ async def get_session(session_id: str):
     return s
 
 
-@router.patch("/{session_id}", response_model=TrainingSession)
+@router.patch("/{session_id}")
 async def update_session(session_id: str, payload: SessionUpdate):
     updates = {}
     for k, v in payload.model_dump(exclude_unset=True).items():
@@ -75,12 +80,26 @@ async def update_session(session_id: str, payload: SessionUpdate):
         if count == 0:
             raise HTTPException(400, "Save attendance before marking the session complete.")
 
+    became_completed = updates.get("status") == SessionStatus.completed.value
+
     if updates:
         res = await db.sessions.update_one({"id": session_id}, {"$set": updates})
         if res.matched_count == 0:
             raise HTTPException(404, "Session not found")
     await push_session(session_id)
-    return await db.sessions.find_one({"id": session_id}, {"_id": 0})
+
+    invoices = []
+    if became_completed:
+        try:
+            invoices = await auto_sync_invoices_for_session(session_id)
+        except Exception:
+            logger.exception("Invoice auto-sync failed after completing session %s", session_id)
+
+    session_doc = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    extras = {"billing": await billing_status_for_session(session_id)}
+    if invoices:
+        extras["invoices_synced"] = invoices
+    return {**session_doc, **extras}
 
 
 @router.delete("/{session_id}")
@@ -133,7 +152,14 @@ async def get_attendance(session_id: str):
         athletes = await db.athletes.find({"id": {"$in": session["athlete_ids"]}}, {"_id": 0}).to_list(500)
     else:
         athletes = await db.athletes.find(
-            {"program_type": session["session_type"], "status": "active"}, {"_id": 0}
+            {
+                "status": "active",
+                "$or": [
+                    {"program_types": session["session_type"]},
+                    {"program_type": session["session_type"]},
+                ],
+            },
+            {"_id": 0},
         ).sort("full_name", 1).to_list(500)
 
     rec_by_athlete = {r["athlete_id"]: r for r in records}
@@ -153,6 +179,9 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
     if not session:
         raise HTTPException(404, "Session not found")
 
+    old_records = await db.attendance_records.find({"session_id": session_id}, {"_id": 0}).to_list(500)
+    old_id_by_athlete = {r["athlete_id"]: r["id"] for r in old_records}
+
     # Wipe & re-insert for simplicity (snapshot rates fresh on each save)
     await db.attendance_records.delete_many({"session_id": session_id})
 
@@ -161,11 +190,28 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
         athlete = await db.athletes.find_one({"id": entry.athlete_id}, {"_id": 0})
         if not athlete:
             continue
-        rate = compute_billed_rate(
-            entry.attendance_type,
-            ProgramType(athlete["program_type"]),
-            athlete.get("rate_override"),
-        )
+        try:
+            from billing import billing_program_type, compute_billed_rate
+
+            program_type = billing_program_type(athlete, session)
+        except ValueError as e:
+            raise HTTPException(400, f"Invalid program type for {athlete.get('full_name', entry.athlete_id)}") from e
+        override = athlete.get("rate_override")
+        if override is not None:
+            try:
+                override = float(override)
+            except (TypeError, ValueError) as e:
+                raise HTTPException(400, f"Invalid rate override for {athlete.get('full_name', entry.athlete_id)}") from e
+        try:
+            rate = compute_billed_rate(
+                entry.attendance_type,
+                program_type,
+                override,
+                session=session,
+                rate_type=athlete.get("rate_type"),
+            )
+        except (KeyError, TypeError, ValueError) as e:
+            raise HTTPException(400, f"Could not calculate billing rate for {athlete.get('full_name', entry.athlete_id)}") from e
         rec = AttendanceRecord(
             session_id=session_id,
             athlete_id=entry.athlete_id,
@@ -176,6 +222,10 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
 
     if new_records:
         await db.attendance_records.insert_many(new_records)
+        new_id_by_athlete = {r["athlete_id"]: r["id"] for r in new_records}
+        await relink_invoice_line_items(old_id_by_athlete, new_id_by_athlete)
+    elif payload.entries:
+        raise HTTPException(400, "No attendance was saved — check that each athlete still exists on the roster.")
 
     # Sync session.athlete_ids to reflect logged roster
     athlete_ids = [r["athlete_id"] for r in new_records]
@@ -184,4 +234,57 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
         {"$set": {"athlete_ids": athlete_ids, "attendance_logged_at": now().isoformat()}},
     )
 
-    return {"status": "ok", "count": len(new_records)}
+    invoices = []
+    if session.get("status") == SessionStatus.completed.value:
+        try:
+            invoices = await auto_sync_invoices_for_session(session_id)
+        except Exception:
+            logger.exception("Invoice auto-sync failed after saving attendance on session %s", session_id)
+
+    billing = await billing_status_for_session(session_id)
+    out = {"status": "ok", "count": len(new_records), "billing": billing}
+    if invoices:
+        out["invoices_synced"] = invoices
+    return out
+
+
+@router.get("/{session_id}/billing")
+async def session_billing(session_id: str):
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    billing = await billing_status_for_session(session_id)
+    return {"session_id": session_id, "billing": billing}
+
+
+@router.post("/{session_id}/sync-invoice")
+async def sync_session_invoice(session_id: str):
+    """Create or refresh the monthly draft invoice for this completed session's family."""
+    session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if session.get("status") != SessionStatus.completed.value:
+        raise HTTPException(400, "Complete the session before syncing to an invoice.")
+
+    existing = await billing_status_for_session(session_id)
+    if existing:
+        return {
+            "status": "already_billed",
+            "billing": existing,
+            "message": "This session is already on an invoice.",
+        }
+
+    try:
+        synced = await auto_sync_invoices_for_session(session_id)
+    except Exception as e:
+        logger.exception("Manual invoice sync failed for session %s", session_id)
+        raise HTTPException(500, "Could not sync invoice") from e
+
+    if synced:
+        return {"status": "synced", "invoices_synced": synced, "billing": await billing_status_for_session(session_id)}
+
+    return {
+        "status": "nothing_to_add",
+        "message": "No billable attendance to add (absent, zero rate, or not linked to a family).",
+        "billing": await billing_status_for_session(session_id),
+    }

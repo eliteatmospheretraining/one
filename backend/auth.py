@@ -1,4 +1,4 @@
-"""Magic-link auth for the EAT portal. Single-admin allowlist."""
+"""Magic-link and password auth for the EAT portal. Single-admin allowlist."""
 from __future__ import annotations
 
 import asyncio
@@ -8,13 +8,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 import jwt
 import resend
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from db import db, now, serialize
-from models import Coach, MagicLinkRequest, MagicLinkVerify
+from models import Coach, MagicLinkRequest, MagicLinkVerify, PasswordChangeRequest, PasswordLoginRequest
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 JWT_EXP_DAYS = 30
 ADMIN_EMAIL = os.environ["ADMIN_EMAIL"].lower().strip()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 SENDER_EMAIL = os.environ["SENDER_EMAIL"]
 APP_BASE_URL = os.environ["APP_BASE_URL"].rstrip("/")
 DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
@@ -32,13 +34,38 @@ DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 resend.api_key = os.environ["RESEND_API_KEY"]
 
 
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+def _coach_public(coach: dict) -> dict:
+    return {k: v for k, v in coach.items() if k != "password_hash"}
+
+
 async def ensure_admin_seeded():
-    """Make sure the admin coach exists."""
+    """Make sure the admin coach exists (optional password from ADMIN_PASSWORD)."""
     existing = await db.coaches.find_one({"email": ADMIN_EMAIL}, {"_id": 0})
+    pwd_hash = _hash_password(ADMIN_PASSWORD) if ADMIN_PASSWORD else None
+
     if not existing:
-        coach = Coach(name="Coach Rico", email=ADMIN_EMAIL, role="admin")
-        await db.coaches.insert_one(serialize(coach.model_dump()))
+        doc = serialize(Coach(name="Coach Rico", email=ADMIN_EMAIL, role="admin").model_dump())
+        if pwd_hash:
+            doc["password_hash"] = pwd_hash
+        await db.coaches.insert_one(doc)
         logger.info(f"Seeded admin coach: {ADMIN_EMAIL}")
+    elif pwd_hash and not existing.get("password_hash"):
+        await db.coaches.update_one(
+            {"email": ADMIN_EMAIL},
+            {"$set": {"password_hash": pwd_hash}},
+        )
+        logger.info(f"Set admin password for: {ADMIN_EMAIL}")
 
 
 def _create_jwt(email: str, coach_id: str) -> str:
@@ -65,31 +92,20 @@ async def get_current_coach(creds: Optional[HTTPAuthorizationCredentials] = Depe
 
 
 def _build_email_html(magic_url: str) -> str:
-    return f"""
-<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#0A0A0A;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0A0A0A;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border:3px solid #0A0A0A;">
-        <tr><td style="padding:32px;">
-          <div style="font-family:'Arial Black',Arial,sans-serif;font-size:28px;font-weight:900;letter-spacing:-1px;color:#0A0A0A;text-transform:uppercase;">Elite Atmosphere Training</div>
-          <div style="height:6px;background:#CCFF00;margin:16px 0 24px 0;width:60px;"></div>
-          <h1 style="font-size:22px;color:#0A0A0A;margin:0 0 12px 0;text-transform:uppercase;letter-spacing:1px;">Your sign-in link</h1>
-          <p style="font-size:15px;color:#52525B;line-height:1.6;margin:0 0 24px 0;">
+    from invoice_emails import EAT_ACCENT, EAT_INK, EAT_MUTED, email_layout
+
+    body = f"""
+          <h1 style="font-family:Impact,Arial Black,Arial,sans-serif;font-size:20px;color:{EAT_INK};margin:0 0 16px 0;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;">Your sign-in link</h1>
+          <p style="font-size:15px;color:{EAT_INK};line-height:1.65;margin:0 0 24px 0;">
             Tap the button below to sign in to the EAT admin portal. This link expires in 30 minutes and can be used once.
           </p>
-          <a href="{magic_url}" style="display:inline-block;background:#CCFF00;color:#0A0A0A;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:16px 32px;text-decoration:none;border:2px solid #0A0A0A;">Sign In to EAT</a>
-          <p style="font-size:12px;color:#71717A;margin:32px 0 0 0;line-height:1.6;">
-            If the button doesn't work, copy this link:<br>
-            <span style="word-break:break-all;color:#0A0A0A;">{magic_url}</span>
+          <a href="{magic_url}" style="display:inline-block;background:{EAT_ACCENT};color:{EAT_INK};font-weight:700;text-transform:uppercase;letter-spacing:0.12em;padding:14px 28px;text-decoration:none;border-radius:2px;font-size:12px;">Sign in to EAT</a>
+          <p style="font-size:12px;color:{EAT_MUTED};margin:28px 0 0 0;line-height:1.65;">
+            If the button doesn&rsquo;t work, copy this link:<br>
+            <span style="word-break:break-all;color:{EAT_INK};">{magic_url}</span>
           </p>
-        </td></tr>
-      </table>
-      <div style="color:#71717A;font-size:11px;margin-top:24px;">Elite Atmosphere Training · Miami, FL</div>
-    </td></tr>
-  </table>
-</body></html>
-"""
+    """
+    return email_layout(body_html=body)
 
 
 @router.post("/request-magic-link")
@@ -131,6 +147,23 @@ async def request_magic_link(req: MagicLinkRequest):
     return resp
 
 
+@router.post("/login")
+async def login_with_password(req: PasswordLoginRequest):
+    email = req.email.lower().strip()
+    if email != ADMIN_EMAIL:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    coach = await db.coaches.find_one({"email": email}, {"_id": 0})
+    if not coach or not coach.get("password_hash"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    if not _verify_password(req.password, coach["password_hash"]):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    jwt_token = _create_jwt(coach["email"], coach["id"])
+    return {"token": jwt_token, "coach": _coach_public(coach)}
+
+
 @router.post("/verify-magic-link")
 async def verify_magic_link(req: MagicLinkVerify):
     rec = await db.magic_links.find_one({"token": req.token}, {"_id": 0})
@@ -152,9 +185,25 @@ async def verify_magic_link(req: MagicLinkVerify):
     await db.magic_links.update_one({"token": req.token}, {"$set": {"used": True, "used_at": now().isoformat()}})
 
     jwt_token = _create_jwt(coach["email"], coach["id"])
-    return {"token": jwt_token, "coach": coach}
+    return {"token": jwt_token, "coach": _coach_public(coach)}
 
 
 @router.get("/me")
 async def me(coach: dict = Depends(get_current_coach)):
-    return coach
+    return _coach_public(coach)
+
+
+@router.post("/change-password")
+async def change_password(req: PasswordChangeRequest, coach: dict = Depends(get_current_coach)):
+    stored = await db.coaches.find_one({"id": coach["id"]}, {"_id": 0})
+    if not stored or not stored.get("password_hash"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password login is not set up for this account")
+
+    if not _verify_password(req.current_password, stored["password_hash"]):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    await db.coaches.update_one(
+        {"id": coach["id"]},
+        {"$set": {"password_hash": _hash_password(req.new_password)}},
+    )
+    return {"status": "ok"}

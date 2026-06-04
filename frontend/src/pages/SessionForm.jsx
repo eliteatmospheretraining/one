@@ -1,11 +1,41 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
+import { LocationField } from "../components/LocationField";
+import { TimeField } from "../components/TimeField";
+import { addLocationPreset, mergeLocationPresetsFromSessions } from "../lib/locationPresets";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
 import { SESSION_FORM } from "../lib/testIds";
-import { PROGRAM_LABEL } from "../lib/format";
+import {
+    PROGRAM_LABEL,
+    REPEAT_FREQUENCIES,
+    REPEAT_WEEKDAY_LABELS,
+    addHoursToTime24,
+    athleteHasProgram,
+    buildRecurringSessionDates,
+    defaultRepeatWeekdays,
+    fmtDate,
+    nextHourStartFromNow,
+    snapTimeToQuarterHour,
+} from "../lib/format";
 import { toast } from "sonner";
+
+function EatCheckbox({ checked, onChange, testId, children }) {
+    return (
+        <label className="flex items-start gap-3 cursor-pointer" data-testid={testId}>
+            <span
+                className={`mt-0.5 w-4 h-4 border shrink-0 flex items-center justify-center ${
+                    checked ? "bg-accent border-accent" : "bg-mid border-subtle"
+                }`}
+            >
+                {checked && <span className="text-ink text-xs leading-none">✓</span>}
+            </span>
+            <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+            <span className="min-w-0">{children}</span>
+        </label>
+    );
+}
 
 export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [], session, onSaved }) {
     const isEdit = !!session;
@@ -16,39 +46,93 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
     const [location, setLocation] = useState("");
     const [notes, setNotes] = useState("");
     const [selectedIds, setSelectedIds] = useState([]);
+    const [repeat, setRepeat] = useState(false);
+    const [repeatFrequency, setRepeatFrequency] = useState("weekly");
+    const [repeatInterval, setRepeatInterval] = useState(1);
+    const [repeatDuration, setRepeatDuration] = useState(1);
+    const [repeatWeekdays, setRepeatWeekdays] = useState(() => defaultRepeatWeekdays("full_time"));
     const [saving, setSaving] = useState(false);
+
+    const recurringDates = useMemo(() => {
+        if (isEdit || !repeat || !date) return [];
+        return buildRecurringSessionDates({
+            startIso: date,
+            frequency: repeatFrequency,
+            interval: repeatInterval,
+            duration: repeatDuration,
+            weekdays: repeatWeekdays,
+        });
+    }, [isEdit, repeat, date, repeatFrequency, repeatInterval, repeatDuration, repeatWeekdays]);
+
+    const durationUnit =
+        repeatFrequency === "monthly" ? "months" : repeatFrequency === "yearly" ? "years" : "weeks";
+
+    useEffect(() => {
+        if (!open) return;
+        api.get("/sessions")
+            .then((r) => mergeLocationPresetsFromSessions(r.data || []))
+            .catch(() => {});
+    }, [open]);
 
     useEffect(() => {
         if (open) {
             if (session) {
                 setDate(session.date);
-                setStartTime(session.start_time || "");
-                setEndTime(session.end_time || "");
+                setStartTime(snapTimeToQuarterHour(session.start_time || ""));
+                setEndTime(snapTimeToQuarterHour(session.end_time || ""));
                 setType(session.session_type);
                 setLocation(session.location || "");
                 setNotes(session.notes || "");
                 setSelectedIds(session.athlete_ids || []);
             } else {
+                const start = nextHourStartFromNow();
                 setDate(defaultDate || "");
-                setStartTime("09:00");
-                setEndTime("12:00");
+                setStartTime(start);
+                setEndTime(addHoursToTime24(start, 5));
                 setType("full_time");
                 setLocation("");
                 setNotes("");
                 setSelectedIds([]);
+                setRepeat(false);
+                setRepeatFrequency("weekly");
+                setRepeatInterval(1);
+                setRepeatDuration(1);
+                setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
             }
         }
     }, [open, session, defaultDate]);
 
-    const filteredAthletes = athletes.filter((a) => a.status === "active" && a.program_type === type);
+    useEffect(() => {
+        if (isEdit || !repeat || repeatFrequency !== "weekly" || type !== "full_time") return;
+        setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
+    }, [type, isEdit, repeat, repeatFrequency]);
+
+    const filteredAthletes = athletes.filter((a) => a.status === "active" && athleteHasProgram(a, type));
 
     const toggle = (id) => {
         setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     };
 
+    function toggleWeekday(index) {
+        setRepeatWeekdays((prev) => prev.map((on, i) => (i === index ? !on : on)));
+    }
+
+    function enableRepeat(checked) {
+        setRepeat(checked);
+        if (!checked) return;
+        if (type === "full_time") {
+            setRepeatFrequency("weekly");
+            setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
+        } else if (date) {
+            const dow = new Date(`${date}T00:00:00`).getDay();
+            const days = defaultRepeatWeekdays();
+            days[dow] = true;
+            setRepeatWeekdays(days);
+        }
+    }
+
     async function submit(e) {
         e.preventDefault();
-        setSaving(true);
         const payload = {
             date,
             start_time: startTime || null,
@@ -58,14 +142,27 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             notes: notes || null,
             athlete_ids: selectedIds,
         };
+        const dates = !isEdit && repeat && date ? recurringDates : [date];
+        if (!isEdit && (!dates.length || !dates[0])) {
+            toast.error(repeat ? "Choose repeat days or a valid date" : "Choose a date");
+            return;
+        }
+        setSaving(true);
         try {
             if (isEdit) {
                 await api.patch(`/sessions/${session.id}`, payload);
                 toast.success("Session updated");
             } else {
-                await api.post(`/sessions`, payload);
-                toast.success("Session created");
+                await Promise.all(
+                    dates.map((sessionDate) =>
+                        api.post(`/sessions`, { ...payload, date: sessionDate })
+                    )
+                );
+                toast.success(
+                    dates.length === 1 ? "Session created" : `Created ${dates.length} sessions`
+                );
             }
+            if (location?.trim()) addLocationPreset(type, location);
             onSaved?.();
         } catch (e) {
             toast.error(e.response?.data?.detail || "Failed to save");
@@ -86,11 +183,15 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="eat-label">Start</label>
-                        <input data-testid={SESSION_FORM.start} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5">
+                            <TimeField value={startTime} onChange={setStartTime} data-testid={SESSION_FORM.start} required />
+                        </div>
                     </div>
                     <div>
                         <label className="eat-label">End</label>
-                        <input data-testid={SESSION_FORM.end} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="eat-input mt-1.5" />
+                        <div className="mt-1.5">
+                            <TimeField value={endTime} onChange={setEndTime} data-testid={SESSION_FORM.end} required />
+                        </div>
                     </div>
                 </div>
 
@@ -108,9 +209,133 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                     </Select>
                 </div>
 
+                {!isEdit && (
+                    <div className="border border-subtle p-4 space-y-3">
+                        <EatCheckbox
+                            checked={repeat}
+                            onChange={(e) => enableRepeat(e.target.checked)}
+                            testId={SESSION_FORM.recurringToggle}
+                        >
+                            <span className="text-paper text-sm" style={{ fontWeight: 500 }}>
+                                Repeat
+                            </span>
+                        </EatCheckbox>
+
+                        {repeat && (
+                            <>
+                                <div>
+                                    <label className="eat-label">Frequency</label>
+                                    <Select value={repeatFrequency} onValueChange={setRepeatFrequency}>
+                                        <SelectTrigger
+                                            data-testid={SESSION_FORM.recurringFrequency}
+                                            className="mt-1.5 h-11"
+                                        >
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {REPEAT_FREQUENCIES.map((f) => (
+                                                <SelectItem key={f.value} value={f.value}>
+                                                    {f.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 text-sm text-paper">
+                                    <span className="text-muted font-light">Every</span>
+                                    <input
+                                        data-testid={SESSION_FORM.recurringInterval}
+                                        type="number"
+                                        min={1}
+                                        max={30}
+                                        value={repeatInterval}
+                                        onChange={(e) =>
+                                            setRepeatInterval(Math.max(1, Math.min(30, Number(e.target.value) || 1)))
+                                        }
+                                        className="eat-input w-14 h-9 text-center px-1"
+                                    />
+                                    <span className="text-muted font-light">
+                                        {repeatFrequency === "daily"
+                                            ? "day"
+                                            : repeatFrequency === "weekly"
+                                              ? "week"
+                                              : repeatFrequency === "monthly"
+                                                ? "month"
+                                                : "year"}
+                                        {repeatInterval === 1 ? "" : "s"}
+                                    </span>
+                                </div>
+
+                                {repeatFrequency === "weekly" && (
+                                    <div>
+                                        <div className="text-xs text-muted font-light mb-2">On</div>
+                                        <div className="flex gap-1">
+                                            {REPEAT_WEEKDAY_LABELS.map((label, index) => {
+                                                const on = repeatWeekdays[index];
+                                                return (
+                                                    <button
+                                                        key={`${label}-${index}`}
+                                                        type="button"
+                                                        data-testid={SESSION_FORM.recurringWeekday(index)}
+                                                        onClick={() => toggleWeekday(index)}
+                                                        className={`w-9 h-9 text-xs uppercase tracking-wider2 border transition-colors ${
+                                                            on
+                                                                ? "bg-accent text-ink border-accent"
+                                                                : "bg-mid text-muted border-subtle hover:border-paper"
+                                                        }`}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center gap-2 text-sm text-paper">
+                                    <span className="text-muted font-light">For</span>
+                                    <input
+                                        data-testid={SESSION_FORM.recurringWeeks}
+                                        type="number"
+                                        min={1}
+                                        max={52}
+                                        value={repeatDuration}
+                                        onChange={(e) =>
+                                            setRepeatDuration(Math.max(1, Math.min(52, Number(e.target.value) || 1)))
+                                        }
+                                        className="eat-input w-14 h-9 text-center px-1"
+                                    />
+                                    <span className="text-muted font-light">{durationUnit}</span>
+                                </div>
+
+                                {recurringDates.length > 0 && (
+                                    <p className="text-xs text-muted font-light">
+                                        {recurringDates.length} session{recurringDates.length === 1 ? "" : "s"} ·{" "}
+                                        {fmtDate(recurringDates[0], { month: "short", day: "numeric" })}
+                                        {" – "}
+                                        {fmtDate(recurringDates[recurringDates.length - 1], {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                        })}
+                                    </p>
+                                )}
+                            </>
+                        )}
+                    </div>
+                )}
+
                 <div>
                     <label className="eat-label">Location</label>
-                    <input data-testid={SESSION_FORM.location} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Court 3, Tropical Park" className="eat-input mt-1.5" />
+                    <div className="mt-1.5">
+                        <LocationField
+                            value={location}
+                            onChange={setLocation}
+                            sessionType={type}
+                            data-testid={SESSION_FORM.location}
+                        />
+                    </div>
                 </div>
 
                 <div>
@@ -143,7 +368,13 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                 </div>
 
                 <button data-testid={SESSION_FORM.submit} disabled={saving} type="submit" className="eat-btn-primary w-full mt-2 h-12">
-                    {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Session"}
+                    {saving
+                        ? "Saving…"
+                        : isEdit
+                          ? "Save Changes"
+                          : repeat && recurringDates.length > 1
+                            ? `Create ${recurringDates.length} Sessions`
+                            : "Create Session"}
                 </button>
             </form>
         </Modal>

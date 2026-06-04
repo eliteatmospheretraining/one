@@ -15,6 +15,8 @@ import Roster from "./pages/Roster";
 import Invoices from "./pages/Invoices";
 import Settings from "./pages/Settings";
 import SessionDetail from "./pages/SessionDetail";
+import InvoiceView from "./pages/InvoiceView";
+import Enroll from "./pages/Enroll";
 
 export default function App() {
     return (
@@ -25,6 +27,8 @@ export default function App() {
                     <Routes>
                         <Route path="/login" element={<Login />} />
                         <Route path="/verify" element={<Login />} />
+                        <Route path="/enroll" element={<Enroll />} />
+                        <Route path="/invoice" element={<InvoiceView />} />
                         <Route
                             path="/home"
                             element={

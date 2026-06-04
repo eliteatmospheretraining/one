@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 import requests
-from weasyprint import HTML
 
 BUSINESS_NAME = os.environ.get("BUSINESS_NAME", "Elite Atmosphere Training")
 BUSINESS_ADDRESS = os.environ.get("BUSINESS_ADDRESS", "")
@@ -81,7 +80,7 @@ def render_invoice_pdf(
     paid_block = ""
     if paid and payment_date:
         paid_block = f"""
-        <div class="paid-note">Payment received in full on {payment_date.strftime('%B %d, %Y')} via {payment_method or 'Zelle'}.</div>
+        <div class="paid-note">Payment received in full on {payment_date.strftime('%m-%d-%Y')} via {payment_method or 'Zelle'}.</div>
         """
 
     # Zelle block — only when invoice isn't paid yet, prompts the guardian to send via Zelle
@@ -159,7 +158,7 @@ def render_invoice_pdf(
   <div class="meta">
     <div class="label">Invoice</div>
     <div class="invoice-no">{invoice_number}</div>
-    <div class="issued">Issued {issue_date.strftime('%B %d, %Y')}</div>
+    <div class="issued">Issued {issue_date.strftime('%m-%d-%Y')}</div>
   </div>
 </div>
 
@@ -172,7 +171,7 @@ def render_invoice_pdf(
   </div>
   <div class="col">
     <div class="label">Period</div>
-    <div class="val">{period_start.strftime('%b %d')} – {period_end.strftime('%b %d, %Y')}</div>
+    <div class="val">{period_start.strftime('%m-%d-%Y')} – {period_end.strftime('%m-%d-%Y')}</div>
     <div class="label" style="margin-top:10px;">Athlete(s)</div>
     <div class="val">{athletes_str}</div>
   </div>
@@ -200,6 +199,8 @@ def render_invoice_pdf(
 </div>
 
 </body></html>"""
+
+    from weasyprint import HTML  # lazy: needs cairo/pango (brew on macOS)
 
     out = BytesIO()
     HTML(string=html_str).write_pdf(out)

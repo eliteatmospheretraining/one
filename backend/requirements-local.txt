@@ -1,0 +1,23 @@
+# Local development — app runtime only (no Emergent platform packages).
+# Use: pip install -r requirements-local.txt
+# Full cloud image deps remain in requirements.txt.
+
+fastapi==0.110.1
+uvicorn[standard]==0.25.0
+python-dotenv==1.2.2
+motor==3.3.1
+pymongo==4.5.0
+PyJWT==2.13.0
+bcrypt==4.1.3
+resend==2.30.1
+pydantic[email]==2.13.4
+email-validator==2.3.0
+google-auth==2.53.0
+google-auth-oauthlib==1.4.0
+google-api-python-client==2.197.0
+requests==2.34.2
+weasyprint==68.1
+python-multipart==0.0.29
+
+# Optional — backend tests
+pytest==9.0.3

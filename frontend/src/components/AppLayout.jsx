@@ -1,38 +1,63 @@
-import React from "react";
-import { NavLink } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { Home, Calendar, Users, FileText, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../lib/auth";
-import { useGreeting } from "../lib/greeting";
 import { NAV } from "../lib/testIds";
-
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_eat-admin-portal/artifacts/jnekghwj_EAT%20Logo.%20%285%29.png";
+import { BrandWordmark } from "./BrandWordmark";
 
 const NAV_ITEMS = [
     { to: "/home", label: "Home", icon: Home, testid: "nav-home", end: true },
-    { to: "/", label: "Schedule", icon: Calendar, testid: NAV.calendar, end: true },
     { to: "/roster", label: "Roster", icon: Users, testid: NAV.roster },
-    { to: "/invoices", label: "Invoices", icon: FileText, testid: NAV.invoices },
+    { to: "/", label: "Training", icon: Calendar, testid: NAV.calendar, end: true },
+    { to: "/invoices", label: "Billing", icon: FileText, testid: NAV.invoices },
     { to: "/settings", label: "Settings", icon: Settings, testid: NAV.settings },
 ];
 
 export default function AppLayout({ children }) {
     const { coach, signOut } = useAuth();
-    const greeting = useGreeting();
-    const firstName = (coach?.name || "").split(" ")[0];
+    const { pathname } = useLocation();
+    const mainRef = useRef(null);
+    const lastScrollY = useRef(0);
+    const [mobileHeaderVisible, setMobileHeaderVisible] = useState(true);
+
+    useEffect(() => {
+        setMobileHeaderVisible(true);
+        lastScrollY.current = 0;
+        if (mainRef.current) mainRef.current.scrollTop = 0;
+    }, [pathname]);
+
+    useEffect(() => {
+        const el = mainRef.current;
+        if (!el) return undefined;
+
+        const onScroll = () => {
+            const y = el.scrollTop;
+            const delta = y - lastScrollY.current;
+
+            if (y <= 8) {
+                setMobileHeaderVisible(true);
+            } else if (delta > 6) {
+                setMobileHeaderVisible(false);
+            } else if (delta < -6) {
+                setMobileHeaderVisible(true);
+            }
+
+            lastScrollY.current = y;
+        };
+
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return () => el.removeEventListener("scroll", onScroll);
+    }, [pathname]);
 
     return (
         <div className="h-screen w-full bg-ink text-paper">
-            {/* Mobile top bar */}
-            <header className="md:hidden sticky top-0 z-40 bg-ink border-b border-subtle px-5 h-14 flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                    <img src={LOGO_URL} alt="EAT" className="w-8 h-8 object-contain invert shrink-0" />
-                    <div className="leading-tight min-w-0">
-                        <div className="text-[10px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>{greeting}</div>
-                        <div className="font-thunder uppercase text-sm tracking-tight text-paper truncate" style={{ fontWeight: 500 }}>
-                            {firstName || "Coach"}<span className="text-accent">.</span>
-                        </div>
-                    </div>
-                </div>
+            {/* Mobile top bar — hides on scroll down, returns on scroll up */}
+            <header
+                className={`md:hidden fixed top-0 left-0 right-0 z-40 bg-ink border-b border-subtle px-5 h-14 flex items-center justify-between transition-transform duration-300 ease-out ${
+                    mobileHeaderVisible ? "translate-y-0" : "-translate-y-full"
+                }`}
+            >
+                <BrandWordmark variant="sidebar" className="min-w-0" />
                 <button
                     data-testid={NAV.logout}
                     onClick={signOut}
@@ -46,8 +71,8 @@ export default function AppLayout({ children }) {
             <div className="md:flex h-screen">
                 {/* Desktop sidebar */}
                 <aside className="hidden md:flex flex-col w-56 bg-ink border-r border-subtle h-screen sticky top-0 pt-10 pb-8 px-5">
-                    <div className="mb-12 px-1">
-                        <img src={LOGO_URL} alt="EAT" className="w-[70px] h-[70px] object-contain invert" />
+                    <div className="mb-8 md:mb-9 lg:mb-10 px-1">
+                        <BrandWordmark variant="sidebar" />
                     </div>
                     <nav className="flex flex-col gap-0.5 flex-1">
                         {NAV_ITEMS.map(({ to, label, icon: Icon, testid, end }) => (
@@ -87,7 +112,7 @@ export default function AppLayout({ children }) {
                     </div>
                 </aside>
 
-                <main className="flex-1 h-screen overflow-y-auto pb-24 md:pb-12 bg-ink animate-fade-in">{children}</main>
+                <main ref={mainRef} className="flex-1 h-screen overflow-y-auto pt-14 md:pt-0 pb-24 md:pb-12 bg-ink animate-fade-in">{children}</main>
             </div>
 
             {/* Mobile bottom nav */}

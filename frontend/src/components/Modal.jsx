@@ -5,7 +5,7 @@ export function Modal({ open, onOpenChange, title, description, children, maxW =
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
-                className={`${maxW} w-[calc(100vw-2rem)] bg-mid border border-subtle rounded-[2px] p-0 text-paper`}
+                className={`${maxW} w-[calc(100vw-2rem)] z-[100] bg-mid border border-subtle rounded-[2px] p-0 text-paper`}
             >
                 <DialogHeader className="px-6 pt-6 pb-3">
                     <DialogTitle asChild>

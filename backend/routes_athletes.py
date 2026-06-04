@@ -21,7 +21,10 @@ async def list_athletes(
 ):
     query: dict = {}
     if program_type:
-        query["program_type"] = program_type.value
+        query["$or"] = [
+            {"program_types": program_type.value},
+            {"program_type": program_type.value},
+        ]
     if status:
         query["status"] = status.value
     if family_id:

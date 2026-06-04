@@ -4,15 +4,15 @@ import axios from "axios";
 import { API } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { LOGIN } from "../lib/testIds";
-import { Mail, ArrowRight, ShieldCheck } from "lucide-react";
-
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_eat-admin-portal/artifacts/jnekghwj_EAT%20Logo.%20%285%29.png";
+import { Mail, ArrowRight, Lock } from "lucide-react";
+import { BrandWordmark } from "../components/BrandWordmark";
 
 export default function Login() {
     const { coach, signIn } = useAuth();
     const nav = useNavigate();
     const loc = useLocation();
     const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [sent, setSent] = useState(false);
     const [devLink, setDevLink] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -42,8 +42,26 @@ export default function Login() {
         }
     }
 
-    async function submit(e) {
+    async function submitPassword(e) {
         e.preventDefault();
+        setErr(null);
+        setLoading(true);
+        try {
+            const r = await axios.post(`${API}/auth/login`, { email, password });
+            signIn(r.data.token, r.data.coach);
+            nav("/home", { replace: true });
+        } catch (e) {
+            setErr(e.response?.data?.detail || "Invalid email or password");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function sendMagicLink() {
+        if (!email) {
+            setErr("Enter your email first");
+            return;
+        }
         setErr(null);
         setLoading(true);
         try {
@@ -58,23 +76,16 @@ export default function Login() {
     }
 
     return (
-        <div className="min-h-screen w-full bg-ink text-paper flex flex-col">
-            <div className="flex-1 flex items-center justify-center px-5 py-10">
+        <div className="min-h-screen w-full bg-ink text-paper">
+            <div className="min-h-screen flex items-center justify-center px-5 py-10">
                 <div className="w-full max-w-md">
-                    {/* Brand */}
-                    <div className="mb-10">
-                        <img src={LOGO_URL} alt="EAT" className="w-9 h-9 object-contain invert mb-8" />
-                        <div className="font-thunder uppercase text-paper leading-[0.92] tracking-tight text-6xl sm:text-7xl" style={{ fontWeight: 500 }}>
-                            EAT<span className="text-accent">.</span>
-                        </div>
+                    <div className="mb-8 flex justify-center">
+                        <BrandWordmark variant="login" />
                     </div>
 
-                    {/* Form / sent state */}
                     {!sent ? (
-                        <form onSubmit={submit} className="flex flex-col gap-5">
+                        <form onSubmit={submitPassword} className="flex flex-col gap-5">
                             <div className="eat-divider mb-2" />
-                            <div className="eat-eyebrow">Sign In</div>
-                            <p className="text-sm text-muted -mt-3 font-light">Magic link to your inbox. No password.</p>
 
                             <div>
                                 <label className="eat-label">Email Address</label>
@@ -94,23 +105,56 @@ export default function Login() {
                                 </div>
                             </div>
 
+                            <div>
+                                <label className="eat-label">Password</label>
+                                <div className="relative mt-1.5">
+                                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                                    <input
+                                        data-testid={LOGIN.passwordInput}
+                                        type="password"
+                                        required
+                                        autoComplete="current-password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="eat-input pl-9"
+                                        placeholder="••••••••"
+                                    />
+                                </div>
+                            </div>
+
                             {err && (
                                 <div className="text-sm text-danger border border-danger/60 px-3 py-2 font-light">{err}</div>
                             )}
 
                             <button
-                                data-testid={LOGIN.submitBtn}
+                                data-testid={LOGIN.passwordSubmitBtn}
                                 type="submit"
-                                disabled={loading || !email}
+                                disabled={loading || !email || !password}
                                 className="eat-btn-primary w-full disabled:opacity-50"
                             >
-                                {loading ? "Sending…" : "Send Magic Link"}
+                                {loading ? "Signing in…" : "Sign In"}
                                 <ArrowRight size={16} className="ml-2" strokeWidth={2} />
                             </button>
 
-                            <div className="flex items-center gap-2 text-xs text-muted mt-1 uppercase tracking-wider2" style={{ fontWeight: 300 }}>
-                                <ShieldCheck size={13} strokeWidth={1.5} /> Admin only · single-use · 30 min
-                            </div>
+                            <button
+                                type="button"
+                                data-testid={LOGIN.magicLinkBtn}
+                                onClick={sendMagicLink}
+                                disabled={loading || !email}
+                                className="eat-btn-ghost w-full text-xs uppercase tracking-wider2 disabled:opacity-50"
+                                style={{ fontWeight: 500 }}
+                            >
+                                {loading ? "Sending…" : "Send Magic Link"}
+                            </button>
+
+                            <div className="eat-divider my-2" />
+                            <a
+                                href="/enroll"
+                                className="text-center text-xs uppercase tracking-wider2 text-muted hover:text-accent transition-colors"
+                                style={{ fontWeight: 500 }}
+                            >
+                                New athlete? Enroll here
+                            </a>
                         </form>
                     ) : (
                         <div data-testid={LOGIN.sentMessage} className="flex flex-col gap-4">
@@ -131,16 +175,17 @@ export default function Login() {
                                     </a>
                                 </div>
                             )}
-                            <button onClick={() => { setSent(false); setDevLink(null); }} className="eat-btn-ghost self-start px-0">
-                                Use a different email
+                            <button
+                                type="button"
+                                onClick={() => { setSent(false); setDevLink(null); setErr(null); }}
+                                className="eat-btn-ghost self-start px-0"
+                            >
+                                Back to sign in
                             </button>
                         </div>
                     )}
                 </div>
             </div>
-            <footer className="text-center text-[10px] uppercase tracking-wider3 text-muted py-6 border-t border-subtle" style={{ fontWeight: 300 }}>
-                1000 Brickell Ave · Miami, FL
-            </footer>
         </div>
     );
 }

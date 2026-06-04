@@ -1,6 +1,23 @@
 // craco.config.js
 const path = require("path");
+const fs = require("fs");
 require("dotenv").config();
+if (fs.existsSync(path.join(__dirname, ".env.local"))) {
+  require("dotenv").config({ path: path.join(__dirname, ".env.local"), override: true });
+}
+
+// Local npm start: fix HMR unless using Emergent's HTTPS preview tunnel
+const useEmergentTunnel = process.env.USE_EMERGENT_TUNNEL === "true";
+if (process.env.NODE_ENV === "development" && !useEmergentTunnel) {
+  if (process.env.WDS_SOCKET_PORT === "443") {
+    process.env.WDS_SOCKET_PORT = "3000";
+  }
+  const backend = process.env.REACT_APP_BACKEND_URL || "";
+  if (/emergentagent\.com|emergent\.sh/i.test(backend)) {
+    process.env.REACT_APP_BACKEND_URL =
+      process.env.REACT_APP_BACKEND_URL_LOCAL || "http://127.0.0.1:8001";
+  }
+}
 
 // Check if we're in development/preview mode (not production build)
 // Craco sets NODE_ENV=development for start, NODE_ENV=production for build
@@ -61,6 +78,21 @@ let webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  devServerConfig.client = {
+    ...devServerConfig.client,
+    overlay: {
+      ...(typeof devServerConfig.client?.overlay === "object" ? devServerConfig.client.overlay : {}),
+      runtimeErrors: (error) => {
+        const msg = error?.message || String(error);
+        if (/ResizeObserver loop/.test(msg)) return false;
+        if (typeof devServerConfig.client?.overlay?.runtimeErrors === "function") {
+          return devServerConfig.client.overlay.runtimeErrors(error);
+        }
+        return true;
+      },
+    },
+  };
+
   // Add health check endpoints if enabled
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;

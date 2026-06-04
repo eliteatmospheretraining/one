@@ -1,6 +1,9 @@
 // Centralized data-testid constants. Keep kebab-case.
 export const LOGIN = {
     emailInput: "login-email-input",
+    passwordInput: "login-password-input",
+    passwordSubmitBtn: "login-password-submit-btn",
+    magicLinkBtn: "login-magic-link-btn",
     submitBtn: "login-submit-btn",
     sentMessage: "login-sent-message",
     devLink: "login-dev-magic-link",
@@ -14,6 +17,17 @@ export const NAV = {
     logout: "nav-logout",
 };
 
+export const SETTINGS = {
+    updatePasswordBtn: "settings-update-password-btn",
+    passwordCurrent: "settings-password-current",
+    passwordNew: "settings-password-new",
+    passwordConfirm: "settings-password-confirm",
+    passwordSubmit: "settings-password-submit",
+    rateCardOpenBtn: "settings-rate-card-open-btn",
+    rateCardNotionLink: "settings-rate-card-notion-link",
+    notionSyncBtn: "settings-notion-sync-btn",
+};
+
 export const CALENDAR = {
     newSessionBtn: "calendar-new-session-btn",
     sessionCard: (id) => `session-card-${id}`,
@@ -23,10 +37,11 @@ export const CALENDAR = {
 
 export const SESSION = {
     saveAttendanceBtn: "session-save-attendance-btn",
-    completeBtn: "session-complete-btn",
-    cancelBtn: "session-cancel-btn",
+    statusBtn: "session-status-btn",
+    statusOption: (status) => `session-status-option-${status}`,
     editBtn: "session-edit-btn",
     deleteBtn: "session-delete-btn",
+    deleteConfirmBtn: "session-delete-confirm-btn",
     chip: (athleteId, type) => `chip-${athleteId}-${type}`,
 };
 
@@ -76,11 +91,18 @@ export const INVOICES = {
     periodStart: "invoice-period-start",
     periodEnd: "invoice-period-end",
     generateBtn: "invoice-generate-btn",
-    previewPdfBtn: "invoice-preview-pdf-btn",
+    addLineBtn: "invoice-add-line-btn",
+    serviceSelect: "invoice-service-select",
+    lineAthleteSelect: "invoice-line-athlete-select",
+    previewDueEmailBtn: "invoice-preview-due-email-btn",
+    previewPaidEmailBtn: "invoice-preview-paid-email-btn",
     sendBtn: "invoice-send-btn",
+    sendReceiptBtn: "invoice-send-receipt-btn",
     deleteBtn: "invoice-delete-btn",
+    deleteConfirmBtn: "invoice-delete-confirm-btn",
     markPaidBtn: "invoice-mark-paid-btn",
     paymentAmount: "payment-amount-input",
+    paymentMethod: "payment-method-input",
     paymentDate: "payment-date-input",
     paymentNote: "payment-note-input",
     paymentSubmit: "payment-submit-btn",
@@ -94,6 +116,11 @@ export const SESSION_FORM = {
     type: "session-form-type",
     location: "session-form-location",
     notes: "session-form-notes",
+    recurringToggle: "session-form-recurring-toggle",
+    recurringFrequency: "session-form-recurring-frequency",
+    recurringInterval: "session-form-recurring-interval",
+    recurringWeekday: (i) => `session-form-recurring-weekday-${i}`,
+    recurringWeeks: "session-form-recurring-weeks",
     submit: "session-form-submit",
     athleteToggle: (id) => `session-form-athlete-${id}`,
 };

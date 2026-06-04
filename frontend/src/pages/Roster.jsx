@@ -1,19 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { ROSTER } from "../lib/testIds";
-import { PROGRAM_LABEL, computeAge } from "../lib/format";
-import { Search, Plus, Archive, UserPlus, Users } from "lucide-react";
+import { computeAge, athleteHasProgram, formatAthletePrograms } from "../lib/format";
+import { Archive } from "lucide-react";
 import { AthleteFormModal } from "./AthleteForm";
-import { FamilyFormModal } from "./FamilyForm";
-import { FamilySummaryModal } from "./FamilySummary";
+import { toast } from "sonner";
 
 const PROGRAM_FILTERS = [
-    { value: "all", label: "All" },
-    { value: "full_time", label: "Full-Time" },
+    { value: "full_time", label: "Eat w/ EAT" },
     { value: "private", label: "Private" },
-    { value: "semi_private", label: "Semi-Private" },
+    { value: "all", label: "All" },
 ];
 
 const STATUS_FILTERS = [
@@ -25,34 +23,29 @@ const STATUS_FILTERS = [
 export default function Roster() {
     const [athletes, setAthletes] = useState([]);
     const [families, setFamilies] = useState([]);
-    const [view, setView] = useState("athletes"); // "athletes" | "families"
-    const [q, setQ] = useState("");
-    const [program, setProgram] = useState("all");
+    const [program, setProgram] = useState("full_time");
     const [status, setStatus] = useState("active");
     const [loading, setLoading] = useState(true);
     const [athleteFormOpen, setAthleteFormOpen] = useState(false);
     const [editingAthlete, setEditingAthlete] = useState(null);
-    const [familyFormOpen, setFamilyFormOpen] = useState(false);
-    const [familySummaryId, setFamilySummaryId] = useState(null);
 
     async function load() {
         setLoading(true);
         try {
             const [a, f] = await Promise.all([api.get("/athletes"), api.get("/families")]);
-            setAthletes(a.data);
-            setFamilies(f.data);
+            setAthletes(a.data || []);
+            setFamilies(f.data || []);
+        } catch (e) {
+            toast.error(e.response?.data?.detail || "Could not load roster");
         } finally {
             setLoading(false);
         }
     }
     useEffect(() => { load(); }, []);
 
-    const famById = useMemo(() => Object.fromEntries(families.map((f) => [f.id, f])), [families]);
-
     const filtered = athletes.filter((a) => {
-        if (program !== "all" && a.program_type !== program) return false;
+        if (program !== "all" && !athleteHasProgram(a, program)) return false;
         if (status !== "all" && a.status !== status) return false;
-        if (q && !a.full_name.toLowerCase().includes(q.toLowerCase())) return false;
         return true;
     });
 
@@ -60,75 +53,90 @@ export default function Roster() {
         <div>
             <PageHeader
                 subtitle="Roster"
-                title={view === "families" ? "Families" : "Athletes"}
+                title="Athletes"
                 testId="page-roster-header"
-                actions={
-                    <div className="flex gap-2 flex-wrap">
-                        <button
-                            data-testid={ROSTER.newFamilyBtn}
-                            onClick={() => setFamilyFormOpen(true)}
-                            className="eat-btn-secondary"
-                        >
-                            <Users size={14} className="mr-1.5" strokeWidth={1.75} /> New Family
-                        </button>
-                        <button
-                            data-testid={ROSTER.newBtn}
-                            onClick={() => { setEditingAthlete(null); setAthleteFormOpen(true); }}
-                            className="eat-btn-primary"
-                            disabled={families.length === 0}
-                            title={families.length === 0 ? "Create a family first" : ""}
-                        >
-                            <UserPlus size={14} className="mr-1.5" strokeWidth={1.75} /> New Athlete
-                        </button>
-                    </div>
-                }
             />
 
             <div className="px-5 md:px-10 mt-8">
-                {/* View toggle */}
-                <div className="flex items-center gap-2 mb-5" data-testid="roster-view-toggle">
-                    {[
-                        { v: "athletes", label: "Athletes" },
-                        { v: "families", label: "Families" },
-                    ].map((t) => (
-                        <button
-                            key={t.v}
-                            data-testid={`roster-view-${t.v}`}
-                            onClick={() => setView(t.v)}
-                            className={`h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
-                                view === t.v ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
-                            }`}
-                            style={{ fontWeight: 500 }}
-                        >
-                            {t.label}
-                        </button>
-                    ))}
+                <div className="space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2" data-testid={ROSTER.filterProgram}>
+                        <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
+                            {PROGRAM_FILTERS.map((f) => (
+                                <button
+                                    key={f.value}
+                                    onClick={() => setProgram(f.value)}
+                                    data-testid={`filter-program-${f.value}`}
+                                    className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                        program === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
+                                    }`}
+                                    style={{ fontWeight: 500 }}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none">
+                            {STATUS_FILTERS.map((f) => (
+                                <button
+                                    key={f.value}
+                                    onClick={() => setStatus(f.value)}
+                                    data-testid={`filter-status-${f.value}`}
+                                    className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
+                                        status === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
+                                    }`}
+                                    style={{ fontWeight: 500 }}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
-                {view === "athletes" ? (
-                    <AthletesView
-                        athletes={athletes}
-                        families={families}
-                        famById={famById}
-                        q={q}
-                        setQ={setQ}
-                        program={program}
-                        setProgram={setProgram}
-                        status={status}
-                        setStatus={setStatus}
-                        filtered={filtered}
-                        loading={loading}
-                        onAthleteEdit={(a) => { setEditingAthlete(a); setAthleteFormOpen(true); }}
-                        onNewFamily={() => setFamilyFormOpen(true)}
+                <div className="mt-5 mb-3 eat-eyebrow">
+                    {filtered.length} of {athletes.length} athlete{athletes.length === 1 ? "" : "s"}
+                </div>
+
+                {loading ? (
+                    <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
+                ) : filtered.length === 0 ? (
+                    <EmptyState
+                        title={athletes.length === 0 ? "No athletes yet" : "No matches"}
+                        hint={athletes.length === 0 ? "Athletes enroll at eliteatmospheretraining.com/enroll." : "Adjust your filters."}
                     />
                 ) : (
-                    <FamiliesView
-                        families={families}
-                        athletes={athletes}
-                        loading={loading}
-                        onOpen={(id) => setFamilySummaryId(id)}
-                        onNewFamily={() => setFamilyFormOpen(true)}
-                    />
+                    <div className="flex flex-col gap-2 pb-10">
+                        {filtered.map((a) => (
+                                <button
+                                    key={a.id}
+                                    data-testid={ROSTER.card(a.id)}
+                                    onClick={() => { setEditingAthlete(a); setAthleteFormOpen(true); }}
+                                    className={`bg-mid border border-subtle p-5 text-left hover:border-paper/30 transition-colors ${a.status === "archived" ? "opacity-50" : ""}`}
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate leading-none" style={{ fontWeight: 500 }}>
+                                                {a.full_name}
+                                            </div>
+                                            <div className="text-xs text-muted uppercase tracking-wider2 mt-2" style={{ fontWeight: 300 }}>
+                                                {formatAthletePrograms(a)}
+                                                {a.date_of_birth && <span> · Age {computeAge(a.date_of_birth)}</span>}
+                                                {a.status === "archived" && (
+                                                    <span className="ml-2 inline-flex items-center gap-1"><Archive size={11} strokeWidth={1.5} /> Archived</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {(a.utr != null || a.wtn != null || a.shirt_size) && (
+                                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted font-light">
+                                            {a.utr != null && <span>UTR <span className="text-paper">{a.utr}</span></span>}
+                                            {a.wtn != null && <span>WTN <span className="text-paper">{a.wtn}</span></span>}
+                                            {a.shirt_size && <span>Shirt <span className="text-paper">{a.shirt_size}</span></span>}
+                                        </div>
+                                    )}
+                                </button>
+                        ))}
+                    </div>
                 )}
             </div>
 
@@ -139,184 +147,6 @@ export default function Roster() {
                 families={families}
                 onSaved={() => { setAthleteFormOpen(false); load(); }}
             />
-            <FamilyFormModal
-                open={familyFormOpen}
-                onOpenChange={setFamilyFormOpen}
-                onSaved={() => { setFamilyFormOpen(false); load(); }}
-            />
-            <FamilySummaryModal
-                open={!!familySummaryId}
-                onOpenChange={(v) => !v && setFamilySummaryId(null)}
-                familyId={familySummaryId}
-            />
-        </div>
-    );
-}
-
-function AthletesView({ athletes, famById, q, setQ, program, setProgram, status, setStatus, filtered, loading, onAthleteEdit, onNewFamily }) {
-    return (
-        <>
-            {/* Search */}
-            <div className="relative mb-5">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" strokeWidth={1.75} />
-                <input
-                    data-testid={ROSTER.searchInput}
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search athletes…"
-                    className="eat-input pl-9"
-                />
-            </div>
-
-            {/* Filters */}
-            <div className="space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2" data-testid={ROSTER.filterProgram}>
-                    <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
-                        {PROGRAM_FILTERS.map((f) => (
-                            <button
-                                key={f.value}
-                                onClick={() => setProgram(f.value)}
-                                data-testid={`filter-program-${f.value}`}
-                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
-                                    program === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
-                                }`}
-                                style={{ fontWeight: 500 }}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none">
-                        {STATUS_FILTERS.map((f) => (
-                            <button
-                                key={f.value}
-                                onClick={() => setStatus(f.value)}
-                                data-testid={`filter-status-${f.value}`}
-                                className={`shrink-0 h-8 px-3 border text-[11px] uppercase tracking-wider2 transition-colors ${
-                                    status === f.value ? "bg-transparent text-accent border-accent" : "bg-transparent text-muted border-subtle hover:text-paper hover:border-paper/30"
-                                }`}
-                                style={{ fontWeight: 500 }}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div className="mt-5 mb-3 eat-eyebrow">
-                {filtered.length} of {athletes.length} athlete{athletes.length === 1 ? "" : "s"}
-            </div>
-
-            {loading ? (
-                <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
-            ) : filtered.length === 0 ? (
-                <EmptyState
-                    title={athletes.length === 0 ? "No athletes yet" : "No matches"}
-                    hint={athletes.length === 0 ? "Add a family record first, then add athletes." : "Adjust your search or filters."}
-                    action={athletes.length === 0 ? (
-                        <button onClick={onNewFamily} className="eat-btn-primary">
-                            <Plus size={14} className="mr-1.5" /> New Family
-                        </button>
-                    ) : null}
-                />
-            ) : (
-                <div className="flex flex-col gap-2 pb-10">
-                    {filtered.map((a) => {
-                        const fam = famById[a.family_id];
-                        return (
-                            <button
-                                key={a.id}
-                                data-testid={ROSTER.card(a.id)}
-                                onClick={() => onAthleteEdit(a)}
-                                className={`bg-mid border border-subtle p-5 text-left hover:border-paper/30 transition-colors ${a.status === "archived" ? "opacity-50" : ""}`}
-                            >
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate leading-none" style={{ fontWeight: 500 }}>
-                                            {a.full_name}
-                                        </div>
-                                        <div className="text-xs text-muted uppercase tracking-wider2 mt-2" style={{ fontWeight: 300 }}>
-                                            {PROGRAM_LABEL[a.program_type]}
-                                            {a.date_of_birth && <span> · Age {computeAge(a.date_of_birth)}</span>}
-                                            {a.status === "archived" && (
-                                                <span className="ml-2 inline-flex items-center gap-1"><Archive size={11} strokeWidth={1.5} /> Archived</span>
-                                            )}
-                                        </div>
-                                        {fam && <div className="text-xs text-muted mt-1 font-light">{fam.family_name} family</div>}
-                                    </div>
-                                </div>
-                                {(a.utr != null || a.wtn != null || a.shirt_size) && (
-                                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted font-light">
-                                        {a.utr != null && <span>UTR <span className="text-paper">{a.utr}</span></span>}
-                                        {a.wtn != null && <span>WTN <span className="text-paper">{a.wtn}</span></span>}
-                                        {a.shirt_size && <span>Shirt <span className="text-paper">{a.shirt_size}</span></span>}
-                                    </div>
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
-        </>
-    );
-}
-
-function FamiliesView({ families, athletes, loading, onOpen, onNewFamily }) {
-    const athletesByFam = athletes.reduce((acc, a) => {
-        (acc[a.family_id] = acc[a.family_id] || []).push(a);
-        return acc;
-    }, {});
-
-    if (loading) {
-        return <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>;
-    }
-    if (families.length === 0) {
-        return (
-            <EmptyState
-                title="No families yet"
-                hint="Add a family to start grouping athletes for invoicing."
-                action={
-                    <button onClick={onNewFamily} className="eat-btn-primary">
-                        <Plus size={14} className="mr-1.5" /> New Family
-                    </button>
-                }
-            />
-        );
-    }
-    return (
-        <div className="flex flex-col gap-2 pb-10">
-            {families.map((f) => {
-                const kids = athletesByFam[f.id] || [];
-                const active = kids.filter((a) => a.status === "active");
-                return (
-                    <button
-                        key={f.id}
-                        data-testid={`family-card-${f.id}`}
-                        onClick={() => onOpen(f.id)}
-                        className="bg-mid border border-subtle p-5 text-left hover:border-paper/30 transition-colors"
-                    >
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate leading-none" style={{ fontWeight: 500 }}>
-                                    {f.family_name}
-                                </div>
-                                <div className="text-sm text-paper mt-2 font-light truncate">{f.guardian_name}</div>
-                                <div className="text-xs text-muted mt-0.5 font-light truncate">{f.guardian_email}</div>
-                            </div>
-                            <div className="text-right shrink-0">
-                                <div className="eat-label">Athletes</div>
-                                <div className="eat-numeral text-2xl mt-0.5">{active.length}<span className="text-muted text-base">/{kids.length}</span></div>
-                            </div>
-                        </div>
-                        {kids.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted font-light truncate">
-                                {kids.map((k) => k.full_name).join(" · ")}
-                            </div>
-                        )}
-                    </button>
-                );
-            })}
         </div>
     );
 }

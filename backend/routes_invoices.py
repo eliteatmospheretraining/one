@@ -1,40 +1,37 @@
 """Invoice + payment routes."""
 from __future__ import annotations
 
-import asyncio
-import base64
 import logging
 import os
 from datetime import date, datetime
 from typing import List, Optional
 
-import resend
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from auth import get_current_coach
-from billing import describe_line
 from db import db, now, serialize
+from invoice_billing import (
+    _billable_records_for_family,
+    billing_skips_for_period,
+    line_items_from_billable,
+    sync_attendance_billed_rates,
+)
+from invoice_services import build_manual_line_item, list_service_options
 from models import (
-    AttendanceType,
     Invoice,
     InvoiceGenerateRequest,
     InvoiceLineItem,
+    InvoiceLineItemCreate,
     InvoiceStatus,
     Payment,
     PaymentCreate,
-    ProgramType,
 )
 from pdf import render_invoice_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/invoices", tags=["invoices"], dependencies=[Depends(get_current_coach)])
 
-SENDER_EMAIL = os.environ["SENDER_EMAIL"]
 APP_BASE_URL = os.environ["APP_BASE_URL"].rstrip("/")
-resend.api_key = os.environ["RESEND_API_KEY"]
-ZELLE_EMAIL = os.environ.get("ZELLE_EMAIL", "")
-ZELLE_PHONE = os.environ.get("ZELLE_PHONE", "")
-ZELLE_NAME = os.environ.get("ZELLE_NAME", "")
 
 
 async def _next_invoice_number() -> str:
@@ -58,6 +55,31 @@ async def _parse_date(v) -> date:
     raise ValueError(f"bad date: {v}")
 
 
+def _line_items_from_billable(
+    invoice_id: str,
+    billable: list[dict],
+    athletes_by_id: dict,
+    sessions_by_id: dict,
+) -> list[InvoiceLineItem]:
+    return line_items_from_billable(
+        invoice_id,
+        billable,
+        athletes_by_id,
+        sessions_by_id,
+        line_item_cls=InvoiceLineItem,
+    )
+
+
+async def _recalc_invoice_totals(invoice_id: str) -> float:
+    items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(5000)
+    total = round(sum(float(li.get("amount") or 0) for li in items), 2)
+    await db.invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {"subtotal": total, "total": total}},
+    )
+    return total
+
+
 @router.get("", response_model=List[Invoice])
 async def list_invoices(status: Optional[InvoiceStatus] = None, family_id: Optional[str] = None):
     query: dict = {}
@@ -69,41 +91,18 @@ async def list_invoices(status: Optional[InvoiceStatus] = None, family_id: Optio
     return docs
 
 
+@router.get("/service-options")
+async def invoice_service_options():
+    """Preset services for manual draft lines (prices from rate card)."""
+    return list_service_options()
+
+
 @router.post("/generate")
 async def generate_invoice(req: InvoiceGenerateRequest):
-    """Auto-build a draft invoice from attendance records for a family in a period."""
+    """Create an empty draft invoice for a family and period (add lines manually)."""
     family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
     if not family:
         raise HTTPException(404, "Family not found")
-
-    athletes = await db.athletes.find({"family_id": req.family_id}, {"_id": 0}).to_list(500)
-    if not athletes:
-        raise HTTPException(400, "No athletes in this family")
-    athlete_ids = [a["id"] for a in athletes]
-    athletes_by_id = {a["id"]: a for a in athletes}
-
-    # Fetch all attendance for these athletes in date range
-    # Attendance records reference sessions whose date is in range.
-    sessions = await db.sessions.find(
-        {"date": {"$gte": req.period_start.isoformat(), "$lte": req.period_end.isoformat()}},
-        {"_id": 0},
-    ).to_list(5000)
-    session_ids = [s["id"] for s in sessions]
-    sessions_by_id = {s["id"]: s for s in sessions}
-
-    if not session_ids:
-        records = []
-    else:
-        records = await db.attendance_records.find(
-            {"session_id": {"$in": session_ids}, "athlete_id": {"$in": athlete_ids}},
-            {"_id": 0},
-        ).to_list(5000)
-
-    # Filter out absents & zero-billed
-    billable = [r for r in records if r["attendance_type"] != AttendanceType.absent.value and r["billed_rate"] > 0]
-
-    if not billable:
-        raise HTTPException(400, "No billable attendance found in this period for this family")
 
     invoice_number = await _next_invoice_number()
     invoice = Invoice(
@@ -113,45 +112,149 @@ async def generate_invoice(req: InvoiceGenerateRequest):
         period_end=req.period_end,
         status=InvoiceStatus.draft,
     )
-
-    line_items: list[InvoiceLineItem] = []
-    subtotal = 0.0
-    # Group by athlete -> sort by date
-    billable.sort(key=lambda r: (r["athlete_id"], sessions_by_id[r["session_id"]]["date"]))
-    for r in billable:
-        athlete = athletes_by_id[r["athlete_id"]]
-        sess = sessions_by_id[r["session_id"]]
-        sess_date = sess["date"]
-        desc = describe_line(
-            AttendanceType(r["attendance_type"]),
-            ProgramType(athlete["program_type"]),
-            sess_date,
-        )
-        amount = float(r["billed_rate"])
-        li = InvoiceLineItem(
-            invoice_id=invoice.id,
-            athlete_id=athlete["id"],
-            athlete_name=athlete["full_name"],
-            attendance_record_id=r["id"],
-            description=desc,
-            quantity=1,
-            unit_price=amount,
-            amount=amount,
-        )
-        line_items.append(li)
-        subtotal += amount
-
-    invoice.subtotal = round(subtotal, 2)
-    invoice.total = round(subtotal, 2)
-
     await db.invoices.insert_one(serialize(invoice.model_dump()))
-    if line_items:
-        await db.invoice_line_items.insert_many([serialize(li.model_dump()) for li in line_items])
 
     return {
         "invoice": invoice.model_dump(),
-        "line_items": [li.model_dump() for li in line_items],
+        "line_items": [],
     }
+
+
+@router.post("/{invoice_id}/refresh")
+async def refresh_invoice_draft(invoice_id: str):
+    """Rebuild draft line items from billable completed attendance in the invoice period."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.draft.value:
+        raise HTTPException(400, "Only draft invoices can be refreshed")
+
+    period_start = await _parse_date(inv["period_start"])
+    period_end = await _parse_date(inv["period_end"])
+
+    # Remove only attendance-based lines; keep manual month/week services.
+    await db.invoice_line_items.delete_many({
+        "invoice_id": invoice_id,
+        "$or": [
+            {"attendance_record_id": {"$exists": True, "$ne": None}},
+            {"attendance_record_ids.0": {"$exists": True}},
+        ],
+    })
+    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+        inv["family_id"],
+        period_start,
+        period_end,
+        skip_invoiced=True,
+        for_invoice_id=invoice_id,
+    )
+    if not billable:
+        total = await _recalc_invoice_totals(invoice_id)
+        inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+        items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
+        skipped = await billing_skips_for_period(
+            inv["family_id"],
+            period_start,
+            period_end,
+            for_invoice_id=invoice_id,
+        )
+        return {
+            "status": "ok",
+            "added": 0,
+            "session_count": 0,
+            "skipped": skipped,
+            "message": "No billable completed attendance in this period",
+            "invoice": inv,
+            "line_items": items,
+            "total": total,
+        }
+
+    await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
+    line_items = _line_items_from_billable(invoice_id, billable, athletes_by_id, sessions_by_id)
+    await db.invoice_line_items.insert_many([serialize(li.model_dump()) for li in line_items])
+    total = await _recalc_invoice_totals(invoice_id)
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
+    session_count = sum(int(li.get("quantity") or 1) for li in items)
+    skipped = await billing_skips_for_period(
+        inv["family_id"],
+        period_start,
+        period_end,
+        for_invoice_id=invoice_id,
+    )
+    return {
+        "status": "ok",
+        "added": len(line_items),
+        "session_count": session_count,
+        "skipped": skipped,
+        "invoice": inv,
+        "line_items": items,
+        "total": total,
+    }
+
+
+@router.post("/{invoice_id}/line-items")
+async def add_invoice_line_item(invoice_id: str, req: InvoiceLineItemCreate):
+    """Add a preset service line to a draft invoice."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.draft.value:
+        raise HTTPException(400, "Only draft invoices can be edited")
+
+    athlete = await db.athletes.find_one(
+        {"id": req.athlete_id, "family_id": inv["family_id"]},
+        {"_id": 0},
+    )
+    if not athlete:
+        raise HTTPException(400, "Athlete not found on this family")
+
+    period_start = await _parse_date(inv["period_start"])
+    period_end = await _parse_date(inv["period_end"])
+    week_start = await _parse_date(req.week_start) if req.week_start else None
+    week_end = await _parse_date(req.week_end) if req.week_end else None
+    service_date = await _parse_date(req.service_date) if req.service_date else None
+
+    try:
+        line = build_manual_line_item(
+            invoice_id=invoice_id,
+            athlete=athlete,
+            service_id=req.service_id,
+            period_start=period_start,
+            period_end=period_end,
+            week_start=week_start,
+            week_end=week_end,
+            service_date=service_date,
+            quantity=req.quantity,
+            unit_price=req.unit_price,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+    await db.invoice_line_items.insert_one(serialize(line.model_dump()))
+    total = await _recalc_invoice_totals(invoice_id)
+    return {
+        "line_item": line.model_dump(),
+        "total": total,
+    }
+
+
+@router.delete("/{invoice_id}/line-items/{line_item_id}")
+async def delete_invoice_line_item(invoice_id: str, line_item_id: str):
+    """Remove a line from a draft invoice."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.draft.value:
+        raise HTTPException(400, "Only draft invoices can be edited")
+
+    res = await db.invoice_line_items.delete_one(
+        {"id": line_item_id, "invoice_id": invoice_id}
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Line item not found")
+
+    total = await _recalc_invoice_totals(invoice_id)
+    return {"status": "ok", "total": total}
 
 
 @router.get("/{invoice_id}")
@@ -161,8 +264,7 @@ async def get_invoice(invoice_id: str):
         raise HTTPException(404, "Invoice not found")
     items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
     family = await db.families.find_one({"id": inv["family_id"]}, {"_id": 0})
-    athlete_ids = list({li["athlete_id"] for li in items})
-    athletes = await db.athletes.find({"id": {"$in": athlete_ids}}, {"_id": 0}).to_list(500)
+    athletes = await db.athletes.find({"family_id": inv["family_id"]}, {"_id": 0}).to_list(500)
     payments = await db.payments.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(100)
     return {
         "invoice": inv,
@@ -254,78 +356,51 @@ async def download_invoice_pdf(invoice_id: str):
     )
 
 
+@router.get("/{invoice_id}/email-preview")
+async def preview_invoice_email(invoice_id: str, kind: str = "due"):
+    """Coach-only HTML preview of the guardian invoice email (due or paid)."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    from invoice_send import build_preview_html
+
+    _, html, _ = await build_preview_html(invoice_id, kind)
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
 @router.post("/{invoice_id}/send")
 async def send_invoice(invoice_id: str):
-    pdf_bytes, filename, ctx = await _build_pdf(invoice_id)
-    inv = ctx["invoice"]
-    family = ctx["family"]
+    """Email guardian a magic link to view the due invoice (PDF attached)."""
+    from invoice_send import send_guardian_invoice_email
 
-    zelle_rows = ""
-    if ZELLE_NAME:
-        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Pay to</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_NAME}</td></tr>'
-    if ZELLE_EMAIL:
-        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Email</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_EMAIL}</td></tr>'
-    if ZELLE_PHONE:
-        zelle_rows += f'<tr><td style="padding:4px 16px 4px 0;color:#71717A;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;">Phone</td><td style="padding:4px 0;font-weight:700;color:#0A0A0A;font-size:14px;">{ZELLE_PHONE}</td></tr>'
-    zelle_section = f"""
-    <table cellpadding="0" cellspacing="0" style="margin-top:24px;width:100%;border-top:1px solid #E4E4E7;padding-top:16px;">
-      <tr><td>
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:2px;font-weight:700;color:#0A0A0A;margin-bottom:10px;">Pay via Zelle</div>
-        <table cellpadding="0" cellspacing="0">{zelle_rows}</table>
-        <div style="font-size:11px;color:#71717A;margin-top:10px;">Open your bank app · send via Zelle · enter the amount above.</div>
-      </td></tr>
-    </table>
-    """ if zelle_rows else ""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] not in (InvoiceStatus.draft.value, InvoiceStatus.sent.value):
+        raise HTTPException(400, "Only draft or sent invoices can be emailed as due")
 
-    html = f"""
-<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#0A0A0A;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0A0A0A;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border:3px solid #0A0A0A;">
-        <tr><td style="padding:32px;">
-          <div style="font-family:'Arial Black',Arial,sans-serif;font-size:24px;font-weight:900;letter-spacing:-1px;color:#0A0A0A;text-transform:uppercase;">Elite Atmosphere Training</div>
-          <div style="height:6px;background:#CCFF00;margin:14px 0 22px 0;width:60px;"></div>
-          <h1 style="font-size:20px;color:#0A0A0A;margin:0 0 12px 0;">Invoice {inv['invoice_number']}</h1>
-          <p style="font-size:15px;color:#52525B;line-height:1.6;margin:0 0 16px 0;">
-            Hi {family['guardian_name']},<br><br>
-            Please find your invoice attached for the training period {inv['period_start']} – {inv['period_end']}.<br><br>
-            <strong>Total: ${float(inv['total']):,.2f}</strong>
-          </p>
-          {zelle_section}
-          <p style="font-size:13px;color:#71717A;line-height:1.6;margin:24px 0 0 0;">
-            Thanks for being part of the EAT family.<br>— Coach Rico
-          </p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>
-"""
-
-    params = {
-        "from": f"Elite Atmosphere Training <{SENDER_EMAIL}>",
-        "to": [family["guardian_email"]],
-        "subject": f"EAT Invoice {inv['invoice_number']}",
-        "html": html,
-        "attachments": [{
-            "filename": filename,
-            "content": list(pdf_bytes),
-        }],
-    }
-    try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        email_id = (result or {}).get("id")
-    except Exception as e:
-        logger.error(f"Resend invoice send failed: {e}")
-        raise HTTPException(500, f"Email send failed: {e}")
-
+    result = await send_guardian_invoice_email(invoice_id, "due")
     pdf_url = f"{APP_BASE_URL}/api/invoices/{invoice_id}/pdf"
     await db.invoices.update_one(
         {"id": invoice_id},
         {"$set": {"status": InvoiceStatus.sent.value, "sent_at": now().isoformat(), "pdf_url": pdf_url}},
     )
-    return {"status": "sent", "email_id": email_id, "pdf_url": pdf_url}
+    result["pdf_url"] = pdf_url
+    return result
+
+
+@router.post("/{invoice_id}/send-receipt")
+async def send_invoice_receipt(invoice_id: str):
+    """Email guardian a magic link confirming payment (PDF receipt attached)."""
+    from invoice_send import send_guardian_invoice_email
+
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.paid.value:
+        raise HTTPException(400, "Invoice must be paid before sending a receipt email")
+
+    return await send_guardian_invoice_email(invoice_id, "paid")
 
 
 @router.post("/{invoice_id}/payments")
@@ -344,4 +419,18 @@ async def record_payment(invoice_id: str, payload: PaymentCreate, coach: dict = 
     )
     await db.payments.insert_one(serialize(pay.model_dump()))
     await db.invoices.update_one({"id": invoice_id}, {"$set": {"status": InvoiceStatus.paid.value}})
-    return {"status": "paid", "payment": pay.model_dump()}
+
+    receipt_email = None
+    try:
+        from invoice_send import send_guardian_invoice_email
+
+        receipt_email = await send_guardian_invoice_email(invoice_id, "paid")
+    except HTTPException as e:
+        logger.warning(f"Paid receipt email not sent for {invoice_id}: {e.detail}")
+    except Exception as e:
+        logger.warning(f"Paid receipt email failed for {invoice_id}: {e}")
+
+    out = {"status": "paid", "payment": pay.model_dump()}
+    if receipt_email:
+        out["receipt_email"] = receipt_email
+    return out

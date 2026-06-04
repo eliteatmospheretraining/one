@@ -5,7 +5,9 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { SessionStatusPill } from "../components/Pills";
-import { fmtMoney, todayISO, fmtTime } from "../lib/format";
+import WeatherIcon from "../components/WeatherIcon";
+import { fmtMoney, sessionPresentLabel, todayISO, fmtTime, formatAthletePrograms } from "../lib/format";
+import { AthleteFormModal } from "./AthleteForm";
 
 const TYPE_BAR = {
     full_time: "bg-accent",
@@ -18,7 +20,9 @@ function formatHeaderDate(iso) {
         weekday: "long",
         month: "long",
         day: "numeric",
-    }).format(new Date(`${iso}T00:00:00`)).toUpperCase();
+    })
+        .format(new Date(`${iso}T00:00:00`))
+        .toUpperCase();
 }
 
 function formatMonthRange(iso) {
@@ -37,6 +41,110 @@ function getUserLabel(name) {
     return `${first.toUpperCase()}.`;
 }
 
+function SectionLabel({ children }) {
+    return (
+        <div className="text-[11px] uppercase tracking-wider3 text-paper font-thunder" style={{ fontWeight: 700 }}>
+            {children}
+        </div>
+    );
+}
+
+function StatTile({ children, onClick, className = "" }) {
+    const Tag = onClick ? "button" : "div";
+    return (
+        <Tag
+            type={onClick ? "button" : undefined}
+            onClick={onClick}
+            className={`bg-ink border border-subtle p-4 sm:p-5 text-left w-full min-w-0 ${onClick ? "hover:border-paper/30 transition-colors" : ""} ${className}`}
+        >
+            {children}
+        </Tag>
+    );
+}
+
+function WeatherWidget() {
+    const [loadingWeather, setLoadingWeather] = useState(true);
+    const [tempF, setTempF] = useState(null);
+    const [weatherCode, setWeatherCode] = useState(null);
+    const [desc, setDesc] = useState(null);
+    const [err, setErr] = useState(null);
+
+    useEffect(() => {
+        let mounted = true;
+        async function loadWeather() {
+            try {
+                const zresp = await fetch("https://api.zippopotam.us/us/33351");
+                if (!zresp.ok) throw new Error("No geo");
+                const zjson = await zresp.json();
+                const place = (zjson.places && zjson.places[0]) || null;
+                const lat = place?.latitude;
+                const lon = place?.longitude;
+                if (!lat || !lon) throw new Error("No coords");
+
+                const wresp = await fetch(
+                    `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current_weather=true&timezone=America%2FNew_York`
+                );
+                if (!wresp.ok) throw new Error("Weather fetch failed");
+                const wjson = await wresp.json();
+                const cw = wjson.current_weather;
+                if (!cw) throw new Error("No current weather");
+                const c = Number(cw.temperature);
+                const f = Math.round((c * 9) / 5 + 32);
+                const code = Number(cw.weathercode);
+                const map = {
+                    0: "Clear",
+                    1: "Mainly clear",
+                    2: "Partly cloudy",
+                    3: "Overcast",
+                    45: "Fog",
+                    48: "Depositing rime fog",
+                    51: "Light drizzle",
+                    53: "Moderate drizzle",
+                    55: "Dense drizzle",
+                    61: "Slight rain",
+                    63: "Moderate rain",
+                    65: "Heavy rain",
+                    80: "Rain showers",
+                    95: "Thunderstorm",
+                };
+                if (!mounted) return;
+                setTempF(f);
+                setWeatherCode(code);
+                setDesc(map[code] || "Weather");
+            } catch {
+                if (!mounted) return;
+                setErr(true);
+            } finally {
+                if (mounted) setLoadingWeather(false);
+            }
+        }
+
+        loadWeather();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    if (loadingWeather) {
+        return <div className="w-fit text-xs sm:text-sm text-muted shrink-0 text-right">Loading weather…</div>;
+    }
+    if (err) {
+        return <div className="w-fit text-xs sm:text-sm text-muted shrink-0 text-right">Weather unavailable</div>;
+    }
+    return (
+        <div className="w-fit shrink-0 text-right">
+            <div className="flex items-center justify-end gap-2">
+                {weatherCode != null && <WeatherIcon code={weatherCode} size={26} className="sm:hidden shrink-0" />}
+                {weatherCode != null && <WeatherIcon code={weatherCode} size={30} className="hidden sm:block shrink-0" />}
+                <div className="font-thunder text-xl sm:text-2xl md:text-3xl leading-none whitespace-nowrap" style={{ fontWeight: 800 }}>
+                    {tempF}°
+                </div>
+            </div>
+            <div className="text-[11px] sm:text-xs text-muted mt-0.5 text-right whitespace-nowrap">{desc}</div>
+        </div>
+    );
+}
+
 export default function Home() {
     const nav = useNavigate();
     const { coach } = useAuth();
@@ -53,6 +161,10 @@ export default function Home() {
     const [sessionsThisMonth, setSessionsThisMonth] = useState(0);
     const [revenueThisMonth, setRevenueThisMonth] = useState(0);
     const [readyToInvoiceCount, setReadyToInvoiceCount] = useState(0);
+    const [pendingAthletes, setPendingAthletes] = useState([]);
+    const [families, setFamilies] = useState([]);
+    const [athleteFormOpen, setAthleteFormOpen] = useState(false);
+    const [editingAthlete, setEditingAthlete] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -61,19 +173,25 @@ export default function Home() {
             setLoading(true);
             setError(null);
             try {
-                const [todayResp, invoicesResp, monthlySessionsResp] = await Promise.all([
+                const [todayResp, invoicesResp, monthlySessionsResp, pendingResp, familiesResp] = await Promise.all([
                     api.get("/sessions", { params: { start_date: today, end_date: today } }),
                     api.get("/invoices"),
                     api.get("/sessions", { params: { status: "completed", start_date: monthStart, end_date: monthEnd } }),
+                    api.get("/athletes", { params: { status: "pending" } }),
+                    api.get("/families"),
                 ]);
 
-                const sessions = (todayResp.data || []).slice().sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
+                const sessions = (todayResp.data || [])
+                    .slice()
+                    .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
                 setTodaySessions(sessions);
                 setDraftCount((invoicesResp.data || []).filter((inv) => inv.status === "draft").length);
                 const sentInvoices = (invoicesResp.data || []).filter((inv) => inv.status === "sent");
                 setSentCount(sentInvoices.length);
                 setOutstandingTotal(sentInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0));
                 setSessionsThisMonth(monthlySessionsResp.data?.length || 0);
+                setPendingAthletes(pendingResp.data || []);
+                setFamilies(familiesResp.data || []);
 
                 const allInvoiceDetails = await Promise.all(
                     (invoicesResp.data || []).map((invoice) => api.get(`/invoices/${invoice.id}`))
@@ -112,6 +230,19 @@ export default function Home() {
         fetchDashboard();
     }, [today, monthStart, monthEnd, currentMonthKey]);
 
+    async function refreshPending() {
+        try {
+            const [pendingResp, familiesResp] = await Promise.all([
+                api.get("/athletes", { params: { status: "pending" } }),
+                api.get("/families"),
+            ]);
+            setPendingAthletes(pendingResp.data || []);
+            setFamilies(familiesResp.data || []);
+        } catch {
+            /* keep existing list on refresh failure */
+        }
+    }
+
     useEffect(() => {
         if (!todaySessions.length) {
             setAttendanceMap({});
@@ -125,7 +256,7 @@ export default function Home() {
             const map = {};
             responses.forEach((resp, index) => {
                 if (!resp || !resp.data) return;
-                map[todaySessions[index].id] = resp.data.records?.length || 0;
+                map[todaySessions[index].id] = resp.data.records || [];
             });
             setAttendanceMap(map);
         }
@@ -134,168 +265,99 @@ export default function Home() {
     }, [todaySessions]);
 
     const sessionCards = todaySessions.slice(0, 4);
-    const pendingActions = [
+    const invoiceActions = [
         {
             count: draftCount,
-            label: "DRAFTS PENDING",
+            label: "Drafts Pending",
             detail: `${draftCount} invoice${draftCount === 1 ? "" : "s"} not yet sent`,
             onClick: () => nav("/invoices?status=draft"),
         },
         {
             count: sentCount,
-            label: "AWAITING PAYMENT",
+            label: "Awaiting Payment",
             detail: `${sentCount} invoice${sentCount === 1 ? "" : "s"} sent, not yet paid — ${fmtMoney(outstandingTotal)}`,
             onClick: () => nav("/invoices?status=sent"),
         },
         {
             count: readyToInvoiceCount,
-            label: "READY TO INVOICE",
-            detail: `${readyToInvoiceCount} completed session${readyToInvoiceCount === 1 ? "" : "s"} with attendance not yet included in an invoice`,
+            label: "Ready to Invoice",
+            detail: `${readyToInvoiceCount} completed session${readyToInvoiceCount === 1 ? "" : "s"} not yet on a draft invoice`,
             onClick: () => nav("/invoices?new=true"),
         },
-    ].filter((item) => item.count > 0).slice(0, 3);
+    ]
+        .filter((item) => item.count > 0)
+        .slice(0, 3);
 
     const greetingLabel = `${greeting.toUpperCase()}, ${getUserLabel(coach?.name)}`;
     const topDateLabel = formatHeaderDate(today);
-    const shortDateLabel = new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-    }).format(new Date(`${today}T00:00:00`)).toUpperCase();
-
-    function WeatherWidget() {
-        const [loadingWeather, setLoadingWeather] = useState(true);
-        const [tempF, setTempF] = useState(null);
-        const [desc, setDesc] = useState(null);
-        const [err, setErr] = useState(null);
-
-        useEffect(() => {
-            let mounted = true;
-            async function loadWeather() {
-                try {
-                    // Get lat/lon for zip 33351
-                    const zresp = await fetch("https://api.zippopotam.us/us/33351");
-                    if (!zresp.ok) throw new Error("No geo");
-                    const zjson = await zresp.json();
-                    const place = (zjson.places && zjson.places[0]) || null;
-                    const lat = place?.latitude;
-                    const lon = place?.longitude;
-                    if (!lat || !lon) throw new Error("No coords");
-
-                    const wresp = await fetch(
-                        `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current_weather=true&timezone=America%2FNew_York`
-                    );
-                    if (!wresp.ok) throw new Error("Weather fetch failed");
-                    const wjson = await wresp.json();
-                    const cw = wjson.current_weather;
-                    if (!cw) throw new Error("No current weather");
-                    const c = Number(cw.temperature);
-                    const f = Math.round((c * 9) / 5 + 32);
-                    const code = Number(cw.weathercode);
-                    const map = {
-                        0: "Clear",
-                        1: "Mainly clear",
-                        2: "Partly cloudy",
-                        3: "Overcast",
-                        45: "Fog",
-                        48: "Depositing rime fog",
-                        51: "Light drizzle",
-                        53: "Moderate drizzle",
-                        55: "Dense drizzle",
-                        61: "Slight rain",
-                        63: "Moderate rain",
-                        65: "Heavy rain",
-                        80: "Rain showers",
-                        95: "Thunderstorm",
-                    };
-                    if (!mounted) return;
-                    setTempF(f);
-                    setDesc(map[code] || "Weather");
-                } catch (e) {
-                    if (!mounted) return;
-                    setErr(true);
-                } finally {
-                    if (mounted) setLoadingWeather(false);
-                }
-            }
-
-            loadWeather();
-            return () => { mounted = false; };
-        }, []);
-
-        if (loadingWeather) return <div className="text-sm text-muted">Loading weather…</div>;
-        if (err) return <div className="text-sm text-muted">Weather unavailable</div>;
-        return (
-            <div className="text-right">
-                <div className="text-sm text-muted">33351</div>
-                <div className="font-thunder text-2xl" style={{ fontWeight: 800 }}>{tempF}°</div>
-                <div className="text-xs text-muted mt-0.5">{desc}</div>
-            </div>
-        );
-    }
 
     return (
-        <div className="px-5 md:px-10 pb-10 pt-10 md:pt-12">
-            <div className="border-b border-[#2A2A2A] pb-8">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <div className="text-[11px] uppercase tracking-[0.45em] text-muted font-thunder" style={{ fontWeight: 300 }}>
+        <div className="w-full px-5 md:px-10 lg:px-12 pb-6 pt-8 md:pt-10 lg:pt-12">
+            <header className="border-b border-subtle pb-6 md:pb-8">
+                <div className="flex items-end justify-between gap-3 sm:gap-4">
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.18em] sm:tracking-[0.32em] lg:tracking-[0.45em] text-muted font-thunder leading-snug line-clamp-2 sm:line-clamp-none" style={{ fontWeight: 300 }}>
                             {topDateLabel}
-                        </div>
-                        <div className="mt-3 font-thunder uppercase text-4xl md:text-5xl tracking-tight text-paper" style={{ fontWeight: 800 }}>
+                        </p>
+                        <h1
+                            className="mt-3 font-thunder uppercase text-3xl sm:text-4xl lg:text-5xl tracking-tight text-paper min-w-0 leading-[0.92] break-words"
+                            style={{ fontWeight: 800 }}
+                        >
                             {greetingLabel}
-                        </div>
+                        </h1>
                     </div>
-                    <div className="ml-4">
-                        <WeatherWidget />
-                    </div>
+                    <WeatherWidget />
                 </div>
-            </div>
+            </header>
 
-            <div className="mt-10 grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
-                <section className="space-y-5">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="text-[11px] uppercase tracking-wider3 text-paper font-thunder" style={{ fontWeight: 700 }}>
-                            TODAY
-                        </div>
-                        <div className="text-sm text-muted uppercase tracking-wider2 font-thunder" style={{ fontWeight: 500 }}>
-                            {shortDateLabel}
-                        </div>
-                    </div>
+            <div className="mt-6 md:mt-8 lg:mt-10 grid grid-cols-1 gap-6 lg:gap-8 xl:grid-cols-12 xl:gap-10">
+                <section className="min-w-0 space-y-4 md:space-y-5 xl:col-span-7">
+                    <SectionLabel>Today</SectionLabel>
 
                     {loading ? (
-                        <div className="text-muted text-sm py-8">Loading…</div>
+                        <div className="text-muted text-sm py-6 md:py-8">Loading…</div>
                     ) : error ? (
-                        <div className="text-danger text-sm py-8">{error}</div>
+                        <div className="text-danger text-sm py-6 md:py-8">{error}</div>
                     ) : sessionCards.length === 0 ? (
-                        <div className="text-sm text-muted">No sessions scheduled for today.</div>
+                        <div className="text-sm text-muted py-2">No sessions scheduled for today.</div>
                     ) : (
                         <div className="flex flex-col gap-3">
                             {sessionCards.map((session) => {
-                                const marked = attendanceMap[session.id] ?? 0;
-                                const expected = session.athlete_ids?.length || 0;
-                                const attendanceLabel = marked > 0 ? `${marked} / ${expected} marked` : `${expected} expected`;
+                                const attendanceLabel = sessionPresentLabel(
+                                    session.athlete_ids?.length || 0,
+                                    attendanceMap[session.id]
+                                );
                                 return (
                                     <button
                                         key={session.id}
+                                        type="button"
                                         onClick={() => nav(`/sessions/${session.id}`)}
-                                        className="relative bg-[#1E1E1E] border border-[#2A2A2A] p-5 text-left hover:border-paper/30 transition-colors flex items-start gap-4"
+                                        className="relative bg-mid border border-subtle p-4 sm:p-5 text-left hover:border-paper/30 transition-colors flex items-start gap-3 sm:gap-4 w-full min-h-[44px]"
                                     >
-                                        <span className={`absolute left-0 top-0 bottom-0 w-0.5 ${TYPE_BAR[session.session_type] || "bg-subtle"}`} />
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-start justify-between gap-3">
+                                        <span
+                                            className={`absolute left-0 top-0 bottom-0 w-0.5 ${TYPE_BAR[session.session_type] || "bg-subtle"}`}
+                                        />
+                                        <div className="flex-1 min-w-0 pl-1">
+                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="font-thunder uppercase tracking-tight text-paper text-2xl" style={{ fontWeight: 800 }}>
+                                                    <div className="font-thunder uppercase tracking-tight text-paper text-xl sm:text-2xl leading-none" style={{ fontWeight: 800 }}>
                                                         {fmtTime(session.start_time) || "—"}
-                                                        {session.end_time ? <span className="text-muted text-xl"> – {fmtTime(session.end_time)}</span> : null}
+                                                        {session.end_time ? (
+                                                            <span className="text-muted text-lg sm:text-xl">
+                                                                {" "}
+                                                                – {fmtTime(session.end_time)}
+                                                            </span>
+                                                        ) : null}
                                                     </div>
-                                                    <div className="text-sm text-muted uppercase tracking-wider2 mt-2" style={{ fontWeight: 500 }}>
+                                                    <div className="text-xs sm:text-sm text-muted uppercase tracking-wider2 mt-1.5 sm:mt-2" style={{ fontWeight: 500 }}>
                                                         {session.session_type?.replace(/_/g, " ")}
                                                     </div>
                                                 </div>
-                                                <SessionStatusPill status={session.status} />
+                                                <div className="self-start shrink-0">
+                                                    <SessionStatusPill status={session.status} />
+                                                </div>
                                             </div>
-                                            <div className="mt-4 text-sm text-muted font-light">{attendanceLabel}</div>
+                                            <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-muted font-light">{attendanceLabel}</div>
                                         </div>
                                     </button>
                                 );
@@ -304,10 +366,11 @@ export default function Home() {
                     )}
 
                     {todaySessions.length > 4 ? (
-                        <div className="pt-3 text-right">
+                        <div className="pt-1 sm:pt-3 text-right">
                             <button
+                                type="button"
                                 onClick={() => nav("/")}
-                                className="inline-flex items-center gap-1 text-sm uppercase tracking-wider2 text-paper text-opacity-80 hover:text-paper"
+                                className="inline-flex items-center gap-1 text-xs sm:text-sm uppercase tracking-wider2 text-paper/80 hover:text-paper min-h-[44px] px-1"
                             >
                                 View all
                                 <ChevronRight size={16} strokeWidth={2} />
@@ -316,84 +379,112 @@ export default function Home() {
                     ) : null}
                 </section>
 
-                <div className="space-y-5">
-                    <section className="space-y-4">
-                        <div className="text-[11px] uppercase tracking-wider3 text-paper font-thunder" style={{ fontWeight: 700 }}>
-                            NEEDS ATTENTION
-                        </div>
+                <div className="min-w-0 space-y-6 md:space-y-8 xl:col-span-5">
+                    <section className="space-y-3 md:space-y-4">
+                        <SectionLabel>Needs Attention</SectionLabel>
                         {loading ? (
-                            <div className="text-muted text-sm py-8">Loading…</div>
-                        ) : pendingActions.length === 0 ? (
-                            <div className="text-sm text-muted">You're all caught up.</div>
+                            <div className="text-muted text-sm py-6 md:py-8">Loading…</div>
+                        ) : pendingAthletes.length === 0 && invoiceActions.length === 0 ? (
+                            <div className="text-sm text-muted">You&apos;re all caught up.</div>
                         ) : (
                             <div className="flex flex-col gap-3">
-                                {pendingActions.map((action) => (
+                                {pendingAthletes.map((athlete) => (
+                                    <button
+                                        key={athlete.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setEditingAthlete(athlete);
+                                            setAthleteFormOpen(true);
+                                        }}
+                                        className="relative bg-mid border border-accent/40 p-4 sm:p-5 text-left hover:border-paper/30 transition-colors flex items-start justify-between gap-3 w-full min-h-[44px]"
+                                    >
+                                        <span className="absolute left-0 top-0 bottom-0 w-1 bg-accent" />
+                                        <div className="pl-3 min-w-0 flex-1">
+                                            <div className="font-thunder uppercase tracking-tight text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
+                                                Pending Enrollment
+                                            </div>
+                                            <div className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted font-light leading-relaxed">
+                                                {athlete.full_name}
+                                                <span className="text-muted/80"> · {formatAthletePrograms(athlete)}</span>
+                                            </div>
+                                        </div>
+                                        <ChevronRight size={18} className="text-muted shrink-0 mt-0.5" strokeWidth={2} />
+                                    </button>
+                                ))}
+                                {invoiceActions.map((action) => (
                                     <button
                                         key={action.label}
+                                        type="button"
                                         onClick={action.onClick}
-                                        className="relative bg-[#1E1E1E] border border-[#2A2A2A] p-5 text-left hover:border-paper/30 transition-colors flex items-start justify-between gap-3"
+                                        className="relative bg-mid border border-subtle p-4 sm:p-5 text-left hover:border-paper/30 transition-colors flex items-start justify-between gap-3 w-full min-h-[44px]"
                                     >
-                                        <span className="absolute left-0 top-0 bottom-0 w-1 bg-[#CBFF00]" />
-                                        <div className="pl-3 min-w-0">
-                                            <div className="font-thunder uppercase tracking-tight text-paper" style={{ fontWeight: 700 }}>
+                                        <span className="absolute left-0 top-0 bottom-0 w-1 bg-accent" />
+                                        <div className="pl-3 min-w-0 flex-1">
+                                            <div className="font-thunder uppercase tracking-tight text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
                                                 {action.label}
                                             </div>
-                                            <div className="mt-2 text-sm text-muted font-light">
+                                            <div className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted font-light leading-relaxed">
                                                 {action.detail}
                                             </div>
                                         </div>
-                                        <ChevronRight size={18} className="text-muted" strokeWidth={2} />
+                                        <ChevronRight size={18} className="text-muted shrink-0 mt-0.5" strokeWidth={2} />
                                     </button>
                                 ))}
                             </div>
                         )}
                     </section>
 
-                    <section className="space-y-4">
-                        <div className="text-[11px] uppercase tracking-wider3 text-paper font-thunder" style={{ fontWeight: 700 }}>
-                            THIS MONTH
-                        </div>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                            <div className="bg-[#141414] p-5">
-                                <div className="font-thunder uppercase tracking-tight text-paper text-5xl" style={{ fontWeight: 800 }}>
+                    <section className="space-y-3 md:space-y-4">
+                        <SectionLabel>This Month</SectionLabel>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:grid-cols-1 lg:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+                            <StatTile>
+                                <div className="font-thunder uppercase tracking-tight text-paper text-3xl sm:text-4xl xl:text-3xl 2xl:text-4xl leading-none" style={{ fontWeight: 800 }}>
                                     {sessionsThisMonth}
                                 </div>
-                                <div className="mt-3 text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
-                                    SESSIONS
+                                <div className="mt-2 sm:mt-3 text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
+                                    Sessions
                                 </div>
-                                <div className="text-[11px] uppercase tracking-wider3 text-muted mt-1" style={{ fontWeight: 300 }}>
-                                    THIS MONTH
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted mt-0.5" style={{ fontWeight: 300 }}>
+                                    This month
                                 </div>
-                            </div>
-                            <div className="bg-[#141414] p-5">
-                                <div className="font-thunder uppercase tracking-tight text-paper text-5xl" style={{ fontWeight: 800 }}>
+                            </StatTile>
+                            <StatTile>
+                                <div className="font-thunder uppercase tracking-tight text-paper text-2xl sm:text-3xl lg:text-2xl xl:text-3xl 2xl:text-4xl leading-none break-words" style={{ fontWeight: 800 }}>
                                     {fmtMoney(revenueThisMonth)}
                                 </div>
-                                <div className="mt-3 text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
-                                    REVENUE
+                                <div className="mt-2 sm:mt-3 text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
+                                    Revenue
                                 </div>
-                                <div className="text-[11px] uppercase tracking-wider3 text-muted mt-1" style={{ fontWeight: 300 }}>
-                                    THIS MONTH
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted mt-0.5" style={{ fontWeight: 300 }}>
+                                    This month
                                 </div>
-                            </div>
-                            <button
-                                onClick={() => nav("/invoices?status=sent")}
-                                className="bg-[#141414] p-5 text-left hover:bg-[#1c1c1c] transition-colors"
-                            >
-                                <div className="font-thunder uppercase tracking-tight text-paper text-5xl" style={{ fontWeight: 800 }}>
+                            </StatTile>
+                            <StatTile onClick={() => nav("/invoices?status=sent")}>
+                                <div className="font-thunder uppercase tracking-tight text-paper text-3xl sm:text-4xl xl:text-3xl 2xl:text-4xl leading-none" style={{ fontWeight: 800 }}>
                                     {sentCount}
                                 </div>
-                                <div className="mt-3 text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
-                                    OUTSTANDING
+                                <div className="mt-2 sm:mt-3 text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted" style={{ fontWeight: 300 }}>
+                                    Outstanding
                                 </div>
-                                <div className="text-[11px] uppercase tracking-wider3 text-muted mt-1" style={{ fontWeight: 300 }}>
-                                    INVOICES
+                                <div className="text-[10px] sm:text-[11px] uppercase tracking-wider3 text-muted mt-0.5" style={{ fontWeight: 300 }}>
+                                    Invoices
                                 </div>
-                            </button>
+                            </StatTile>
                         </div>
                     </section>
                 </div>
             </div>
+
+            <AthleteFormModal
+                open={athleteFormOpen}
+                onOpenChange={setAthleteFormOpen}
+                athlete={editingAthlete}
+                families={families}
+                onSaved={() => {
+                    setAthleteFormOpen(false);
+                    refreshPending();
+                }}
+            />
         </div>
     );
 }

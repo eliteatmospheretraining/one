@@ -26,6 +26,7 @@ BASE_URL = (BASE_URL or "").rstrip("/")
 API = f"{BASE_URL}/api"
 
 ADMIN_EMAIL = "coachrico@eliteatmospheretraining.com"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
 # ---------------- Fixtures ----------------
 
@@ -118,6 +119,37 @@ class TestAuth:
         coach = r.json()
         assert coach["email"] == ADMIN_EMAIL
         assert coach["role"] == "admin"
+        assert "password_hash" not in coach
+
+    @pytest.mark.skipif(not ADMIN_PASSWORD, reason="ADMIN_PASSWORD not set on API")
+    def test_password_login_success(self):
+        r = requests.post(
+            f"{API}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+            timeout=30,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert "token" in data
+        assert data["coach"]["email"] == ADMIN_EMAIL
+        assert "password_hash" not in data["coach"]
+
+    @pytest.mark.skipif(not ADMIN_PASSWORD, reason="ADMIN_PASSWORD not set on API")
+    def test_password_login_wrong_password(self):
+        r = requests.post(
+            f"{API}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": "wrong-password-xyz"},
+            timeout=30,
+        )
+        assert r.status_code == 401
+
+    def test_password_login_non_admin(self):
+        r = requests.post(
+            f"{API}/auth/login",
+            json={"email": "rando@example.com", "password": "anything"},
+            timeout=30,
+        )
+        assert r.status_code == 401
 
 
 # ---------------- Rate card ----------------
@@ -129,11 +161,39 @@ class TestRateCard:
         assert r.status_code == 200
         rc = r.json()
         assert rc["full_day"] == 60
+        assert rc["full_day_hours"] == 5
+        assert rc["half_day_hours"] == 2.5
         assert rc["half_day"] == 30
         assert rc["drop_in_full"] == 85
         assert rc["drop_in_half"] == 50
         assert rc["private"] == 85
         assert rc["semi_private"] == 65
+
+    def test_invoice_line_date_format(self):
+        from billing import describe_line, format_invoice_display_date
+        from models import AttendanceType, ProgramType
+
+        assert format_invoice_display_date("2026-06-03") == "06-03-2026"
+        desc = describe_line(AttendanceType.full, ProgramType.full_time, "2026-06-03")
+        assert "06-03-2026" in desc
+        assert "hr @" not in desc
+
+    def test_full_time_flat_rate_from_card(self):
+        from billing import full_time_flat_rate
+        from models import AttendanceType
+        from rate_card_store import apply_rate_card, reset_rate_card_to_default
+
+        apply_rate_card(
+            {"full_day": 55.0, "half_day": 27.5},
+            source="test",
+            notion_url=None,
+            error=None,
+        )
+        try:
+            assert full_time_flat_rate(AttendanceType.full, None) == 55.0
+            assert full_time_flat_rate(AttendanceType.half, None) == 27.5
+        finally:
+            reset_rate_card_to_default()
 
 
 # ---------------- Families ----------------
@@ -270,6 +330,8 @@ class TestSessionsAttendance:
             json={
                 "date": sess_date,
                 "session_type": "full_time",
+                "start_time": "09:00",
+                "end_time": "14:00",
                 "athlete_ids": [a1["id"], a2["id"], a3["id"], a4["id"]],
             },
             headers=auth_headers,
@@ -288,10 +350,10 @@ class TestSessionsAttendance:
 
         # Save attendance
         entries = [
-            {"athlete_id": a1["id"], "attendance_type": "full"},          # full_time + full -> 60
-            {"athlete_id": a2["id"], "attendance_type": "full"},          # full_time + full + override 70 -> 70
-            {"athlete_id": a3["id"], "attendance_type": "full"},          # private + full -> 85
-            {"athlete_id": a4["id"], "attendance_type": "drop_in_full"},  # drop_in_full -> 85 (no override)
+            {"athlete_id": a1["id"], "attendance_type": "full"},          # full_time full day $60
+            {"athlete_id": a2["id"], "attendance_type": "full"},          # override $70/day
+            {"athlete_id": a3["id"], "attendance_type": "full"},          # private $85/hr × 5h
+            {"athlete_id": a4["id"], "attendance_type": "drop_in_full"},  # drop-in flat $85
         ]
         save = requests.post(
             f"{API}/sessions/{sid}/attendance", json={"entries": entries}, headers=auth_headers
@@ -303,23 +365,35 @@ class TestSessionsAttendance:
         recs = {r["athlete_id"]: r for r in after["records"]}
         assert recs[a1["id"]]["billed_rate"] == 60
         assert recs[a2["id"]]["billed_rate"] == 70  # override applied
-        assert recs[a3["id"]]["billed_rate"] == 85
-        assert recs[a4["id"]]["billed_rate"] == 85  # drop-in not overridden
+        assert recs[a3["id"]]["billed_rate"] == 425
+        assert recs[a4["id"]]["billed_rate"] == 425
 
-        # Now mark completed (allowed)
+        # Now mark completed (allowed) — auto-creates draft invoice for the family
         done = requests.patch(f"{API}/sessions/{sid}", json={"status": "completed"}, headers=auth_headers)
         assert done.status_code == 200, done.text
         assert done.json()["status"] == "completed"
+        synced = done.json().get("invoices_synced") or []
+        assert len(synced) >= 1, done.text
+        inv = synced[0]["invoice"]
+        assert inv["status"] == "draft"
+        det = requests.get(f"{API}/invoices/{inv['id']}", headers=auth_headers).json()
+        assert len(det["line_items"]) >= 4
 
         # Test half-day billing
         half_entries = [
-            {"athlete_id": a1["id"], "attendance_type": "half"},  # full_time + half -> 30
-            {"athlete_id": a2["id"], "attendance_type": "half"},  # full_time half + override 70 -> 35
+            {"athlete_id": a1["id"], "attendance_type": "half"},  # full_time half day $30
+            {"athlete_id": a2["id"], "attendance_type": "half"},  # override half $35
             {"athlete_id": a4["id"], "attendance_type": "drop_in_half"},  # 50
         ]
         s2 = requests.post(
             f"{API}/sessions",
-            json={"date": sess_date, "session_type": "full_time", "athlete_ids": [a1["id"], a2["id"], a4["id"]]},
+            json={
+                "date": sess_date,
+                "session_type": "full_time",
+                "start_time": "09:00",
+                "end_time": "14:00",
+                "athlete_ids": [a1["id"], a2["id"], a4["id"]],
+            },
             headers=auth_headers,
         ).json()
         sid2 = s2["id"]
@@ -328,7 +402,7 @@ class TestSessionsAttendance:
         recs2 = {r["athlete_id"]: r for r in after2["records"]}
         assert recs2[a1["id"]]["billed_rate"] == 30
         assert recs2[a2["id"]]["billed_rate"] == 35.0
-        assert recs2[a4["id"]]["billed_rate"] == 50
+        assert recs2[a4["id"]]["billed_rate"] == 50  # drop-in half flat
 
         # Re-save wipes & re-snapshots
         resave = [{"athlete_id": a1["id"], "attendance_type": "absent"}]
@@ -398,7 +472,13 @@ class TestInvoices:
         sess_date = (date.today() - timedelta(days=1)).isoformat()
         sess = requests.post(
             f"{API}/sessions",
-            json={"date": sess_date, "session_type": "full_time", "athlete_ids": [ath["id"]]},
+            json={
+                "date": sess_date,
+                "session_type": "full_time",
+                "start_time": "09:00",
+                "end_time": "14:00",
+                "athlete_ids": [ath["id"]],
+            },
             headers=auth_headers,
         ).json()
         requests.post(
@@ -421,21 +501,17 @@ class TestInvoices:
         inv1 = gen1.json()["invoice"]
         assert inv1["invoice_number"].startswith("EAT-")
         assert int(inv1["invoice_number"].split("-")[1]) >= 1
-        assert inv1["total"] == 60
+        assert inv1["total"] == 0
         assert inv1["status"] == "draft"
+        assert gen1.json()["line_items"] == []
 
-        # second generate increments
-        # Create another session/attendance to have billable items
-        sess2 = requests.post(
-            f"{API}/sessions",
-            json={"date": sess_date, "session_type": "full_time", "athlete_ids": [ath["id"]]},
-            headers=auth_headers,
-        ).json()
-        requests.post(
-            f"{API}/sessions/{sess2['id']}/attendance",
-            json={"entries": [{"athlete_id": ath["id"], "attendance_type": "full"}]},
+        add_line = requests.post(
+            f"{API}/invoices/{inv1['id']}/line-items",
+            json={"athlete_id": ath["id"], "service_id": "eat_monthly", "quantity": 1},
             headers=auth_headers,
         )
+        assert add_line.status_code == 200, add_line.text
+        assert add_line.json()["total"] == 1100
 
         gen2 = requests.post(
             f"{API}/invoices/generate",
@@ -454,12 +530,28 @@ class TestInvoices:
         assert det["family"]["id"] == fam["id"]
         assert len(det["line_items"]) >= 1
         assert len(det["athletes"]) >= 1
+        assert det["line_items"][0]["amount"] == 1100
+        assert "Eat w/ EAT" in det["line_items"][0]["description"]
 
         # PDF returns application/pdf
         pdf = requests.get(f"{API}/invoices/{inv1['id']}/pdf", headers=auth_headers, timeout=60)
         assert pdf.status_code == 200, pdf.text[:200]
         assert "application/pdf" in pdf.headers.get("content-type", "")
         assert pdf.content[:4] == b"%PDF"
+
+        # Email HTML previews (due + paid after payment below)
+        prev_due = requests.get(
+            f"{API}/invoices/{inv1['id']}/email-preview",
+            params={"kind": "due"},
+            headers=auth_headers,
+        )
+        assert prev_due.status_code == 200, prev_due.text[:200]
+        assert "text/html" in prev_due.headers.get("content-type", "")
+        assert "is ready" in prev_due.text.lower()
+        assert "View invoice" in prev_due.text
+        assert "EAT family" in prev_due.text
+        assert "If the button doesn't work" not in prev_due.text
+        assert "/06/" in prev_due.text or "06/" in prev_due.text
 
         # Test absent records excluded from invoice
         sess3 = requests.post(
@@ -483,13 +575,25 @@ class TestInvoices:
         # Payment flow on inv1
         pay = requests.post(
             f"{API}/invoices/{inv1['id']}/payments",
-            json={"amount_received": 60, "received_date": date.today().isoformat(), "method": "Zelle"},
+            json={"amount_received": 300, "received_date": date.today().isoformat(), "method": "Zelle"},
             headers=auth_headers,
         )
         assert pay.status_code == 200
         det2 = requests.get(f"{API}/invoices/{inv1['id']}", headers=auth_headers).json()
         assert det2["invoice"]["status"] == "paid"
         assert len(det2["payments"]) == 1
+
+        prev_paid = requests.get(
+            f"{API}/invoices/{inv1['id']}/email-preview",
+            params={"kind": "paid"},
+            headers=auth_headers,
+        )
+        assert prev_paid.status_code == 200
+        assert "Much appreciated" in prev_paid.text
+        assert "is attached" in prev_paid.text
+        assert "View invoice" in prev_paid.text
+        assert "/api/invoice-access/pdf?token=" in prev_paid.text
+        assert "See you on the court" in prev_paid.text
 
         # DELETE only for drafts: inv1 is paid → must fail
         d_paid = requests.delete(f"{API}/invoices/{inv1['id']}", headers=auth_headers)

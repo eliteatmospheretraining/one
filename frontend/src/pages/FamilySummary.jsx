@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { InvoiceStatusPill } from "../components/Pills";
-import { fmtDate, fmtMoney, PROGRAM_LABEL } from "../lib/format";
+import { fmtInvoiceDate, fmtMoney, formatAthletePrograms } from "../lib/format";
 import { Mail, Phone } from "lucide-react";
 
 export function FamilySummaryModal({ open, onOpenChange, familyId }) {
@@ -26,7 +26,7 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                 <div className="flex flex-col gap-6">
                     {/* Guardian */}
                     <section>
-                        <div className="eat-label mb-1">Parent One</div>
+                        <div className="eat-label mb-1">Primary Contact</div>
                         <div className="text-paper" style={{ fontWeight: 500 }}>{data.family.guardian_name}</div>
                         <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light mt-1">
                             <span className="inline-flex items-center gap-1.5"><Mail size={12} strokeWidth={1.5} />{data.family.guardian_email}</span>
@@ -35,7 +35,7 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                     </section>
                     {data.family.guardian_name_secondary && (
                         <section>
-                            <div className="eat-label mb-1">Parent Two</div>
+                            <div className="eat-label mb-1">Secondary Contact</div>
                             <div className="text-paper" style={{ fontWeight: 500 }}>{data.family.guardian_name_secondary}</div>
                             <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted font-light mt-1">
                                 {data.family.guardian_email_secondary && (
@@ -74,15 +74,10 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                             {data.athletes.length === 0 ? (
                                 <div className="text-sm text-muted py-3 font-light">No athletes attached yet.</div>
                             ) : data.athletes.map((a) => (
-                                <div key={a.id} className="flex items-center justify-between py-2 border-b border-subtle">
-                                    <div>
-                                        <div className="text-paper" style={{ fontWeight: 500 }}>{a.full_name}</div>
-                                        <div className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
-                                            {PROGRAM_LABEL[a.program_type]} · {a.status}
-                                        </div>
-                                    </div>
-                                    <div className="text-right text-sm text-muted font-light">
-                                        {a.rate_override != null ? fmtMoney(a.rate_override) : "—"}
+                                <div key={a.id} className="py-2 border-b border-subtle">
+                                    <div className="text-paper" style={{ fontWeight: 500 }}>{a.full_name}</div>
+                                    <div className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
+                                        {formatAthletePrograms(a)} · {a.status}
                                     </div>
                                 </div>
                             ))}
@@ -100,7 +95,7 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                                     <div key={i.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-subtle">
                                         <div className="min-w-0">
                                             <div className="text-paper" style={{ fontWeight: 500 }}>{i.invoice_number}</div>
-                                            <div className="text-xs text-muted font-light">{fmtDate(i.period_start)} – {fmtDate(i.period_end)}</div>
+                                            <div className="text-xs text-muted font-light">{fmtInvoiceDate(i.period_start)} – {fmtInvoiceDate(i.period_end)}</div>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <InvoiceStatusPill status={i.status} />
@@ -125,7 +120,7 @@ export function FamilySummaryModal({ open, onOpenChange, familyId }) {
                                             <div className="text-paper" style={{ fontWeight: 500 }}>{fmtMoney(p.amount_received)}</div>
                                             <div className="text-xs text-muted font-light">{p.method}{p.note ? ` · ${p.note}` : ""}</div>
                                         </div>
-                                        <div className="text-xs text-muted font-light">{fmtDate(p.received_date)}</div>
+                                        <div className="text-xs text-muted font-light">{fmtInvoiceDate(p.received_date)}</div>
                                     </div>
                                 ))}
                             </div>

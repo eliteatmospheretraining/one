@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { SessionStatusPill } from "../components/Pills";
 import { CALENDAR } from "../lib/testIds";
-import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, fmtTime, todayISO, weekStart } from "../lib/format";
+import { PROGRAM_LABEL, addDays, fmtDate, fmtDay, fmtDayNum, fmtTime, sessionPresentLabel, todayISO, weekStart } from "../lib/format";
 import { ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
 
@@ -25,6 +25,7 @@ export default function CalendarPage() {
     const [athletes, setAthletes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [formOpen, setFormOpen] = useState(false);
+    const [attendanceBySession, setAttendanceBySession] = useState({});
 
     const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i)), [weekAnchor]);
 
@@ -58,9 +59,41 @@ export default function CalendarPage() {
         return map;
     }, [sessions]);
 
-    const daySessions = (sessionsByDay[selected] || []).sort(
-        (a, b) => (a.start_time || "").localeCompare(b.start_time || "")
+    const daySessions = useMemo(
+        () =>
+            (sessionsByDay[selected] || []).sort((a, b) =>
+                (a.start_time || "").localeCompare(b.start_time || "")
+            ),
+        [sessionsByDay, selected]
     );
+
+    useEffect(() => {
+        if (!daySessions.length) {
+            setAttendanceBySession({});
+            return;
+        }
+
+        let cancelled = false;
+
+        async function fetchAttendance() {
+            const responses = await Promise.all(
+                daySessions.map((session) =>
+                    api.get(`/sessions/${session.id}/attendance`).catch(() => null)
+                )
+            );
+            if (cancelled) return;
+            const map = {};
+            responses.forEach((resp, index) => {
+                map[daySessions[index].id] = resp?.data?.records || [];
+            });
+            setAttendanceBySession(map);
+        }
+
+        fetchAttendance();
+        return () => {
+            cancelled = true;
+        };
+    }, [daySessions]);
 
     return (
         <div>
@@ -179,7 +212,11 @@ export default function CalendarPage() {
                                             <span className="inline-flex items-center gap-1.5"><MapPin size={13} strokeWidth={1.5} /> {s.location}</span>
                                         )}
                                         <span className="inline-flex items-center gap-1.5">
-                                            <Users size={13} strokeWidth={1.5} /> {(s.athlete_ids || []).length} expected
+                                            <Users size={13} strokeWidth={1.5} />
+                                            {sessionPresentLabel(
+                                                (s.athlete_ids || []).length,
+                                                attendanceBySession[s.id]
+                                            )}
                                         </span>
                                     </div>
                                 </div>
