@@ -465,6 +465,46 @@ class TestSessionsAttendance:
         assert patch.json()["athlete_ids"] == [a["id"]]
         requests.delete(f"{API}/sessions/{sid}", headers=auth_headers)
 
+    def test_attendance_roster_sorted_by_name(self, auth_headers, family):
+        z = requests.post(
+            f"{API}/athletes",
+            json={"full_name": "TEST_Zara Att", "program_type": "full_time", "family_id": family["id"]},
+            headers=auth_headers,
+        ).json()
+        a = requests.post(
+            f"{API}/athletes",
+            json={"full_name": "TEST_Aaron Att", "program_type": "full_time", "family_id": family["id"]},
+            headers=auth_headers,
+        ).json()
+        m = requests.post(
+            f"{API}/athletes",
+            json={"full_name": "TEST_Mia Att", "program_type": "full_time", "family_id": family["id"]},
+            headers=auth_headers,
+        ).json()
+        sess_date = (date.today() + timedelta(days=4)).isoformat()
+        sid = requests.post(
+            f"{API}/sessions",
+            json={
+                "date": sess_date,
+                "session_type": "full_time",
+                "athlete_ids": [z["id"], a["id"], m["id"]],
+            },
+            headers=auth_headers,
+        ).json()["id"]
+        att = requests.get(f"{API}/sessions/{sid}/attendance", headers=auth_headers).json()
+        names = [row["athlete"]["full_name"] for row in att["roster"]]
+        assert names == sorted(names, key=str.casefold)
+        patch = requests.patch(
+            f"{API}/sessions/{sid}",
+            json={"athlete_ids": [m["id"], z["id"], a["id"]]},
+            headers=auth_headers,
+        )
+        assert patch.status_code == 200, patch.text
+        att2 = requests.get(f"{API}/sessions/{sid}/attendance", headers=auth_headers).json()
+        names2 = [row["athlete"]["full_name"] for row in att2["roster"]]
+        assert names2 == sorted(names2, key=str.casefold)
+        requests.delete(f"{API}/sessions/{sid}", headers=auth_headers)
+
     def test_session_delete_cascades_attendance(self, auth_headers, family):
         a = requests.post(
             f"{API}/athletes",

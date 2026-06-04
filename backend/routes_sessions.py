@@ -29,6 +29,21 @@ from models import (
 router = APIRouter(prefix="/sessions", tags=["sessions"], dependencies=[Depends(get_current_coach)])
 
 
+async def _sort_athlete_ids_by_name(athlete_ids: list[str]) -> list[str]:
+    if not athlete_ids:
+        return athlete_ids
+    docs = await db.athletes.find(
+        {"id": {"$in": athlete_ids}},
+        {"_id": 0, "id": 1, "full_name": 1},
+    ).to_list(500)
+    order = {a["id"]: (a.get("full_name") or "").casefold() for a in docs}
+    return sorted(athlete_ids, key=lambda aid: order.get(aid, aid))
+
+
+def _sort_athletes_by_name(athletes: list[dict]) -> list[dict]:
+    return sorted(athletes, key=lambda a: (a.get("full_name") or "").casefold())
+
+
 @router.get("", response_model=List[TrainingSession])
 async def list_sessions(
     start_date: Optional[date] = Query(None),
@@ -50,7 +65,9 @@ async def list_sessions(
 
 @router.post("", response_model=TrainingSession)
 async def create_session(payload: SessionCreate):
-    s = TrainingSession(**payload.model_dump())
+    data = payload.model_dump()
+    data["athlete_ids"] = await _sort_athlete_ids_by_name(data.get("athlete_ids") or [])
+    s = TrainingSession(**data)
     await db.sessions.insert_one(serialize(s.model_dump()))
     await push_session(s.id)
     return s
@@ -66,7 +83,9 @@ async def create_sessions_batch(payload: List[SessionCreate]):
 
     created: list[TrainingSession] = []
     for item in payload:
-        s = TrainingSession(**item.model_dump())
+        data = item.model_dump()
+        data["athlete_ids"] = await _sort_athlete_ids_by_name(data.get("athlete_ids") or [])
+        s = TrainingSession(**data)
         await db.sessions.insert_one(serialize(s.model_dump()))
         created.append(s)
     for s in created:
@@ -91,6 +110,9 @@ async def update_session(session_id: str, payload: SessionUpdate):
         if hasattr(v, "value"):
             v = v.value
         updates[k] = v
+
+    if "athlete_ids" in updates:
+        updates["athlete_ids"] = await _sort_athlete_ids_by_name(updates["athlete_ids"] or [])
 
     if "status" in updates and updates["status"] == SessionStatus.completed.value:
         # Require at least one attendance record for this session
@@ -174,6 +196,7 @@ async def get_attendance(session_id: str):
         athletes = await db.athletes.find({"id": {"$in": roster_ids}}, {"_id": 0}).to_list(500)
         by_id = {a["id"]: a for a in athletes}
         athletes = [by_id[i] for i in roster_ids if i in by_id]
+        athletes = _sort_athletes_by_name(athletes)
     else:
         athletes = await db.athletes.find(
             {
