@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
@@ -567,7 +567,7 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [payOpen, setPayOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
-    async function load() {
+    const load = useCallback(async () => {
         setLoading(true);
         try {
             const r = await api.get(`/invoices/${invoiceId}`);
@@ -577,8 +577,10 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
         } finally {
             setLoading(false);
         }
-    }
-    useEffect(() => { if (open) load(); }, [open, invoiceId]);
+    }, [invoiceId]);
+    useEffect(() => {
+        if (open) load();
+    }, [open, load]);
 
     async function send() {
         if (!window.confirm("Email the guardian a magic link to view this invoice (PDF attached)?")) return;
