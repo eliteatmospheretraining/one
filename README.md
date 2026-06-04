@@ -1,299 +1,325 @@
-# Elite Atmosphere Training — Coach Portal
+# Elite Atmosphere Training — Operating System
 
-A guide for **Coach Rico** (and anyone operating the program day to day). This app replaces the old patchwork of calendar notes, Square, and manual Zelle follow-up with one place to run schedule, roster, attendance, and billing.
+**Coach Portal** · Mobile-first control center for schedule, roster, attendance, and Zelle billing.
 
----
-
-## What this is
-
-**Elite Atmosphere Training (EAT) Portal** is an operating system for you.
-
-| You used to… | The portal does… |
-|--------------|------------------|
-| Track who showed up in your head or on paper | Log attendance per session with one tap per athlete |
-| Guess what to charge | Applies your **rate card** automatically when attendance is saved |
-| Build invoices in Square or by hand | Builds **monthly family invoices** from attendance (plus manual lines for monthly/weekly packages) |
-| Chase Zelle with vague texts | Sends a branded **email + PDF + payment link**; you mark paid when Zelle lands |
-| Re-type new enrollments from forms | Public **enrollment page** creates pending athletes for you to approve |
-
-**Payments:** Zelle only. There is no card processor inside the app—you record when money arrives.
-
-**Parents/athletes:** They do not log into the coach portal. They use the enrollment link and invoice links you email them.
+This is the day-to-day operating system for **Elite Atmosphere Training (EAT)**—built for **Coach Rico** as the sole admin. One login, one workflow: court-side attendance through month-end invoices, with Notion and Google Calendar plugged in where you already keep master data.
 
 ---
 
-## How to sign in
+## What it replaces
 
-1. Open the portal URL your developer gave you (production) or `http://localhost:3000` when testing locally.
-2. On **Login**, use either:
-   - **Email + password** (if set up in Settings), or
-   - **Magic link** — enter your admin email, check inbox, tap the link (expires in 15 minutes, one-time use).
-3. You stay signed in for about **30 days** on that device.
+| Before | Now |
+|--------|-----|
+| Scattered notes on who trained | **Attendance** per session, one tap per athlete |
+| Mental math on rates | **Rate card** applied when attendance is saved (amount **locked** on that row) |
+| Square or manual invoices | **Monthly family invoices** from attendance + package lines |
+| Vague Zelle texts | **Email + PDF + guardian link**; you **record payment** when money lands |
+| Paper / email enrollments | Public **`/enroll`** → **Pending** athletes on Home until you activate |
 
-Only the email configured as admin can sign in. There is no second coach account in this version.
+**Payments:** Zelle only—no card processing in the app.
+
+**Families:** No parent login to the coach app. They use **enrollment** and **invoice links** only.
 
 ---
 
-## The daily loop (recommended rhythm)
+## Sign in
 
-This is the intended workflow court-side and at the desk:
+1. Open your live portal URL (or `http://localhost:3000` locally).
+2. **Login** with **email + password** and/or **magic link** (same admin email).
+3. Session lasts ~**30 days** on that device.
+
+| Method | Notes |
+|--------|--------|
+| Password | Set or change under **Settings → Account** |
+| Magic link | One-time link to inbox; expires in **30 minutes** (see login screen) |
+
+Only the configured **admin email** can access the portal.
+
+**Routes after login:** **Home** (`/home`) · **Training** (`/`) · **Roster** · **Billing** · **Settings**
+
+---
+
+## Operating rhythm
+
+How the system expects you to run a typical day:
 
 ```mermaid
-flowchart LR
-  A[Schedule sessions] --> B[Run session / log attendance]
-  B --> C[Mark session Completed]
-  C --> D[Draft invoice updates automatically]
-  D --> E[Review Billing → Send invoice]
-  E --> F[Parent pays Zelle]
-  F --> G[Record payment → Paid]
+flowchart TD
+  subgraph morning [Plan]
+    S[Training: schedule sessions]
+    N[Optional: Sync Notion in Settings]
+  end
+  subgraph court [Execute]
+    A[Open session → mark every athlete]
+    C[Complete session]
+  end
+  subgraph desk [Bill]
+    R[Billing: review draft invoices]
+    E[Send email + PDF to guardian]
+    P[Record Zelle → Paid]
+  end
+  S --> A --> C --> R --> E --> P
+  N -.-> S
 ```
 
-**In plain steps:**
+### Step-by-step
 
-1. **Training** — Create or edit sessions for the week. Athletes on the session are who you’ll mark present.
-2. **After practice** — Open the session → tap attendance chips (Full, Half, Drop-in, Absent) → **Save attendance**.
-3. **Complete the session** — Change status to **Completed** when you’re done (attendance can be saved before or after; billing cares that the session is completed).
-4. **Billing** — Each family gets a **draft invoice for the calendar month**. Saving attendance on completed sessions usually adds lines automatically. Review, adjust if needed, **Send**.
-5. **When Zelle hits** — Open the invoice → **Record payment** → status becomes **Paid** (receipt email can go out).
+1. **Training** — Add or edit sessions (date, time, location, type, athletes). Optional **repeat** (weekly / monthly / yearly) when creating a batch.
+2. **During / after session** — Open the session → set **Full**, **Half**, **Drop-in**, or **Absent** for **every** athlete on the roster → optionally **Copy from previous** for the same group.
+3. **Complete** — Use the status control → **Completed**. The app saves attendance and, when billable, updates the family’s **draft invoice for that calendar month** in one step. You cannot complete until all athletes are marked.
+4. **Billing** — Open drafts, **Refresh** if needed, add **package lines** (monthly / weekly Eat w/ EAT, etc.), **Preview** email, **Send**.
+5. **Payment** — When Zelle arrives → **Record payment** → **Paid** (optional **receipt** email).
 
-**Home** is your dashboard: today’s sessions, pending enrollments, and billing alerts (drafts, unpaid sent invoices, sessions not yet on an invoice).
-
----
-
-## Navigation (five tabs)
-
-| Tab | Purpose |
-|-----|---------|
-| **Home** | Today’s schedule, weather, month revenue snapshot, action items |
-| **Roster** | Athletes and families — add, edit, archive, rate overrides |
-| **Training** | Weekly calendar — create sessions, open session detail |
-| **Billing** | Invoices by family/month — generate, refresh, send, mark paid |
-| **Settings** | Rate card, Notion sync, Google Calendar, password |
+**Home** surfaces what needs you today: sessions, **Pending enrollments**, and billing queues (drafts, unpaid sent, sessions not yet invoiced).
 
 ---
 
-## Roster — athletes & families
+## Navigation
 
-### Families
+| Tab | What it does |
+|-----|----------------|
+| **Home** | Greeting, local weather, today’s sessions, **Needs Attention**, month stats (sessions, revenue collected, outstanding invoices) |
+| **Roster** | Athletes + guardian/family details (edit in one place); program and status filters |
+| **Training** | Week strip + daily session list; create sessions |
+| **Billing** | Year **Revenue** dashboard, invoice list, detail (send, pay, refresh) |
+| **Settings** | Account, Google Calendar, Notion sync, live **rate card** |
 
-- A **family** is the billing unit (one invoice can cover siblings).
-- Primary guardian email/phone/name are used on invoices and emails.
-- Siblings share a family when they match the same primary email (Notion sync does this too).
+---
+
+## Roster & families
+
+### Families = billing unit
+
+- One **invoice per family per period** (siblings on one bill).
+- Guardian name, email, and phone drive invoice emails and Zelle copy.
+- Siblings are grouped by **primary guardian email** (enrollment and Notion sync use the same rule).
 
 ### Athletes
 
-- Each athlete belongs to one family.
-- **Program** (Eat w/ EAT full-time, Private, Semi-private) drives default pricing.
-- **Status:**
-  - **Active** — on roster, can be scheduled and billed.
-  - **Pending** — from the public enrollment form; appears on **Home** until you activate them.
-  - **Archived** — hidden from default filters; history kept.
+| Status | Meaning |
+|--------|---------|
+| **Pending** | Submitted via `/enroll` — review on **Home** or **Roster**, then set **Active** |
+| **Active** | Schedule, attend, bill |
+| **Archived** | Hidden by default; history retained |
 
-### Rate override
+**Programs:** An athlete can be on **Eat w/ EAT (full-time)** and/or **Private** (multi-select in profile). Session billing uses the **session type** when the athlete is enrolled in that program.
 
-On an athlete profile you can set a **custom rate** (e.g. scholarship or special deal). When you save attendance, the app **snapshots** the dollar amount into that attendance row. Changing the rate card or override later does **not** change past attendance—only new saves.
+**Intake:** New athletes should use the public enrollment link (`/enroll`). You edit and activate them in the athlete profile modal (family + guardian fields live there—there is no separate family screen).
 
-**Workaround:** Wrong charge on a past day? Edit attendance on that session and save again (if not already locked on a sent/paid invoice), or add a manual adjustment line on a **draft** invoice.
+**Notion roster sync** (Settings) upserts athletes and families from your **Master Client Directory**. Manual edits in the portal and Notion can diverge until you sync again.
+
+### Rates (important)
+
+When attendance is **saved**, the system stores **`billed_rate`** on that row. Later rate card or Notion changes do **not** rewrite old rows.
+
+| Athlete setup | Effect on attendance billing |
+|---------------|------------------------------|
+| Default | Rate card for program + attendance chip |
+| **Rate override** (per athlete, API/Notion) | Custom $ for full-time / private-style flat rates; half-day = half of override |
+| **Monthly prepay** (`rate_type: monthly`, often from Notion) | Eat w/ EAT attendance logs at **$0** — bill via **monthly package line** on the invoice |
+| Drop-in chips | Always rate card drop-in prices; **override does not apply** |
+
+**Private / semi-private sessions:** Billed **by the hour** from session start/end (quarter-hour rounding). Set times on the session.
+
+**Eat w/ EAT without times:** Treated as a full-day block for rate math when hourly logic does not apply.
 
 ---
 
 ## Training — sessions & attendance
 
-### Creating a session
+### Session types
 
-- Pick **date**, **time**, **location**, **session type** (full-time / private / semi-private), and **athletes**.
-- If **Google Calendar** is connected (Settings), the session is pushed to your Google calendar automatically (one-way: portal → Google).
+| Type | Typical use |
+|------|-------------|
+| **Eat w/ EAT** | Full-time / daily program |
+| **Private** | Private lesson |
+| **Semi-private** | Semi-private lesson |
 
-### Session statuses
+### Statuses
 
-| Status | Meaning |
+| Status | Billing |
 |--------|---------|
-| Scheduled | Upcoming |
-| Completed | Done — attendance counts toward billing |
+| Scheduled | No billing yet |
+| **Completed** | Attendance can invoice |
 | Cancelled | No billing |
-| Rescheduled | Use when moving; edit date/time as needed |
+| Rescheduled | Update date/time as needed |
 
 ### Attendance chips
 
-| Chip | Billing |
-|------|---------|
-| **Full** | Full-day or full session rate (from rate card × hours if times are set) |
-| **Half** | Half of full-day, or half of override for full-time |
-| **Drop-in Full / Half** | Drop-in rates (override on athlete does **not** apply to drop-ins) |
-| **Absent** | $0 — not added to invoice |
+| Chip | Result |
+|------|--------|
+| Full | Full-day or full session charge |
+| Half | Half-day rate |
+| Drop-in Full / Half | Drop-in rate card |
+| Absent | $0, not invoiced |
 
-**Tip:** Set **start and end time** on sessions when possible. Private/semi-private default to 1 hour; full-time without times assumes a full day block for rate math.
+### Completing a session (current behavior)
 
-### After you save attendance
-
-If the session is **Completed** and the mark is billable (not absent, rate &gt; 0), the app updates that family’s **draft invoice for that month**. You’ll see a toast like “Draft invoice EAT-000042 updated.”
-
-**Workaround — nothing added to invoice?**
-
-- Session not **Completed** yet → complete it first.
-- Athlete marked **Absent** or $0 rate → expected.
-- Athlete has no family linked → fix in Roster.
-- Already on another invoice → session detail shows billing status; don’t double-bill.
-
-**Workaround — manual sync:** On session detail, use **Sync to invoice** if auto-sync didn’t run.
-
----
-
-## Billing — invoices
-
-### Invoice lifecycle
-
-```
-Draft → Sent → Paid
-```
-
-| Status | What you can do |
-|--------|-----------------|
-| **Draft** | Refresh lines from attendance, add manual service lines, edit, delete, send |
-| **Sent** | Record payment; guardian link still works |
-| **Paid** | Locked; payment recorded; receipt-style view |
-
-Invoice numbers look like **EAT-000001** and count up forever.
-
-### How line items get on the invoice
-
-1. **Automatic** — Completed sessions with saved billable attendance in the invoice’s month (per family).
-2. **Refresh** — On a draft, **Refresh** rebuilds attendance-based lines from the period (keeps manual monthly/weekly package lines you added).
-3. **Manual** — Add preset lines from the rate card (e.g. “Eat w/ EAT · Monthly”) for flat fees not tied to a single session.
-
-Siblings on the same family → **one invoice** with separate lines per athlete.
-
-### Sending
-
-**Send** emails the guardian:
-
-- Branded HTML email  
-- PDF attachment  
-- Link to view/pay instructions on the web (`/invoice?token=…`)
-
-Zelle instructions come from your business settings (email/phone/name on file).
-
-### Recording payment
-
-When Zelle arrives: amount, date, method (Zelle presets), optional note → **Paid**. You can send a paid confirmation email from the same flow.
-
-**Workaround — parent says they didn’t get email:** Check spam; confirm guardian email on the family; resend from invoice detail. Developer must have email domain verified in production.
-
-**Workaround — wrong total on draft:** **Refresh** the draft, or fix attendance on sessions then refresh. For package billing, add/adjust manual lines.
-
-**Workaround — need a new month or wrong family:** Only **draft** invoices can be deleted. Create a new invoice (Billing → generate) for the right family and period.
-
----
-
-## Public pages (share these links)
-
-These work **without** coach login:
-
-| Link | Who uses it |
-|------|-------------|
-| **`/enroll`** | New families — athlete info, guardians, medical, program interest |
-| **`/invoice?token=…`** | Guardian — view amount due, Zelle info, download PDF (token from email) |
-
-After enrollment, the athlete is **Pending** on **Home** — open them in Roster, confirm details, set to **Active**, assign family if needed, then schedule sessions.
-
----
-
-## Settings — connections & rate card
-
-### Rate card
-
-Shows current prices (Eat w/ EAT monthly/weekly/daily/drop-in, private, semi-private, travel, etc.). Source of truth can be:
-
-- **Notion** — if connected, use **Sync from Notion** to pull latest rates and roster.
-- Built-in defaults — if Notion isn’t configured.
-
-Changing Notion does **not** change past attendance snapshots—only new attendance picks up new rates.
-
-### Notion sync
-
-One button syncs:
-
-- **Rates** from your Notion rate database  
-- **Roster** from Master Client Directory (athletes + families, sibling matching by email)
-
-**Workaround — athlete missing after sync:** Check they’re Active in Notion and mapped fields match (name, email, program). You can still add athletes manually in Roster.
-
-**Workaround — Notion out of date:** Run sync before a billing week; avoid editing the same athlete in both places at once without re-syncing.
+- **Every** athlete on the session must have a chip before **Completed** is allowed.
+- Choosing **Completed** saves attendance and runs **invoice auto-sync** for affected families.
+- Toast examples: `Draft invoice EAT-000042 updated` or `Already on invoice EAT-000041`.
+- **Copy from previous** pulls the last session’s marks for athletes still on today’s roster.
 
 ### Google Calendar
 
-Connect once in Settings. New/updated/cancelled sessions push to your primary Google calendar. Disconnect stops future pushes; old events stay in Google.
+**Settings → Connect** pushes session create/update/cancel/delete to your **primary Google calendar** (portal → Google only, not import).
 
-**Workaround — event wrong in Google:** Fix the session in the portal (edit time/athletes); the app tries to update the linked Google event.
+### Auto-sync did not run?
 
-### Password
-
-Optional but recommended on phone: set password in Settings so you can log in without waiting for magic link email on court Wi‑Fi.
-
----
-
-## Concepts worth remembering
-
-1. **Billed rate is frozen at attendance save** — protects you from “you changed the price” disputes.  
-2. **Billing is monthly per family** — period is the calendar month of the session date.  
-3. **Completed + billable attendance** drives auto-invoice lines.  
-4. **Zelle is honor system** — the app doesn’t detect bank deposits; you mark paid.  
-5. **Single admin** — built for one operator, not a staff team.
+| Check | Action |
+|-------|--------|
+| Status not **Completed** | Complete the session (with full attendance) |
+| Absent or $0 | Expected for monthly-prepay or absent |
+| No family on athlete | Fix in Roster |
+| Already invoiced | Session detail shows invoice link; don’t duplicate |
+| Still stuck | **Sync to invoice** on session detail |
 
 ---
 
-## What this app does *not* do (yet)
+## Billing — invoices & revenue
 
-- No parent login portal (only enroll + invoice links).  
-- No credit card / Stripe / Square charging inside the app.  
-- No SMS reminders.  
-- No automatic “paid” detection from Zelle.  
-- No multi-coach permissions.  
-- Google Calendar is **outbound only** (portal does not import Google events into the app).  
-- Notion is optional; without it, manage roster and rates inside the app.
+### Lifecycle
 
----
-
-## Troubleshooting cheat sheet
-
-| Problem | What to try |
-|---------|-------------|
-| Can’t log in | Confirm admin email; try password; request new magic link; check spam |
-| Enrollment didn’t appear | Refresh Home; filter Roster by Pending |
-| Attendance won’t save | Network; session exists; athletes still on session roster |
-| Invoice empty | Session **Completed**? Attendance not Absent? **Refresh** draft |
-| Duplicate line / double charge | Check session billing badge; delete only if still **draft** |
-| Rate looks wrong | Check athlete **rate override**; drop-ins ignore override; check session times |
-| Email not delivered | Verify family email; developer checks Resend/domain |
-| Google event missing | Reconnect Google in Settings; save session again |
-| Notion sync failed | Settings shows error; verify Notion API + database IDs with developer |
-| Need to undo sent invoice | No automatic undo—work with developer or issue credit manually (process outside app) |
-
----
-
-## For your developer (short)
-
-Technical detail lives in `memory/PRD.md`. Local run:
-
-**Backend** (port 8001):
-
-```bash
-cd backend
-./run.sh
+```
+Draft  →  Sent  →  Paid
 ```
 
-**Frontend** (port 3000):
+| Status | Actions |
+|--------|---------|
+| **Draft** | Refresh from attendance, add/remove lines, delete, preview email, send |
+| **Sent** | Guardian link active; record payment |
+| **Paid** | Locked; resend **receipt** email if needed |
+
+Numbers: **EAT-000001**, **EAT-000002**, … (never reused).
+
+### Line items — three sources
+
+1. **Auto** — Billable **completed** attendance in the invoice month (per family).
+2. **Refresh** — Rebuilds attendance-based lines on a draft; keeps manual package lines you added.
+3. **Manual services** — From the service catalog (Eat w/ EAT monthly/weekly/daily/half-day/drop-in, private, semi-private, travel). Use for **monthly prepay** and flat fees not tied to one session log.
+
+### Billing screen
+
+- **Revenue** header with **year** selector (2026+): total invoiced, collected, outstanding, **MRR (avg)** chart.
+- List filters: this month, last month, last 3 months, all.
+- **New Invoice** — empty draft for a family + date range.
+- Detail: PDF, **Preview** due/paid email, **Send**, **Record payment**, **Send receipt** (paid).
+
+### Guardian experience
+
+**Send** emails:
+
+- Branded HTML  
+- PDF attachment  
+- Magic link → `/invoice?token=…` (view amount, Zelle instructions, download PDF)
+
+You confirm **Paid** manually when Zelle hits— the app does not read your bank.
+
+---
+
+## Public links (no coach login)
+
+| Path | Audience |
+|------|----------|
+| `/enroll` | New families — athlete, guardians, medical, program |
+| `/invoice?token=…` | Guardian — from invoice email |
+
+**After enroll:** Athlete is **Pending** → open from **Home** → confirm → **Active** → add to sessions.
+
+Share enrollment as: `https://<your-domain>/enroll` (login page also links **New athlete? Enroll here**).
+
+---
+
+## Settings & integrations
+
+### Rate card
+
+- Live grid of services (Eat w/ EAT packages, private, semi-private, travel, …).
+- **Source:** Notion when configured, else built-in defaults on server start.
+- **View all** opens the full list.
+
+### Notion (one **Sync** button)
+
+| Pulls | Into |
+|-------|------|
+| Service rates database | Portal rate card |
+| Master Client Directory | Athletes + families |
+
+Run sync before a heavy billing week if Notion is your source of truth. Errors show under the Notion row.
+
+### Google Calendar
+
+Connect / disconnect in **Integrations**. Sessions sync as events on the connected account.
+
+### Account
+
+Update password without relying on magic link on poor court Wi‑Fi.
+
+---
+
+## Rules of the system
+
+1. **Snapshot billing** — Disputes are settled against what was stored at attendance save.  
+2. **Calendar month** — Auto drafts use the month of the **session date**.  
+3. **Complete + billable** — Drives automatic line items (except monthly prepay at $0 attendance).  
+4. **Honor-system Zelle** — You mark paid; no processor webhooks.  
+5. **Single admin** — One operator account; not a multi-coach product yet.
+
+---
+
+## Not built (boundaries)
+
+- Parent/athlete portal (only enroll + invoice links)  
+- Card payments (Stripe, Square checkout, etc.)  
+- Automatic Zelle detection  
+- SMS / push reminders  
+- Multi-coach roles  
+- Import **from** Google Calendar into the portal  
+- Bulk export (e.g. ZIP of all PDFs)—manual per invoice today  
+
+Notion and Google Calendar **are** supported; they are optional if you run everything inside the portal.
+
+---
+
+## Troubleshooting
+
+| Issue | Try |
+|-------|-----|
+| Can’t log in | Admin email only; password or new magic link; check spam |
+| Enrollment missing | Reload Home; Roster → status **Pending** |
+| Can’t complete session | Mark **all** athletes first |
+| Draft invoice empty | **Completed**? Not all absent? **Refresh** draft |
+| Wrong amount | Fix attendance on session (if not on sent/paid invoice), then **Refresh**; check monthly prepay vs daily lines |
+| Double charge | Session detail billing badge; only delete **draft** invoices |
+| Email not received | Guardian email on family; spam; production domain must be verified (developer) |
+| Notion sync failed | Read error in Settings; confirm API key + database IDs |
+| Google event wrong | Edit session in portal; reconnect if needed |
+| Undo sent invoice | No undo in app—handle credit outside or with developer |
+
+---
+
+## For developers
+
+Architecture notes: `memory/PRD.md` (may lag the app; code wins).
+
+**Local run**
 
 ```bash
-cd frontend
-cp .env.local.example .env.local   # optional
+# API — http://127.0.0.1:8001
+cd backend && ./run.sh
+
+# UI — http://localhost:3000
+cd frontend && cp .env.local.example .env.local  # optional
 yarn install && yarn start
 ```
 
-Requires MongoDB, Resend API key, `JWT_SECRET`, `ADMIN_EMAIL`, `APP_BASE_URL`, and related env vars in `backend/.env`. Optional: Notion tokens, Google OAuth client, `DEV_MODE=true` exposes magic links on login for testing.
+**Backend needs:** MongoDB, `JWT_SECRET`, `ADMIN_EMAIL`, `APP_BASE_URL`, `RESEND_API_KEY`, `SENDER_EMAIL`.  
+**Optional:** `NOTION_*`, Google OAuth vars, `ADMIN_PASSWORD`, `DEV_MODE=true` (shows magic links on login for testing).
+
+Do **not** commit real `.env` files—use host secrets or `.env.example` templates.
 
 ---
 
 ## Support
 
-For bugs, new features, or production access, contact whoever built or hosts this deployment. Day-to-day tennis operations stay in your hands—this guide is the map for doing that inside the portal.
+For hosting, credentials, or feature work, contact whoever maintains this deployment. This README is the operator manual for running EAT inside the portal day to day.
