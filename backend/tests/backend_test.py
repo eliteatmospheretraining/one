@@ -433,6 +433,38 @@ class TestSessionsAttendance:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
+    def test_session_patch_with_date_field(self, auth_headers, family):
+        """Regression: field named 'date' must not shadow datetime.date (Input should be None)."""
+        a = requests.post(
+            f"{API}/athletes",
+            json={"full_name": "TEST_PatchDate", "program_type": "full_time", "family_id": family["id"]},
+            headers=auth_headers,
+        ).json()
+        sess_date = (date.today() + timedelta(days=3)).isoformat()
+        s = requests.post(
+            f"{API}/sessions",
+            json={"date": sess_date, "session_type": "full_time", "athlete_ids": [a["id"]]},
+            headers=auth_headers,
+        )
+        assert s.status_code == 200, s.text
+        sid = s.json()["id"]
+        patch = requests.patch(
+            f"{API}/sessions/{sid}",
+            json={
+                "date": sess_date,
+                "start_time": "08:00",
+                "end_time": "11:30",
+                "session_type": "full_time",
+                "location": "Sunrise Athletic Complex",
+                "notes": None,
+                "athlete_ids": [a["id"]],
+            },
+            headers=auth_headers,
+        )
+        assert patch.status_code == 200, patch.text
+        assert patch.json()["athlete_ids"] == [a["id"]]
+        requests.delete(f"{API}/sessions/{sid}", headers=auth_headers)
+
     def test_session_delete_cascades_attendance(self, auth_headers, family):
         a = requests.post(
             f"{API}/athletes",

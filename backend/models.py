@@ -1,7 +1,7 @@
 """Pydantic models for Elite Atmosphere Training portal."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, date as DateType, datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
@@ -271,7 +271,7 @@ class EnrollmentResponse(BaseModel):
 # ---------- Sessions ----------
 
 class SessionBase(BaseModel):
-    date: date
+    date: DateType
     start_time: Optional[str] = None  # "09:00"
     end_time: Optional[str] = None
     session_type: ProgramType
@@ -293,7 +293,7 @@ class SessionCreate(SessionBase):
 
 
 class SessionUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[DateType] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     session_type: Optional[ProgramType] = None
