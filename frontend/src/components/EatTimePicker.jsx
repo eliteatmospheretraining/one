@@ -1,10 +1,19 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { TIME_MINUTE_OPTIONS, formatTime24, from12Hour, parseTime24, to12Hour } from "../lib/format";
 
 const PANEL_H = "h-[15.75rem]";
 const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
-function useScrollWheel(scrollRef, deps = []) {
+function TimeScrollColumn({ label, items, active, onPick, format }) {
+    const scrollRef = useRef(null);
+
+    useEffect(() => {
+        const root = scrollRef.current;
+        if (!root) return;
+        const selected = root.querySelector("[data-selected='true']");
+        selected?.scrollIntoView({ block: "center" });
+    }, [active, items.length]);
+
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
@@ -24,20 +33,7 @@ function useScrollWheel(scrollRef, deps = []) {
 
         el.addEventListener("wheel", onWheel, { passive: false });
         return () => el.removeEventListener("wheel", onWheel);
-    }, deps);
-}
-
-function TimeScrollColumn({ label, items, active, onPick, format }) {
-    const scrollRef = useRef(null);
-
-    useEffect(() => {
-        const root = scrollRef.current;
-        if (!root) return;
-        const selected = root.querySelector("[data-selected='true']");
-        selected?.scrollIntoView({ block: "center" });
-    }, [active, items.length]);
-
-    useScrollWheel(scrollRef, [scrollRef, items.length]);
+    }, [items.length]);
 
     return (
         <div className="flex-1 flex flex-col min-w-0">

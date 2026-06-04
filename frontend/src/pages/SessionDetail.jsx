@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, formatApiError } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
@@ -47,7 +47,7 @@ export default function SessionDetail() {
     const [athletesAll, setAthletesAll] = useState([]);
     const [billing, setBilling] = useState([]);
 
-    async function load() {
+    const load = useCallback(async () => {
         setLoading(true);
         try {
             const r = await api.get(`/sessions/${id}/attendance`);
@@ -66,9 +66,9 @@ export default function SessionDetail() {
         } finally {
             setLoading(false);
         }
-    }
+    }, [id]);
 
-    useEffect(() => { load(); }, [id]);
+    useEffect(() => { load(); }, [load]);
 
     if (loading || !data) {
         return <div className="p-10 text-center text-muted uppercase tracking-wider2 text-sm">Loading…</div>;

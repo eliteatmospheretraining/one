@@ -24,10 +24,10 @@ export function DateField({
 
     useEffect(() => {
         if (open) {
-            setViewMonth(selected ?? new Date());
+            setViewMonth(value ? new Date(value + "T00:00:00") : new Date());
             setPanel("days");
         }
-    }, [open, selected]);
+    }, [open, value]);
 
     function handle(d) {
         if (!d) {
@@ -59,7 +59,7 @@ export function DateField({
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle roun[...]"
+                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle rounded"
             >
                 <EatDatePicker
                     selected={selected}
