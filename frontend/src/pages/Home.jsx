@@ -6,7 +6,7 @@ import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { SessionStatusPill } from "../components/Pills";
 import WeatherIcon from "../components/WeatherIcon";
-import { fmtMoney, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms } from "../lib/format";
+import { fmtMoney, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms, effectiveSessionStatus } from "../lib/format";
 import { AthleteFormModal } from "./AthleteForm";
 
 const TYPE_BAR = {
@@ -143,7 +143,7 @@ export default function Home() {
                 const [todayResp, invoicesResp, monthlySessionsResp, pendingResp, familiesResp] = await Promise.all([
                     api.get("/sessions", { params: { start_date: today, end_date: today } }),
                     api.get("/invoices"),
-                    api.get("/sessions", { params: { status: "completed", start_date: monthStart, end_date: monthEnd } }),
+                    api.get("/sessions", { params: { start_date: monthStart, end_date: monthEnd } }),
                     api.get("/athletes", { params: { status: "pending" } }),
                     api.get("/families"),
                 ]);
@@ -156,7 +156,9 @@ export default function Home() {
                 const sentInvoices = (invoicesResp.data || []).filter((inv) => inv.status === "sent");
                 setSentCount(sentInvoices.length);
                 setOutstandingTotal(sentInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0));
-                setSessionsThisMonth(monthlySessionsResp.data?.length || 0);
+                setSessionsThisMonth(
+                    (monthlySessionsResp.data || []).filter((session) => effectiveSessionStatus(session) === "completed").length
+                );
                 setPendingAthletes(pendingResp.data || []);
                 setFamilies(familiesResp.data || []);
 
