@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MapPin, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -309,7 +309,7 @@ export default function Home() {
                                             className={`absolute left-0 top-0 bottom-0 w-0.5 ${TYPE_BAR[session.session_type] || "bg-subtle"}`}
                                         />
                                         <div className="flex-1 min-w-0 pl-1">
-                                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                                            <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                     <div className="font-thunder uppercase tracking-tight text-paper text-xl sm:text-2xl leading-none" style={{ fontWeight: 800 }}>
                                                         {fmtTime(session.start_time) || "—"}
@@ -324,12 +324,25 @@ export default function Home() {
                                                         {session.session_type?.replace(/_/g, " ")}
                                                     </div>
                                                 </div>
-                                                <div className="self-start shrink-0">
+                                                <div className="shrink-0">
                                                     <SessionStatusPill session={session} />
                                                 </div>
                                             </div>
-                                            {attendanceLabel ? (
-                                                <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-muted font-light">{attendanceLabel}</div>
+                                            {(session.location || attendanceLabel) ? (
+                                                <div className="mt-3 sm:mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs sm:text-sm text-muted font-light">
+                                                    {session.location ? (
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <MapPin size={13} strokeWidth={1.5} />
+                                                            {session.location}
+                                                        </span>
+                                                    ) : null}
+                                                    {attendanceLabel ? (
+                                                        <span className="inline-flex items-center gap-1.5">
+                                                            <Users size={13} strokeWidth={1.5} />
+                                                            {attendanceLabel}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
                                             ) : null}
                                         </div>
                                     </button>
