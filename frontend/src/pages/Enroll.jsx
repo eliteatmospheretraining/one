@@ -197,11 +197,23 @@ export default function Enroll() {
     const [enrollShake, shakeEnroll] = useShake();
     const [waiverShake, shakeWaiver] = useShake();
     const canvasRef = useRef(null);
+    const waiverTopRef = useRef(null);
 
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
     const age = calcAge(form.date_of_birth);
     const isAdult = age !== null && age >= 18;
+
+    useEffect(() => {
+        if (phase !== "waiver" && phase !== "thanks") return;
+        document.activeElement?.blur?.();
+        window.scrollTo(0, 0);
+        const id = window.requestAnimationFrame(() => {
+            window.scrollTo(0, 0);
+            waiverTopRef.current?.scrollIntoView({ block: "start" });
+        });
+        return () => window.cancelAnimationFrame(id);
+    }, [phase]);
 
     function toggleGoal(goal) {
         setForm((f) => ({
@@ -244,7 +256,7 @@ export default function Enroll() {
             return false;
         }
         if (
-            minor &&
+            (minor || isAdult) &&
             (!form.guardian_name.trim() || !form.guardian_phone.trim() || !form.guardian_email.trim())
         ) {
             shakeEnroll();
@@ -259,8 +271,8 @@ export default function Enroll() {
         setTypedSig(form.guardian_name.trim() || form.full_name.trim());
         setHasSig(false);
         setPhotoRelease(null);
+        document.activeElement?.blur?.();
         setPhase("waiver");
-        window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     function clearSig() {
@@ -316,7 +328,6 @@ export default function Enroll() {
             const r = await axios.post(`${API}/enroll`, payload);
             setSubmitted(r.data);
             setPhase("thanks");
-            window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (err) {
             setError(formatApiError(err) || "Could not submit enrollment");
         } finally {
@@ -363,7 +374,7 @@ export default function Enroll() {
                     </div>
                 }
             >
-                <div className="ew-sub">Complete all required fields. Coach Rico will confirm your program and start date.</div>
+                <div className="ew-sub">Complete all required fields. We will confirm your program and start date.</div>
                 <ProgressBar filled={progFilled} />
                 <div className="phase-lbl">{phaseLabel}</div>
             </EnrollHeader>
@@ -481,14 +492,11 @@ export default function Enroll() {
                         ))}
                     </div>
 
-                    <div className="sec-lbl">Guardian</div>
-                    {isAdult && (
-                        <div className="guardian-note">Athlete is 18+ — guardian info is optional.</div>
-                    )}
+                    <div className="sec-lbl">{isAdult ? "Contact" : "Guardian"}</div>
                     <div className="row col2">
                         <div className="field">
                             <label>
-                                Name {!isAdult && <span className="req">*</span>}
+                                Name <span className="req">*</span>
                             </label>
                             <input
                                 type="text"
@@ -497,65 +505,121 @@ export default function Enroll() {
                                 placeholder="Full name"
                             />
                         </div>
-                        <div className="field">
-                            <label>Relationship</label>
-                            <select
-                                value={form.guardian_relationship}
-                                onChange={(e) => set("guardian_relationship", e.target.value)}
-                            >
-                                <option value="">—</option>
-                                {RELATIONSHIPS.map((r) => (
-                                    <option key={r} value={r}>
-                                        {r}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        {!isAdult && (
+                            <div className="field">
+                                <label>Relationship</label>
+                                <select
+                                    value={form.guardian_relationship}
+                                    onChange={(e) => set("guardian_relationship", e.target.value)}
+                                >
+                                    <option value="">—</option>
+                                    {RELATIONSHIPS.map((r) => (
+                                        <option key={r} value={r}>
+                                            {r}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        {isAdult && (
+                            <div className="field">
+                                <label>
+                                    Phone <span className="req">*</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    value={form.guardian_phone}
+                                    onChange={(e) => set("guardian_phone", e.target.value)}
+                                    placeholder="(555) 123-4567"
+                                />
+                            </div>
+                        )}
                     </div>
-                    <div className="row col2">
-                        <div className="field">
-                            <label>
-                                Phone {!isAdult && <span className="req">*</span>}
-                            </label>
-                            <input
-                                type="tel"
-                                value={form.guardian_phone}
-                                onChange={(e) => set("guardian_phone", e.target.value)}
-                                placeholder="(555) 123-4567"
-                            />
+                    {!isAdult && (
+                        <div className="row col2">
+                            <div className="field">
+                                <label>
+                                    Phone <span className="req">*</span>
+                                </label>
+                                <input
+                                    type="tel"
+                                    value={form.guardian_phone}
+                                    onChange={(e) => set("guardian_phone", e.target.value)}
+                                    placeholder="(555) 123-4567"
+                                />
+                            </div>
+                            <div className="field">
+                                <label>
+                                    Email <span className="req">*</span>
+                                </label>
+                                <input
+                                    type="email"
+                                    value={form.guardian_email}
+                                    onChange={(e) => set("guardian_email", e.target.value)}
+                                    placeholder="Invoices sent here"
+                                />
+                            </div>
                         </div>
-                        <div className="field">
-                            <label>
-                                Email {!isAdult && <span className="req">*</span>}
-                            </label>
-                            <input
-                                type="email"
-                                value={form.guardian_email}
-                                onChange={(e) => set("guardian_email", e.target.value)}
-                                placeholder="Invoices sent here"
-                            />
+                    )}
+                    {!isAdult && (
+                        <div className="row col2">
+                            <div className="field">
+                                <label>Street Address</label>
+                                <input
+                                    type="text"
+                                    value={form.street_address}
+                                    onChange={(e) => set("street_address", e.target.value)}
+                                    placeholder="123 Main St"
+                                />
+                            </div>
+                            <div className="field">
+                                <label>City / State / Zip</label>
+                                <input
+                                    type="text"
+                                    value={form.city_state_zip}
+                                    onChange={(e) => set("city_state_zip", e.target.value)}
+                                    placeholder="Miami, FL 33131"
+                                />
+                            </div>
                         </div>
-                    </div>
-                    <div className="row col2">
-                        <div className="field">
-                            <label>Street Address</label>
-                            <input
-                                type="text"
-                                value={form.street_address}
-                                onChange={(e) => set("street_address", e.target.value)}
-                                placeholder="123 Main St"
-                            />
-                        </div>
-                        <div className="field">
-                            <label>City / State / Zip</label>
-                            <input
-                                type="text"
-                                value={form.city_state_zip}
-                                onChange={(e) => set("city_state_zip", e.target.value)}
-                                placeholder="Miami, FL 33131"
-                            />
-                        </div>
-                    </div>
+                    )}
+                    {isAdult && (
+                        <>
+                            <div className="row col2">
+                                <div className="field">
+                                    <label>
+                                        Email <span className="req">*</span>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={form.guardian_email}
+                                        onChange={(e) => set("guardian_email", e.target.value)}
+                                        placeholder="Invoices sent here"
+                                    />
+                                </div>
+                                <div className="field">
+                                    <label>Street Address</label>
+                                    <input
+                                        type="text"
+                                        value={form.street_address}
+                                        onChange={(e) => set("street_address", e.target.value)}
+                                        placeholder="123 Main St"
+                                    />
+                                </div>
+                            </div>
+                            <div className="row col1">
+                                <div className="field">
+                                    <label>City / State / Zip</label>
+                                    <input
+                                        type="text"
+                                        value={form.city_state_zip}
+                                        onChange={(e) => set("city_state_zip", e.target.value)}
+                                        placeholder="Miami, FL 33131"
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     <div className="sec-lbl">Emergency Contact</div>
                     <div className="row col2">
@@ -675,11 +739,13 @@ export default function Enroll() {
             )}
 
             {phase === "waiver" && (
-                <div className={`enroll-body${waiverShake ? " shake" : ""}`}>
+                <div className={`enroll-body${waiverShake ? " shake" : ""}`} ref={waiverTopRef}>
                     <div className="prefill-tag">{(form.full_name || "Athlete").toUpperCase()}</div>
                     <div className="prefill-sub">
                         Completing waiver for {form.full_name || "your athlete"}
-                        {form.guardian_name ? ` · Guardian: ${form.guardian_name}` : ""}
+                        {form.guardian_name
+                            ? ` · ${isAdult ? "Contact" : "Guardian"}: ${form.guardian_name}`
+                            : ""}
                     </div>
 
                     <div className="waiver-txt">
