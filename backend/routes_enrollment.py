@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -40,12 +41,12 @@ def _family_lookup_key(email: str) -> str:
     return f"email:{_normalize_email(email)}"
 
 
-def _build_medical(payload: EnrollmentSubmit) -> Optional[str]:
-    if payload.medical_none and not payload.medical_flags:
+def _build_medical(medical_none: bool, medical_flags: list[str], medical_details: Optional[str]) -> Optional[str]:
+    if medical_none and not medical_flags:
         return "None / No known issues"
-    parts = list(payload.medical_flags)
+    parts = list(medical_flags)
     text = ", ".join(parts)
-    details = (payload.medical_details or "").strip()
+    details = (medical_details or "").strip()
     if details:
         text = f"{text} — {details}" if text else details
     return text or None
@@ -65,10 +66,52 @@ async def _find_family_by_email(email: str) -> Optional[dict]:
     )
 
 
-async def _upsert_family(payload: EnrollmentSubmit) -> str:
-    lookup = _family_lookup_key(str(payload.guardian_email))
-    existing = await _find_family_by_email(str(payload.guardian_email))
+def _calc_age(dob: date) -> int:
+    today = date.today()
+    age = today.year - dob.year
+    if (today.month, today.day) < (dob.month, dob.day):
+        age -= 1
+    return age
+
+
+def _resolve_contact(payload: EnrollmentSubmit) -> tuple[str, str, str, str]:
+    """Return family contact name, email, phone, and lookup email."""
+    age = _calc_age(payload.date_of_birth)
+    minor = age < 18
+    if minor:
+        if not (payload.guardian_name or "").strip():
+            raise HTTPException(400, "Guardian name is required for athletes under 18")
+        if not (payload.guardian_phone or "").strip():
+            raise HTTPException(400, "Guardian phone is required for athletes under 18")
+        if not payload.guardian_email:
+            raise HTTPException(400, "Guardian email is required for athletes under 18")
+        name = payload.guardian_name.strip()
+        phone = payload.guardian_phone.strip()
+        email = str(payload.guardian_email)
+        return name, email, phone, email
+
+    name = (payload.guardian_name or "").strip() or payload.full_name.strip()
+    phone = (payload.guardian_phone or "").strip() or (payload.emergency_contact_phone or "").strip()
+    email = str(payload.guardian_email) if payload.guardian_email else (
+        str(payload.emergency_contact_email) if payload.emergency_contact_email else ""
+    )
+    if not email:
+        raise HTTPException(400, "An email address is required for enrollment")
+    if not phone:
+        raise HTTPException(400, "A phone number is required for enrollment")
+    return name, email, phone, email
+
+
+async def _upsert_family(payload: EnrollmentSubmit, contact_name: str, contact_email: str, contact_phone: str) -> str:
+    lookup = _family_lookup_key(contact_email)
+    existing = await _find_family_by_email(contact_email)
     emergency = []
+    if (payload.emergency_contact_name or "").strip():
+        emergency.append({
+            "name": payload.emergency_contact_name,
+            "phone": payload.emergency_contact_phone,
+            "email": str(payload.emergency_contact_email) if payload.emergency_contact_email else None,
+        })
     if payload.primary_emergency:
         emergency.append({
             "name": payload.guardian_name,
@@ -84,14 +127,16 @@ async def _upsert_family(payload: EnrollmentSubmit) -> str:
     first_emergency = emergency[0] if emergency else None
     family_payload = {
         "family_name": _derive_family_name(payload.full_name),
-        "guardian_name": payload.guardian_name,
-        "guardian_email": str(payload.guardian_email),
-        "guardian_phone": payload.guardian_phone,
-        "guardian_relationship": payload.guardian_relationship,
+        "guardian_name": contact_name,
+        "guardian_email": contact_email,
+        "guardian_phone": contact_phone,
+        "guardian_relationship": payload.guardian_relationship or None,
         "guardian_name_secondary": payload.guardian_name_secondary or None,
         "guardian_email_secondary": str(payload.guardian_email_secondary) if payload.guardian_email_secondary else None,
         "guardian_phone_secondary": payload.guardian_phone_secondary or None,
         "guardian_relationship_secondary": payload.guardian_relationship_secondary or None,
+        "street_address": payload.street_address or None,
+        "city_state_zip": payload.city_state_zip or None,
         "emergency_contacts": emergency,
         "emergency_contact_name": first_emergency["name"] if first_emergency else None,
         "emergency_contact_phone": first_emergency["phone"] if first_emergency else None,
@@ -109,11 +154,15 @@ async def _upsert_family(payload: EnrollmentSubmit) -> str:
 
 @router.post("", response_model=EnrollmentResponse)
 async def submit_enrollment(payload: EnrollmentSubmit):
-    if not payload.medical_none and not payload.medical_flags:
-        raise HTTPException(400, "Select a medical option or choose None")
+    if not (payload.waiver_typed_signature or "").strip():
+        raise HTTPException(400, "Typed signature is required")
+    if not (payload.waiver_signature or "").strip():
+        raise HTTPException(400, "Drawn signature is required")
 
-    family_id = await _upsert_family(payload)
+    contact_name, contact_email, contact_phone, lookup_email = _resolve_contact(payload)
+    family_id = await _upsert_family(payload, contact_name, contact_email, contact_phone)
     goals = ", ".join(payload.goals) if payload.goals else None
+    medical_none = payload.medical_none or not payload.medical_flags
     athlete = Athlete(
         full_name=payload.full_name.strip(),
         date_of_birth=payload.date_of_birth,
@@ -128,7 +177,10 @@ async def submit_enrollment(payload: EnrollmentSubmit):
         enrollment_goals=goals,
         referral_source=payload.referral_source or None,
         enrollment_notes=payload.additional_notes or None,
-        medical_conditions=_build_medical(payload),
+        medical_conditions=_build_medical(medical_none, payload.medical_flags, payload.medical_details),
+        waiver_photo_release=payload.photo_release,
+        waiver_typed_signature=payload.waiver_typed_signature.strip(),
+        waiver_signature=payload.waiver_signature.strip(),
         family_id=family_id,
     )
     await db.athletes.insert_one(serialize(athlete.model_dump()))
@@ -136,6 +188,6 @@ async def submit_enrollment(payload: EnrollmentSubmit):
         athlete_id=athlete.id,
         family_id=family_id,
         athlete_name=athlete.full_name,
-        guardian_email=payload.guardian_email,
+        guardian_email=lookup_email,
         program_label=PROGRAM_LABELS.get(payload.program_type, payload.program_type.value),
     )

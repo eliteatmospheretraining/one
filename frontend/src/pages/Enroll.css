@@ -1,36 +1,54 @@
 .enroll-page {
   min-height: 100vh;
-  background: #141414;
-  color: #ffffff;
+  background: #fcfcfc;
   font-family: 'Barlow', sans-serif;
   font-weight: 300;
+  color: #222;
+  display: flex;
+  flex-direction: column;
 }
 
 .enroll-page * {
   box-sizing: border-box;
 }
 
-.enroll-hd {
+.ew-top {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: #141414;
-  padding: 2rem 2rem 1.5rem;
-  border-bottom: 1px solid #1e1e1e;
+  padding: 22px 32px 16px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  isolation: isolate;
 }
 
-.enroll-title-row {
+.ew-top::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100vw;
+  top: 0;
+  bottom: 0;
+  background: #fcfcfc;
+  border-bottom: 1px solid #ebebeb;
+  z-index: -1;
+}
+
+.ew-title-row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 1rem;
+  margin-bottom: 0;
 }
 
-.enroll-title-row--end {
+.ew-title-row--end {
   justify-content: flex-end;
 }
 
-.enroll-header-logo {
+.ew-brand-logo {
   height: clamp(3.25rem, 9vw, 4.25rem);
   width: auto;
   flex-shrink: 0;
@@ -38,491 +56,575 @@
   transform: translateY(6px);
 }
 
-.enroll-title {
+.ew-title {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 800;
-  font-size: clamp(42px, 10vw, 54px);
+  font-size: clamp(36px, 10vw, 48px);
   text-transform: uppercase;
-  line-height: 0.92;
-  color: #ffffff;
-  letter-spacing: 0.02em;
+  line-height: 0.95;
+  color: #222;
+  letter-spacing: 0.01em;
 }
 
-.enroll-sub {
-  font-size: 13px;
-  color: #ffffff;
-  margin-top: 10px;
-  line-height: 1.5;
+.ew-title span {
+  color: #c8f000;
 }
 
-.enroll-pb {
+.ew-sub {
+  font-size: 12px;
+  color: #999;
+  margin-top: 8px;
+  font-weight: 300;
+  margin-bottom: 14px;
+}
+
+.prog-wrap {
   display: flex;
   gap: 3px;
-  margin-top: 1.2rem;
+  margin-bottom: 4px;
 }
 
-.enroll-pb-s {
+.ps {
   height: 2px;
   flex: 1;
-  background: #1e1e1e;
+  background: #e0e0e0;
   border-radius: 1px;
-  transition: background 0.4s;
+  transition: background 0.3s;
 }
 
-.enroll-pb-s.on {
-  background: #c8f000;
+.ps.on {
+  background: #222;
 }
 
-.enroll-fb {
-  padding: 2rem;
+.ps.active {
+  background: #bbb;
+}
+
+.phase-lbl {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #bbb;
+  margin-bottom: 16px;
+}
+
+.enroll-body {
+  padding: 0 32px 40px;
   max-width: 720px;
+  width: 100%;
   margin: 0 auto;
 }
 
-.enroll-sl {
+.enroll-body.shake {
+  animation: enroll-shake 0.16s ease;
+}
+
+@keyframes enroll-shake {
+  0% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  100% { transform: translateX(0); }
+}
+
+.sec-lbl {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #ffffff;
-  margin: 2rem 0 1rem;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #181818;
+  color: #999;
+  margin: 28px 0 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e8e8e8;
 }
 
-.enroll-sl:first-of-type {
-  margin-top: 0;
-}
-
-.enroll-section .enroll-sl:first-of-type {
-  margin-top: 0;
-}
-
-.enroll-ss {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #ffffff;
-  margin: 1.5rem 0 0.75rem;
-  display: block;
-}
-
-.enroll-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0.75rem 0 0.25rem;
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #ffffff;
-  cursor: pointer;
-}
-
-.enroll-check input {
-  width: 14px;
-  height: 14px;
-  accent-color: #c8f000;
-  cursor: pointer;
-}
-
-.enroll-r {
+.row {
   display: grid;
   gap: 10px;
   margin-bottom: 10px;
 }
 
-.enroll-c2 {
+.col2 {
   grid-template-columns: 1fr 1fr;
 }
 
-.enroll-c3 {
+.col3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
 
-.enroll-c1 {
+.col1 {
   grid-template-columns: 1fr;
 }
 
 @media (max-width: 640px) {
-  .enroll-c2,
-  .enroll-c3 {
+  .col2,
+  .col3 {
     grid-template-columns: 1fr;
+  }
+
+  .ew-top,
+  .enroll-body,
+  .ty-wrap {
+    padding-left: 20px;
+    padding-right: 20px;
   }
 }
 
-.enroll-f {
+.field {
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
 
-.enroll-f label {
+.field label {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #ffffff;
+  color: #999;
 }
 
-.enroll-rq {
+.field label .req {
   color: #c8f000;
 }
 
-.enroll-f input[type="text"],
-.enroll-f input[type="email"],
-.enroll-f input[type="tel"],
-.enroll-f input[type="date"],
-.enroll-f input[type="number"],
-.enroll-f select,
-.enroll-f textarea {
-  background: #111;
-  border: 1px solid #1e1e1e;
+.field input[type="text"],
+.field input[type="email"],
+.field input[type="tel"],
+.field input[type="date"],
+.field select,
+.field textarea {
+  background: #fff;
+  border: 1px solid #e0e0e0;
   border-radius: 1px;
-  color: #ffffff;
-  font-size: 14px;
+  color: #222;
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
   font-weight: 300;
   padding: 10px 12px;
   outline: none;
   width: 100%;
   appearance: none;
   transition: border-color 0.15s;
-  font-family: 'Barlow', sans-serif;
 }
 
-.enroll-f input::placeholder,
-.enroll-f textarea::placeholder {
-  color: #555;
-  opacity: 1;
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: #222;
 }
 
-.enroll-f select:invalid {
-  color: #555;
-}
-
-.enroll-f input[type="date"]:invalid {
-  color: #555;
-}
-
-.enroll-f input[type="date"]:valid {
-  color: #ffffff;
-}
-
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit,
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit-fields-wrapper,
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit-text,
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit-month-field,
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit-day-field,
-.enroll-f input[type="date"]:invalid::-webkit-datetime-edit-year-field,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit-fields-wrapper,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit-text,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit-month-field,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit-day-field,
-.enroll-f input[type="date"]:invalid:focus::-webkit-datetime-edit-year-field {
-  color: #555;
-}
-
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit,
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit-fields-wrapper,
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit-text,
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit-month-field,
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit-day-field,
-.enroll-f input[type="date"]:valid::-webkit-datetime-edit-year-field {
-  color: #ffffff;
-}
-
-.enroll-f input:focus,
-.enroll-f select:focus,
-.enroll-f textarea:focus {
-  border-color: #c8f000;
-}
-
-.enroll-f select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+.field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
+  background-position: right 11px center;
+  padding-right: 30px;
   cursor: pointer;
 }
 
-.enroll-f select option {
-  background: #111;
+.field select option {
+  background: #fff;
+  color: #222;
 }
 
-.enroll-f textarea {
+.field textarea {
+  min-height: 80px;
   resize: vertical;
-  min-height: 76px;
   line-height: 1.5;
 }
 
-.enroll-cr {
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #ccc;
+}
+
+.chip-lbl {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #999;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.chip-lbl .req {
+  color: #c8f000;
+}
+
+.chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 12px;
 }
 
-.enroll-ch {
-  background: #111;
-  border: 1px solid #1e1e1e;
+.chip {
+  background: #fff;
+  border: 1px solid #e0e0e0;
   border-radius: 1px;
-  color: #ffffff;
+  color: #bbb;
   cursor: pointer;
   font-family: 'Barlow Condensed', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 7px 13px;
   text-transform: uppercase;
   transition: all 0.1s;
   user-select: none;
 }
 
-.enroll-ch:hover {
-  border-color: #444;
-  color: #ffffff;
+.chip:hover {
+  border-color: #bbb;
+  color: #666;
 }
 
-.enroll-ch.on {
+.chip.on {
   background: #c8f000;
   border-color: #c8f000;
-  color: #0d0d0d;
+  color: #222;
 }
 
-.enroll-cl {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #ffffff;
-  margin-bottom: 7px;
-  display: block;
-}
-
-.enroll-mg {
+.med-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border: 1px solid #1e1e1e;
+  border: 1px solid #e0e0e0;
   border-radius: 1px;
   overflow: hidden;
   margin-bottom: 10px;
 }
 
-.enroll-mi {
+.mi {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #181818;
-  border-right: 1px solid #181818;
+  border-bottom: 1px solid #f0f0f0;
+  border-right: 1px solid #f0f0f0;
+  background: #fff;
   transition: background 0.1s;
-  background: transparent;
   border-top: none;
   border-left: none;
   text-align: left;
   width: 100%;
 }
 
-.enroll-mi:nth-child(2n) {
+.mi:nth-child(2n) {
   border-right: none;
 }
 
-.enroll-mi:nth-last-child(-n+2) {
+.mi:nth-last-child(-n+2) {
   border-bottom: none;
 }
 
-.enroll-mi:hover {
-  background: #161616;
+.mi:hover {
+  background: #fafafa;
 }
 
-.enroll-ck {
+.ck {
   width: 14px;
   height: 14px;
-  border: 1px solid #333;
+  border: 1px solid #ddd;
   border-radius: 1px;
   flex-shrink: 0;
-  background: #111;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.1s;
+}
+
+.mi.on .ck {
+  background: #c8f000;
+  border-color: #c8f000;
+}
+
+.mi.on .ck::after {
+  content: '';
+  width: 7px;
+  height: 4px;
+  border-left: 1.5px solid #222;
+  border-bottom: 1.5px solid #222;
+  transform: rotate(-45deg) translateY(-1px);
+  display: block;
+}
+
+.mt {
+  font-size: 12px;
+  color: #555;
+  font-weight: 300;
+}
+
+.cond {
+  display: none;
+  background: #fafafa;
+  border-left: 2px solid #c8f000;
+  padding: 10px 12px;
+  margin: 4px 0 10px;
+}
+
+.cond.show {
+  display: block;
+}
+
+.guardian-note {
+  background: #f5f5f5;
+  border-radius: 1px;
+  padding: 9px 12px;
+  font-size: 11px;
+  color: #aaa;
+  margin-bottom: 12px;
+  font-style: italic;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid #ebebeb;
+}
+
+.btn-next {
+  background: #c8f000;
+  border: none;
+  border-radius: 1px;
+  color: #222;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  padding: 13px 30px;
+  text-transform: uppercase;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-next:hover:not(:disabled) {
+  background: #222;
+  color: #c8f000;
+}
+
+.btn-next:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-back {
+  background: transparent;
+  border: none;
+  color: #bbb;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.btn-back:hover {
+  color: #666;
+}
+
+.waiver-txt {
+  font-size: 10px;
+  color: #888;
+  line-height: 1.7;
+  border: 1px solid #e8e8e8;
+  background: #fff;
+  padding: 14px;
+  margin-bottom: 14px;
+  max-height: 160px;
+  overflow-y: auto;
+  border-radius: 1px;
+}
+
+.waiver-txt::-webkit-scrollbar {
+  width: 3px;
+}
+
+.waiver-txt::-webkit-scrollbar-thumb {
+  background: #ddd;
+}
+
+.waiver-txt strong {
+  color: #444;
+  font-weight: 500;
+}
+
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  text-align: left;
+}
+
+.radio-row:last-child {
+  border-bottom: none;
+}
+
+.rb {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #ddd;
+  border-radius: 1px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.enroll-mi.on .enroll-ck {
+.rb.on {
   background: #c8f000;
   border-color: #c8f000;
 }
 
-.enroll-mi.on .enroll-ck::after {
+.rb.on::after {
   content: '';
   width: 7px;
   height: 4px;
-  border-left: 1.5px solid #0d0d0d;
-  border-bottom: 1.5px solid #0d0d0d;
+  border-left: 1.5px solid #222;
+  border-bottom: 1.5px solid #222;
   transform: rotate(-45deg) translateY(-1px);
   display: block;
 }
 
-.enroll-mt {
-  font-size: 14px;
-  color: #ffffff;
-  font-weight: 300;
+.rt {
+  font-size: 12px;
+  color: #777;
   line-height: 1.5;
+  font-weight: 300;
 }
 
-.enroll-cd {
-  display: none;
-  background: #0f0f0f;
-  border-left: 2px solid #c8f000;
-  padding: 12px 14px;
-  margin: 6px 0 10px;
+.rt strong {
+  color: #333;
+  font-weight: 500;
 }
 
-.enroll-cd.show {
-  display: block;
-}
-
-.enroll-hn {
-  font-size: 11px;
-  color: #ffffff;
-  margin-top: 3px;
-}
-
-.enroll-dv {
-  height: 1px;
-  background: #181818;
-  margin: 2rem 0 0;
-}
-
-.enroll-sb {
-  background: #c8f000;
-  border: none;
-  border-radius: 1px;
-  color: #0d0d0d;
-  cursor: pointer;
+.prefill-tag {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 800;
-  font-size: 15px;
-  letter-spacing: 0.14em;
-  padding: 16px 32px;
+  font-size: 22px;
+  color: #222;
   text-transform: uppercase;
+  margin-bottom: 3px;
+}
+
+.prefill-sub {
+  font-size: 11px;
+  color: #bbb;
+  margin-bottom: 16px;
+}
+
+.sig-wrap {
+  border: 1px solid #e0e0e0;
+  border-radius: 1px;
+  position: relative;
+  background: #fafafa;
+  margin-bottom: 12px;
+}
+
+.sig-wrap canvas {
+  display: block;
+  cursor: crosshair;
+  touch-action: none;
   width: 100%;
-  margin-top: 2rem;
-  transition: opacity 0.15s;
+  height: 90px;
 }
 
-.enroll-sb:hover:not(:disabled) {
-  opacity: 0.88;
+.sig-clr {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  color: #bbb;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  padding: 4px 9px;
+  text-transform: uppercase;
 }
 
-.enroll-sb:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.sig-clr:hover {
+  border-color: #aaa;
+  color: #666;
 }
 
-.enroll-err {
-  margin-top: 1rem;
-  padding: 10px 12px;
-  border: 1px solid #ff4444;
-  color: #ff8888;
-  font-size: 13px;
-}
-
-.enroll-ty {
-  display: none;
-  flex-direction: column;
-  padding: 3rem 2rem;
-  min-height: 500px;
+.ty-wrap {
+  padding: 40px 32px 48px;
   max-width: 720px;
+  width: 100%;
   margin: 0 auto;
 }
 
-.enroll-ty.show {
-  display: flex;
-}
-
-.enroll-ty-ey {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #c8f000;
-  margin-bottom: 1.2rem;
-}
-
-.enroll-ty-h {
-  font-family: 'Barlow Condensed', sans-serif;
-  font-weight: 800;
-  font-size: clamp(48px, 12vw, 62px);
-  text-transform: uppercase;
-  line-height: 0.92;
-  color: #f0f0f0;
-  margin-bottom: 1.8rem;
-}
-
-.enroll-ty-rule {
-  width: 40px;
-  height: 2px;
-  background: #c8f000;
-  margin-bottom: 2rem;
-}
-
-.enroll-ty-b {
-  font-size: 15px;
-  font-weight: 300;
-  color: #888;
-  line-height: 1.7;
-  max-width: 420px;
-  margin-bottom: 2.5rem;
-}
-
-.enroll-ty-b strong {
-  color: #ccc;
-  font-weight: 400;
-}
-
-.enroll-ty-m {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  width: 100%;
-}
-
-.enroll-ty-mr {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid #1a1a1a;
-  font-size: 13px;
-}
-
-.enroll-ty-mr:last-child {
-  border-bottom: none;
-}
-
-.enroll-ty-ml {
+.ty-ey {
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
   font-size: 10px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #555;
-  width: 120px;
-  flex-shrink: 0;
+  color: #bbb;
+  margin-bottom: 12px;
 }
 
-.enroll-ty-mv {
-  color: #ccc;
+.ty-h {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: clamp(40px, 10vw, 50px);
+  text-transform: uppercase;
+  line-height: 0.92;
+  color: #222;
+  margin-bottom: 18px;
+}
+
+.ty-h span {
+  color: #c8f000;
+}
+
+.ty-rule {
+  width: 36px;
+  height: 2px;
+  background: #222;
+  margin-bottom: 18px;
+}
+
+.ty-b {
+  font-size: 13px;
   font-weight: 300;
+  color: #888;
+  line-height: 1.7;
+}
+
+.ty-b strong {
+  color: #444;
+  font-weight: 400;
+}
+
+.enroll-err {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ff4444;
+  color: #cc3333;
+  font-size: 12px;
+  background: #fff5f5;
 }

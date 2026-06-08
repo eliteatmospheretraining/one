@@ -21,8 +21,8 @@ import Enroll from "./pages/Enroll";
 export default function App() {
     return (
         <div className="App">
-            <SmoothCursor />
             <BrowserRouter>
+                <SmoothCursor />
                 <AuthProvider>
                     <Routes>
                         <Route path="/login" element={<Login />} />

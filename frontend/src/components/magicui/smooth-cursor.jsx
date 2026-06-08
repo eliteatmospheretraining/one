@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { motion, useMotionValue, useSpring } from "framer-motion";
+
+const CURSOR_ACCENT = "#CBFF00";
+const CURSOR_ENROLL = "#222";
 
 /**
  * SmoothCursor — magicui-style smooth-trailing cursor.
@@ -7,6 +11,8 @@ import { motion, useMotionValue, useSpring } from "framer-motion";
  * via CSS media query in index.css.
  */
 export function SmoothCursor() {
+    const { pathname } = useLocation();
+    const fill = pathname.startsWith("/enroll") ? CURSOR_ENROLL : CURSOR_ACCENT;
     const [down, setDown] = useState(false);
 
     const x = useMotionValue(-100);
@@ -47,13 +53,7 @@ export function SmoothCursor() {
                 fill="none"
                 style={{ display: "block", transform: "translate(-2px,-2px)" }}
             >
-                <path
-                    d="M3 2.6 L18.5 11 L11.2 12.6 L9 19.4 Z"
-                    fill="#CBFF00"
-                    stroke="#141414"
-                    strokeWidth="1.6"
-                    strokeLinejoin="round"
-                />
+                <path d="M3 2.6 L18.5 11 L11.2 12.6 L9 19.4 Z" fill={fill} />
             </motion.svg>
         </motion.div>
     );

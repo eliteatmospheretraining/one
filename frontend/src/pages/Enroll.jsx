@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { API, formatApiError } from "../lib/api";
-import { BRAND_LOGO_WHITE, BRAND_NAME } from "../constants/brand";
+import { BRAND_LOGO_BLACK, BRAND_NAME } from "../constants/brand";
 import "./Enroll.css";
+
+const TOTAL = 6;
+const WAIVER_PROG = 5;
 
 const PROGRAMS = [
     { value: "full_time", label: "Eat w/ EAT — Full-Time" },
@@ -32,20 +35,9 @@ const MEDICAL_FLAGS = [
 ];
 
 const REFERRALS = ["Referral", "Google", "Instagram", "Tournament", "Other"];
-
 const RELATIONSHIPS = ["Parent", "Caregiver", "Relative", "Guardian"];
+const EC_RELATIONSHIPS = ["Parent", "Caregiver", "Relative", "Sibling", "Friend", "Guardian"];
 const SHIRT_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"];
-const ENROLL_SECTION_COUNT = 4;
-
-function EnrollProgress({ step }) {
-    return (
-        <div className="enroll-pb" aria-hidden="true">
-            {Array.from({ length: ENROLL_SECTION_COUNT }, (_, i) => (
-                <div key={i} className={`enroll-pb-s${step >= i ? " on" : ""}`} />
-            ))}
-        </div>
-    );
-}
 
 const blankForm = () => ({
     full_name: "",
@@ -53,7 +45,7 @@ const blankForm = () => ({
     school: "",
     grade: "",
     shirt_size: "",
-    program_type: "full_time",
+    program_type: "",
     utr: "",
     wtn: "",
     goals: [],
@@ -61,67 +53,167 @@ const blankForm = () => ({
     guardian_relationship: "",
     guardian_phone: "",
     guardian_email: "",
-    primary_emergency: false,
-    guardian_name_secondary: "",
-    guardian_relationship_secondary: "",
-    guardian_phone_secondary: "",
-    guardian_email_secondary: "",
-    secondary_emergency: false,
-    medical_none: true,
+    street_address: "",
+    city_state_zip: "",
+    emergency_contact_name: "",
+    emergency_contact_relationship: "",
+    emergency_contact_phone: "",
+    emergency_contact_email: "",
+    medical_none: false,
     medical_flags: [],
     medical_details: "",
     referral_source: "",
     additional_notes: "",
 });
 
+function calcAge(dobVal) {
+    if (!dobVal) return null;
+    const today = new Date();
+    const birth = new Date(dobVal);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
+    return age;
+}
+
+function EnrollHeader({ title, children, logoOnly = false }) {
+    return (
+        <div className="ew-top">
+            <div className={`ew-title-row${logoOnly ? " ew-title-row--end" : ""}`}>
+                {title}
+                <img src={BRAND_LOGO_BLACK} alt={BRAND_NAME} className="ew-brand-logo" />
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function ProgressBar({ filled }) {
+    return (
+        <div className="prog-wrap" aria-hidden="true">
+            {Array.from({ length: TOTAL }, (_, i) => (
+                <div key={i} className={`ps${i < filled ? " on" : ""}${i === filled ? " active" : ""}`} />
+            ))}
+        </div>
+    );
+}
+
+function useShake() {
+    const [shaking, setShaking] = useState(false);
+    const shake = useCallback(() => {
+        setShaking(true);
+        window.setTimeout(() => setShaking(false), 160);
+    }, []);
+    return [shaking, shake];
+}
+
+function SignaturePad({ canvasRef, onDraw }) {
+    const drawing = useRef(false);
+    const last = useRef({ x: 0, y: 0 });
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return undefined;
+
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = Math.max(rect.width, 300);
+        canvas.height = 90;
+        const ctx = canvas.getContext("2d");
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 1.8;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        function pos(e) {
+            const r = canvas.getBoundingClientRect();
+            const sx = canvas.width / r.width;
+            const sy = canvas.height / r.height;
+            if (e.touches) {
+                return {
+                    x: (e.touches[0].clientX - r.left) * sx,
+                    y: (e.touches[0].clientY - r.top) * sy,
+                };
+            }
+            return {
+                x: (e.clientX - r.left) * sx,
+                y: (e.clientY - r.top) * sy,
+            };
+        }
+
+        function start(e) {
+            if (e.cancelable) e.preventDefault();
+            drawing.current = true;
+            const p = pos(e);
+            last.current = p;
+            onDraw(true);
+        }
+
+        function move(e) {
+            if (!drawing.current) return;
+            if (e.cancelable) e.preventDefault();
+            const p = pos(e);
+            ctx.beginPath();
+            ctx.moveTo(last.current.x, last.current.y);
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            last.current = p;
+        }
+
+        function end() {
+            drawing.current = false;
+        }
+
+        canvas.addEventListener("mousedown", start);
+        canvas.addEventListener("mousemove", move);
+        canvas.addEventListener("mouseup", end);
+        canvas.addEventListener("mouseleave", end);
+        canvas.addEventListener("touchstart", start, { passive: false });
+        canvas.addEventListener("touchmove", move, { passive: false });
+        canvas.addEventListener("touchend", end);
+
+        return () => {
+            canvas.removeEventListener("mousedown", start);
+            canvas.removeEventListener("mousemove", move);
+            canvas.removeEventListener("mouseup", end);
+            canvas.removeEventListener("mouseleave", end);
+            canvas.removeEventListener("touchstart", start);
+            canvas.removeEventListener("touchmove", move);
+            canvas.removeEventListener("touchend", end);
+        };
+    }, [canvasRef, onDraw]);
+
+    return null;
+}
+
 export default function Enroll() {
+    const [phase, setPhase] = useState("enroll");
     const [form, setForm] = useState(blankForm);
+    const [photoRelease, setPhotoRelease] = useState(null);
+    const [typedSig, setTypedSig] = useState("");
+    const [hasSig, setHasSig] = useState(false);
     const [submitted, setSubmitted] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [progressStep, setProgressStep] = useState(0);
-    const sectionRefs = useRef([]);
+    const [enrollShake, shakeEnroll] = useShake();
+    const [waiverShake, shakeWaiver] = useShake();
+    const canvasRef = useRef(null);
 
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
-    useEffect(() => {
-        function updateProgress() {
-            const marker = window.scrollY + window.innerHeight * 0.35;
-            let step = 0;
-            sectionRefs.current.forEach((el, i) => {
-                if (el && el.offsetTop <= marker) step = i;
-            });
-            setProgressStep(step);
-        }
-
-        updateProgress();
-        window.addEventListener("scroll", updateProgress, { passive: true });
-        window.addEventListener("resize", updateProgress);
-        return () => {
-            window.removeEventListener("scroll", updateProgress);
-            window.removeEventListener("resize", updateProgress);
-        };
-    }, [submitted]);
-
-    function setSectionRef(index) {
-        return (el) => {
-            sectionRefs.current[index] = el;
-        };
-    }
+    const age = calcAge(form.date_of_birth);
+    const isAdult = age !== null && age >= 18;
 
     function toggleGoal(goal) {
-        setForm((f) => {
-            const goals = f.goals.includes(goal)
-                ? f.goals.filter((g) => g !== goal)
-                : [...f.goals, goal];
-            return { ...f, goals };
-        });
+        setForm((f) => ({
+            ...f,
+            goals: f.goals.includes(goal) ? f.goals.filter((g) => g !== goal) : [...f.goals, goal],
+        }));
     }
 
     function pickMedicalNone() {
         setForm((f) => {
             if (f.medical_none) {
-                return { ...f, medical_none: false };
+                return { ...f, medical_none: false, medical_flags: [] };
             }
             return { ...f, medical_none: true, medical_flags: [], medical_details: "" };
         });
@@ -138,20 +230,55 @@ export default function Enroll() {
 
     const showMedicalDetails = !form.medical_none && form.medical_flags.length > 0;
 
-    async function submit(e) {
-        e.preventDefault();
-        setError(null);
+    function validateEnroll() {
+        const minor = age === null || age < 18;
+        if (
+            !form.full_name.trim() ||
+            !form.date_of_birth ||
+            !form.shirt_size ||
+            !form.program_type ||
+            !form.emergency_contact_name.trim() ||
+            !form.emergency_contact_phone.trim()
+        ) {
+            shakeEnroll();
+            return false;
+        }
+        if (
+            minor &&
+            (!form.guardian_name.trim() || !form.guardian_phone.trim() || !form.guardian_email.trim())
+        ) {
+            shakeEnroll();
+            return false;
+        }
+        return true;
+    }
 
-        if (!form.full_name.trim()) return setError("Athlete full name is required");
-        if (!form.date_of_birth) return setError("Date of birth is required");
-        if (!form.shirt_size) return setError("T-shirt size is required");
-        if (!form.program_type) return setError("Select a program");
-        if (!form.guardian_name.trim()) return setError("Primary contact name is required");
-        if (!form.guardian_relationship) return setError("Primary contact relationship is required");
-        if (!form.guardian_phone.trim()) return setError("Primary contact phone is required");
-        if (!form.guardian_email.trim()) return setError("Primary contact email is required");
-        if (!form.medical_none && form.medical_flags.length === 0) {
-            return setError("Select None or flag at least one medical condition");
+    function continueToWaiver() {
+        setError(null);
+        if (!validateEnroll()) return;
+        setTypedSig(form.guardian_name.trim() || form.full_name.trim());
+        setHasSig(false);
+        setPhotoRelease(null);
+        setPhase("waiver");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function clearSig() {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+        setHasSig(false);
+    }
+
+    function contactEmail() {
+        return form.guardian_email.trim() || form.emergency_contact_email.trim() || null;
+    }
+
+    async function submitWaiver() {
+        setError(null);
+        if (!photoRelease || !typedSig.trim() || !hasSig) {
+            shakeWaiver();
+            return;
         }
 
         const payload = {
@@ -164,27 +291,31 @@ export default function Enroll() {
             utr: form.utr === "" ? null : Number(form.utr),
             wtn: form.wtn === "" ? null : Number(form.wtn),
             goals: form.goals,
-            guardian_name: form.guardian_name.trim(),
-            guardian_relationship: form.guardian_relationship,
-            guardian_phone: form.guardian_phone.trim(),
-            guardian_email: form.guardian_email.trim(),
-            guardian_name_secondary: form.guardian_name_secondary.trim() || null,
-            guardian_relationship_secondary: form.guardian_relationship_secondary || null,
-            guardian_phone_secondary: form.guardian_phone_secondary.trim() || null,
-            guardian_email_secondary: form.guardian_email_secondary.trim() || null,
-            primary_emergency: form.primary_emergency,
-            secondary_emergency: form.secondary_emergency,
-            medical_none: form.medical_none,
+            guardian_name: form.guardian_name.trim() || null,
+            guardian_relationship: form.guardian_relationship || null,
+            guardian_phone: form.guardian_phone.trim() || null,
+            guardian_email: contactEmail(),
+            street_address: form.street_address.trim() || null,
+            city_state_zip: form.city_state_zip.trim() || null,
+            emergency_contact_name: form.emergency_contact_name.trim(),
+            emergency_contact_relationship: form.emergency_contact_relationship || null,
+            emergency_contact_phone: form.emergency_contact_phone.trim(),
+            emergency_contact_email: form.emergency_contact_email.trim() || null,
+            medical_none: form.medical_none || form.medical_flags.length === 0,
             medical_flags: form.medical_flags,
             medical_details: form.medical_details.trim() || null,
             referral_source: form.referral_source || null,
             additional_notes: form.additional_notes.trim() || null,
+            photo_release: photoRelease === "yes",
+            waiver_typed_signature: typedSig.trim(),
+            waiver_signature: canvasRef.current?.toDataURL("image/png") || "",
         };
 
         setLoading(true);
         try {
             const r = await axios.post(`${API}/enroll`, payload);
             setSubmitted(r.data);
+            setPhase("thanks");
             window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (err) {
             setError(formatApiError(err) || "Could not submit enrollment");
@@ -193,47 +324,30 @@ export default function Enroll() {
         }
     }
 
-    if (submitted) {
+    const phaseLabel =
+        phase === "enroll" ? "Enrollment" : phase === "waiver" ? "Waiver" : "Complete";
+    const progFilled = phase === "enroll" ? 0 : phase === "waiver" ? WAIVER_PROG : TOTAL;
+
+    if (phase === "thanks" && submitted) {
+        const email =
+            submitted.guardian_email || form.guardian_email || form.emergency_contact_email || "your email";
         return (
             <div className="enroll-page">
-                <div className="enroll-hd">
-                    <div className="enroll-title-row enroll-title-row--end">
-                        <img src={BRAND_LOGO_WHITE} alt={BRAND_NAME} className="enroll-header-logo" />
-                    </div>
-                    <EnrollProgress step={ENROLL_SECTION_COUNT - 1} />
-                </div>
-                <div className="enroll-ty show">
-                    <div className="enroll-ty-ey">Enrollment Received</div>
-                    <div className="enroll-ty-h">
-                        You&apos;re
+                <EnrollHeader logoOnly />
+                <div className="ty-wrap">
+                    <div className="ty-ey">You&apos;re all set.</div>
+                    <div className="ty-h">
+                        Welcome to
                         <br />
-                        <span style={{ color: "#c8f000" }}>on deck.</span>
+                        the <span>team.</span>
                     </div>
-                    <div className="enroll-ty-rule" />
-                    <div className="enroll-ty-b">
-                        <strong>{submitted.athlete_name}</strong> has been submitted. Coach Rico will review your
-                        information and reach out to confirm your program, start date, and first session.
+                    <div className="ty-rule" />
+                    <div className="ty-b">
+                        Enrollment and waiver received for{" "}
+                        <strong>{submitted.athlete_name || form.full_name || "your athlete"}</strong>.
                         <br />
-                        <br />
-                        A confirmation will be sent to <strong>{submitted.guardian_email}</strong>.
-                    </div>
-                    <div className="enroll-ty-m">
-                        <div className="enroll-ty-mr">
-                            <span className="enroll-ty-ml">Status</span>
-                            <span className="enroll-ty-mv">Pending review</span>
-                        </div>
-                        <div className="enroll-ty-mr">
-                            <span className="enroll-ty-ml">Program</span>
-                            <span className="enroll-ty-mv">{submitted.program_label}</span>
-                        </div>
-                        <div className="enroll-ty-mr">
-                            <span className="enroll-ty-ml">Next Step</span>
-                            <span className="enroll-ty-mv">Rico will contact you within 24–48 hours</span>
-                        </div>
-                        <div className="enroll-ty-mr">
-                            <span className="enroll-ty-ml">Location</span>
-                            <span className="enroll-ty-mv">Sunrise Athletic Complex · Broward County, FL</span>
-                        </div>
+                        <br />A copy of the signed waiver will be sent to <strong>{email}</strong>. Coach Rico will be
+                        in touch to confirm your program and first session.
                     </div>
                 </div>
             </div>
@@ -242,323 +356,407 @@ export default function Enroll() {
 
     return (
         <div className="enroll-page">
-            <div className="enroll-hd">
-                <div className="enroll-title-row">
-                    <div className="enroll-title">
-                        Enroll<span style={{ color: "#c8f000" }}>.</span>
+            <EnrollHeader
+                title={
+                    <div className="ew-title">
+                        Enroll<span>.</span>
                     </div>
-                    <img src={BRAND_LOGO_WHITE} alt={BRAND_NAME} className="enroll-header-logo" />
-                </div>
-                <div className="enroll-sub">
-                    Complete all required fields. Coach Rico will confirm your program and start date.
-                </div>
-                <EnrollProgress step={progressStep} />
-            </div>
+                }
+            >
+                <div className="ew-sub">Complete all required fields. Coach Rico will confirm your program and start date.</div>
+                <ProgressBar filled={progFilled} />
+                <div className="phase-lbl">{phaseLabel}</div>
+            </EnrollHeader>
 
-            <form className="enroll-fb" onSubmit={submit}>
-                <section className="enroll-section" ref={setSectionRef(0)}>
-                <div className="enroll-sl">
-                    Program of Interest <span className="enroll-rq">*</span>
-                </div>
-                <div className="enroll-cr">
-                    {PROGRAMS.map((p) => (
-                        <button
-                            key={p.value}
-                            type="button"
-                            className={`enroll-ch ${form.program_type === p.value ? "on" : ""}`}
-                            onClick={() => set("program_type", p.value)}
-                        >
-                            {p.label}
+            {phase === "enroll" && (
+                <div className={`enroll-body${enrollShake ? " shake" : ""}`}>
+                    <div className="sec-lbl">Athlete</div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>
+                                Full Name <span className="req">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={form.full_name}
+                                onChange={(e) => set("full_name", e.target.value)}
+                                placeholder="First Last"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>
+                                Date of Birth <span className="req">*</span>
+                            </label>
+                            <input
+                                type="date"
+                                value={form.date_of_birth}
+                                onChange={(e) => set("date_of_birth", e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="row col3">
+                        <div className="field">
+                            <label>School</label>
+                            <input
+                                type="text"
+                                value={form.school}
+                                onChange={(e) => set("school", e.target.value)}
+                                placeholder="School name"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Grade</label>
+                            <input
+                                type="text"
+                                value={form.grade}
+                                onChange={(e) => set("grade", e.target.value)}
+                                placeholder="e.g. 9th"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>
+                                T-Shirt <span className="req">*</span>
+                            </label>
+                            <select
+                                value={form.shirt_size}
+                                onChange={(e) => set("shirt_size", e.target.value)}
+                            >
+                                <option value="">—</option>
+                                {SHIRT_SIZES.map((s) => (
+                                    <option key={s} value={s}>
+                                        {s}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    <span className="chip-lbl">
+                        Program of Interest <span className="req">*</span>
+                    </span>
+                    <div className="chips">
+                        {PROGRAMS.map((p) => (
+                            <button
+                                key={p.value}
+                                type="button"
+                                className={`chip${form.program_type === p.value ? " on" : ""}`}
+                                onClick={() => set("program_type", p.value)}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="sec-lbl">Tennis Background</div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>UTR Rating</label>
+                            <input
+                                type="text"
+                                value={form.utr}
+                                onChange={(e) => set("utr", e.target.value)}
+                                placeholder="0.00"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>WTN Rating</label>
+                            <input
+                                type="text"
+                                value={form.wtn}
+                                onChange={(e) => set("wtn", e.target.value)}
+                                placeholder="0.00"
+                            />
+                        </div>
+                    </div>
+                    <span className="chip-lbl">Primary Goal(s)</span>
+                    <div className="chips">
+                        {GOALS.map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                className={`chip${form.goals.includes(g) ? " on" : ""}`}
+                                onClick={() => toggleGoal(g)}
+                            >
+                                {g}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="sec-lbl">Guardian</div>
+                    {isAdult && (
+                        <div className="guardian-note">Athlete is 18+ — guardian info is optional.</div>
+                    )}
+                    <div className="row col2">
+                        <div className="field">
+                            <label>
+                                Name {!isAdult && <span className="req">*</span>}
+                            </label>
+                            <input
+                                type="text"
+                                value={form.guardian_name}
+                                onChange={(e) => set("guardian_name", e.target.value)}
+                                placeholder="Full name"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Relationship</label>
+                            <select
+                                value={form.guardian_relationship}
+                                onChange={(e) => set("guardian_relationship", e.target.value)}
+                            >
+                                <option value="">—</option>
+                                {RELATIONSHIPS.map((r) => (
+                                    <option key={r} value={r}>
+                                        {r}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>
+                                Phone {!isAdult && <span className="req">*</span>}
+                            </label>
+                            <input
+                                type="tel"
+                                value={form.guardian_phone}
+                                onChange={(e) => set("guardian_phone", e.target.value)}
+                                placeholder="(555) 123-4567"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>
+                                Email {!isAdult && <span className="req">*</span>}
+                            </label>
+                            <input
+                                type="email"
+                                value={form.guardian_email}
+                                onChange={(e) => set("guardian_email", e.target.value)}
+                                placeholder="Invoices sent here"
+                            />
+                        </div>
+                    </div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>Street Address</label>
+                            <input
+                                type="text"
+                                value={form.street_address}
+                                onChange={(e) => set("street_address", e.target.value)}
+                                placeholder="123 Main St"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>City / State / Zip</label>
+                            <input
+                                type="text"
+                                value={form.city_state_zip}
+                                onChange={(e) => set("city_state_zip", e.target.value)}
+                                placeholder="Miami, FL 33131"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="sec-lbl">Emergency Contact</div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>
+                                Name <span className="req">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                value={form.emergency_contact_name}
+                                onChange={(e) => set("emergency_contact_name", e.target.value)}
+                                placeholder="Full name"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Relationship</label>
+                            <select
+                                value={form.emergency_contact_relationship}
+                                onChange={(e) => set("emergency_contact_relationship", e.target.value)}
+                            >
+                                <option value="">—</option>
+                                {EC_RELATIONSHIPS.map((r) => (
+                                    <option key={r} value={r}>
+                                        {r}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="row col2">
+                        <div className="field">
+                            <label>
+                                Phone <span className="req">*</span>
+                            </label>
+                            <input
+                                type="tel"
+                                value={form.emergency_contact_phone}
+                                onChange={(e) => set("emergency_contact_phone", e.target.value)}
+                                placeholder="(555) 123-4567"
+                            />
+                        </div>
+                        <div className="field">
+                            <label>Email</label>
+                            <input
+                                type="email"
+                                value={form.emergency_contact_email}
+                                onChange={(e) => set("emergency_contact_email", e.target.value)}
+                                placeholder="Optional"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="sec-lbl">Medical</div>
+                    <span className="chip-lbl">
+                        Flag any of the following <span className="req">*</span>
+                    </span>
+                    <div className="med-grid">
+                        <button type="button" className={`mi${form.medical_none ? " on" : ""}`} onClick={pickMedicalNone}>
+                            <div className="ck" />
+                            <span className="mt">None / No known issues</span>
                         </button>
-                    ))}
-                </div>
+                        {MEDICAL_FLAGS.map((flag) => (
+                            <button
+                                key={flag}
+                                type="button"
+                                className={`mi${form.medical_flags.includes(flag) ? " on" : ""}`}
+                                onClick={() => toggleMedicalFlag(flag)}
+                            >
+                                <div className="ck" />
+                                <span className="mt">{flag}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <div className={`cond${showMedicalDetails ? " show" : ""}`}>
+                        <div className="field">
+                            <label>Please describe</label>
+                            <textarea
+                                value={form.medical_details}
+                                onChange={(e) => set("medical_details", e.target.value)}
+                                placeholder="Conditions, medications, devices, or restrictions..."
+                            />
+                        </div>
+                    </div>
 
-                <div className="enroll-sl">Athlete Details</div>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>Full Name <span className="enroll-rq">*</span></label>
-                        <input
-                            type="text"
-                            value={form.full_name}
-                            onChange={(e) => set("full_name", e.target.value)}
-                            placeholder="First Last"
-                            required
-                        />
+                    <div className="sec-lbl">Additional</div>
+                    <span className="chip-lbl">How did you hear about EAT?</span>
+                    <div className="chips">
+                        {REFERRALS.map((r) => (
+                            <button
+                                key={r}
+                                type="button"
+                                className={`chip${form.referral_source === r ? " on" : ""}`}
+                                onClick={() => set("referral_source", r)}
+                            >
+                                {r}
+                            </button>
+                        ))}
                     </div>
-                    <div className="enroll-f">
-                        <label>Date of Birth <span className="enroll-rq">*</span></label>
-                        <input
-                            type="date"
-                            value={form.date_of_birth}
-                            onChange={(e) => set("date_of_birth", e.target.value)}
-                            required
-                        />
+                    <div className="row col1">
+                        <div className="field">
+                            <label>Anything else?</label>
+                            <textarea
+                                value={form.additional_notes}
+                                onChange={(e) => set("additional_notes", e.target.value)}
+                                placeholder="Training goals, schedule preferences, questions for Coach Rico..."
+                            />
+                        </div>
                     </div>
-                </div>
-                <div className="enroll-r enroll-c3">
-                    <div className="enroll-f">
-                        <label>School</label>
-                        <input
-                            type="text"
-                            value={form.school}
-                            onChange={(e) => set("school", e.target.value)}
-                            placeholder="School name"
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>Grade</label>
-                        <input
-                            type="text"
-                            value={form.grade}
-                            onChange={(e) => set("grade", e.target.value)}
-                            placeholder="e.g. 9th"
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>T-Shirt <span className="enroll-rq">*</span></label>
-                        <select
-                            value={form.shirt_size}
-                            onChange={(e) => set("shirt_size", e.target.value)}
-                            required
-                        >
-                            <option value="">—</option>
-                            {SHIRT_SIZES.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
 
-                <div className="enroll-dv" />
-                </section>
-
-                <section className="enroll-section" ref={setSectionRef(1)}>
-                <div className="enroll-sl">Tennis Background</div>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>UTR Rating</label>
-                        <input
-                            type="number"
-                            step="0.01"
-                            value={form.utr}
-                            onChange={(e) => set("utr", e.target.value)}
-                            placeholder="0.00"
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>WTN Rating</label>
-                        <input
-                            type="number"
-                            step="0.01"
-                            value={form.wtn}
-                            onChange={(e) => set("wtn", e.target.value)}
-                            placeholder="0.00"
-                        />
-                    </div>
-                </div>
-                <span className="enroll-cl">Primary Goal(s)</span>
-                <div className="enroll-cr">
-                    {GOALS.map((g) => (
-                        <button
-                            key={g}
-                            type="button"
-                            className={`enroll-ch ${form.goals.includes(g) ? "on" : ""}`}
-                            onClick={() => toggleGoal(g)}
-                        >
-                            {g}
+                    <div className="actions">
+                        <div />
+                        <button type="button" className="btn-next" onClick={continueToWaiver}>
+                            Continue to Waiver →
                         </button>
-                    ))}
+                    </div>
                 </div>
+            )}
 
-                <div className="enroll-dv" />
-                </section>
+            {phase === "waiver" && (
+                <div className={`enroll-body${waiverShake ? " shake" : ""}`}>
+                    <div className="prefill-tag">{(form.full_name || "Athlete").toUpperCase()}</div>
+                    <div className="prefill-sub">
+                        Completing waiver for {form.full_name || "your athlete"}
+                        {form.guardian_name ? ` · Guardian: ${form.guardian_name}` : ""}
+                    </div>
 
-                <section className="enroll-section" ref={setSectionRef(2)}>
-                <div className="enroll-sl">Contact</div>
-                <span className="enroll-ss">Primary Contact</span>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>Name <span className="enroll-rq">*</span></label>
+                    <div className="waiver-txt">
+                        <strong>Assumption of Risk.</strong> I am aware that participating in tennis and athletics
+                        activities involves inherent risks including physical injury, accidents, and property damage. I
+                        voluntarily assume all risks and release Elite Atmosphere Training, its coaches, staff, and
+                        affiliates from any liability for injuries or damages during participation.
+                        <br />
+                        <br />
+                        <strong>Medical Consent.</strong> I certify the participant is physically fit to participate. In
+                        an emergency, I authorize EAT staff to seek medical treatment and agree to be responsible for
+                        associated medical expenses.
+                        <br />
+                        <br />
+                        <strong>Code of Conduct.</strong> I agree to abide by all rules and instructions provided by EAT
+                        staff. Violation may result in dismissal without refund.
+                        <br />
+                        <br />
+                        <strong>Personal Property.</strong> EAT is not liable for loss, theft, or damage to personal
+                        property on premises.
+                        <br />
+                        <br />
+                        <strong>Photo Release.</strong> EAT may photograph or record the participant for promotional
+                        use including social media and marketing. First names may be used; full names will not be
+                        shared publicly without separate consent. I waive approval and compensation rights for these
+                        materials.
+                    </div>
+
+                    <div className="sec-lbl">Photo Release</div>
+                    <div>
+                        <button type="button" className="radio-row" onClick={() => setPhotoRelease("yes")}>
+                            <div className={`rb${photoRelease === "yes" ? " on" : ""}`} />
+                            <div className="rt">
+                                <strong>Yes</strong> — I authorize EAT to photograph or record my athlete for
+                                promotional purposes.
+                            </div>
+                        </button>
+                        <button type="button" className="radio-row" onClick={() => setPhotoRelease("no")}>
+                            <div className={`rb${photoRelease === "no" ? " on" : ""}`} />
+                            <div className="rt">
+                                <strong>No</strong> — I do not authorize photography or recording of my athlete.
+                            </div>
+                        </button>
+                    </div>
+
+                    <div className="sec-lbl">Confirm Your Name</div>
+                    <div className="field" style={{ marginBottom: 14 }}>
                         <input
                             type="text"
-                            value={form.guardian_name}
-                            onChange={(e) => set("guardian_name", e.target.value)}
-                            placeholder="Full name"
-                            required
+                            value={typedSig}
+                            onChange={(e) => setTypedSig(e.target.value)}
+                            placeholder="Type full name"
+                            autoComplete="off"
                         />
                     </div>
-                    <div className="enroll-f">
-                        <label>Relationship <span className="enroll-rq">*</span></label>
-                        <select
-                            value={form.guardian_relationship}
-                            onChange={(e) => set("guardian_relationship", e.target.value)}
-                            required
-                        >
-                            <option value="">—</option>
-                            {RELATIONSHIPS.map((r) => (
-                                <option key={r} value={r}>{r}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>Phone <span className="enroll-rq">*</span></label>
-                        <input
-                            type="tel"
-                            value={form.guardian_phone}
-                            onChange={(e) => set("guardian_phone", e.target.value)}
-                            placeholder="(555) 123-4567"
-                            required
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>Email <span className="enroll-rq">*</span></label>
-                        <input
-                            type="email"
-                            value={form.guardian_email}
-                            onChange={(e) => set("guardian_email", e.target.value)}
-                            placeholder="Invoices sent here"
-                            required
-                        />
-                        <div className="enroll-hn">Invoices sent to this address</div>
-                    </div>
-                </div>
-                <label className="enroll-check">
-                    <input
-                        type="checkbox"
-                        checked={form.primary_emergency}
-                        onChange={(e) => set("primary_emergency", e.target.checked)}
-                    />
-                    Emergency contact
-                </label>
 
-                <span className="enroll-ss">Secondary Contact</span>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>Name</label>
-                        <input
-                            type="text"
-                            value={form.guardian_name_secondary}
-                            onChange={(e) => set("guardian_name_secondary", e.target.value)}
-                            placeholder="Full name"
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>Relationship</label>
-                        <select
-                            value={form.guardian_relationship_secondary}
-                            onChange={(e) => set("guardian_relationship_secondary", e.target.value)}
-                        >
-                            <option value="">—</option>
-                            {RELATIONSHIPS.map((r) => (
-                                <option key={r} value={r}>{r}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="enroll-r enroll-c2">
-                    <div className="enroll-f">
-                        <label>Phone</label>
-                        <input
-                            type="tel"
-                            value={form.guardian_phone_secondary}
-                            onChange={(e) => set("guardian_phone_secondary", e.target.value)}
-                            placeholder="(555) 123-4567"
-                        />
-                    </div>
-                    <div className="enroll-f">
-                        <label>Email</label>
-                        <input
-                            type="email"
-                            value={form.guardian_email_secondary}
-                            onChange={(e) => set("guardian_email_secondary", e.target.value)}
-                            placeholder="Optional"
-                        />
-                    </div>
-                </div>
-                <label className="enroll-check">
-                    <input
-                        type="checkbox"
-                        checked={form.secondary_emergency}
-                        onChange={(e) => set("secondary_emergency", e.target.checked)}
-                    />
-                    Emergency contact
-                </label>
-
-                <div className="enroll-dv" />
-                </section>
-
-                <section className="enroll-section" ref={setSectionRef(3)}>
-                <div className="enroll-sl">Medical</div>
-                <span className="enroll-cl">
-                    Flag any of the following <span className="enroll-rq">*</span>
-                </span>
-                <div className="enroll-mg">
-                    <button
-                        type="button"
-                        className={`enroll-mi ${form.medical_none ? "on" : ""}`}
-                        onClick={pickMedicalNone}
-                    >
-                        <div className="enroll-ck" />
-                        <span className="enroll-mt">None / No known issues</span>
-                    </button>
-                    {MEDICAL_FLAGS.map((flag) => (
-                        <button
-                            key={flag}
-                            type="button"
-                            className={`enroll-mi ${form.medical_flags.includes(flag) ? "on" : ""}`}
-                            onClick={() => toggleMedicalFlag(flag)}
-                        >
-                            <div className="enroll-ck" />
-                            <span className="enroll-mt">{flag}</span>
+                    <div className="sec-lbl">Draw Your Signature</div>
+                    <div className="sig-wrap">
+                        <canvas ref={canvasRef} />
+                        <SignaturePad canvasRef={canvasRef} onDraw={setHasSig} />
+                        <button type="button" className="sig-clr" onClick={clearSig}>
+                            Clear
                         </button>
-                    ))}
-                </div>
-                <div className={`enroll-cd ${showMedicalDetails ? "show" : ""}`}>
-                    <div className="enroll-f">
-                        <label>Please describe</label>
-                        <textarea
-                            value={form.medical_details}
-                            onChange={(e) => set("medical_details", e.target.value)}
-                            placeholder="Conditions, medications, devices, or restrictions Coach Rico should know about..."
-                        />
                     </div>
-                </div>
 
-                <div className="enroll-dv" />
-                <div className="enroll-sl">Additional</div>
-                <span className="enroll-cl">How did you hear about EAT?</span>
-                <div className="enroll-cr">
-                    {REFERRALS.map((r) => (
-                        <button
-                            key={r}
-                            type="button"
-                            className={`enroll-ch ${form.referral_source === r ? "on" : ""}`}
-                            onClick={() => set("referral_source", r)}
-                        >
-                            {r}
+                    {error && <div className="enroll-err">{error}</div>}
+
+                    <div className="actions">
+                        <button type="button" className="btn-back" onClick={() => setPhase("enroll")}>
+                            ← Back
                         </button>
-                    ))}
-                </div>
-                <div className="enroll-r enroll-c1">
-                    <div className="enroll-f">
-                        <label>Anything else we should know?</label>
-                        <textarea
-                            value={form.additional_notes}
-                            onChange={(e) => set("additional_notes", e.target.value)}
-                            placeholder="Training goals, schedule preferences, questions for Coach Rico..."
-                        />
+                        <button type="button" className="btn-next" onClick={submitWaiver} disabled={loading}>
+                            {loading ? "Submitting…" : "Submit →"}
+                        </button>
                     </div>
                 </div>
-
-                {error && <div className="enroll-err">{error}</div>}
-
-                <button type="submit" className="enroll-sb" disabled={loading}>
-                    {loading ? "Submitting…" : "Submit Enrollment"}
-                </button>
-                </section>
-            </form>
+            )}
         </div>
     );
 }

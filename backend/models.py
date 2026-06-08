@@ -160,6 +160,9 @@ class AthleteBase(BaseModel):
     referral_source: Optional[str] = None
     enrollment_notes: Optional[str] = None
     medical_conditions: Optional[str] = None
+    waiver_photo_release: Optional[bool] = None
+    waiver_typed_signature: Optional[str] = None
+    waiver_signature: Optional[str] = None
     rate_type: RateType = RateType.daily
     rate_override: Optional[float] = None  # null = use rate card default
     family_id: str
@@ -209,6 +212,9 @@ class AthleteUpdate(BaseModel):
     referral_source: Optional[str] = None
     enrollment_notes: Optional[str] = None
     medical_conditions: Optional[str] = None
+    waiver_photo_release: Optional[bool] = None
+    waiver_typed_signature: Optional[str] = None
+    waiver_signature: Optional[str] = None
     rate_type: Optional[RateType] = None
     rate_override: Optional[float] = None
     family_id: Optional[str] = None
@@ -243,14 +249,20 @@ class EnrollmentSubmit(BaseModel):
     utr: Optional[float] = None
     wtn: Optional[float] = None
     goals: List[str] = Field(default_factory=list)
-    guardian_name: str
-    guardian_relationship: str
-    guardian_phone: str
-    guardian_email: EmailStr
+    guardian_name: Optional[str] = None
+    guardian_relationship: Optional[str] = None
+    guardian_phone: Optional[str] = None
+    guardian_email: Optional[EmailStr] = None
     guardian_name_secondary: Optional[str] = None
     guardian_relationship_secondary: Optional[str] = None
     guardian_phone_secondary: Optional[str] = None
     guardian_email_secondary: Optional[EmailStr] = None
+    street_address: Optional[str] = None
+    city_state_zip: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_email: Optional[EmailStr] = None
     primary_emergency: bool = False
     secondary_emergency: bool = False
     medical_none: bool = True
@@ -258,6 +270,9 @@ class EnrollmentSubmit(BaseModel):
     medical_details: Optional[str] = None
     referral_source: Optional[str] = None
     additional_notes: Optional[str] = None
+    photo_release: bool
+    waiver_typed_signature: str
+    waiver_signature: str
 
 
 class EnrollmentResponse(BaseModel):
