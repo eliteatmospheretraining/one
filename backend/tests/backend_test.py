@@ -290,6 +290,69 @@ class TestRateCard:
         assert billing_program_type(athlete, {"session_type": "semi_private"}) == ProgramType.semi_private
         assert billing_program_type(athlete, {"session_type": "private"}) == ProgramType.private
 
+    def test_private_session_billable_without_attendance(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from billing import session_is_billable
+
+        est = ZoneInfo("America/New_York")
+        session = {
+            "date": "2026-06-01",
+            "session_type": "private",
+            "athlete_ids": ["a1"],
+            "status": "scheduled",
+        }
+        before = datetime(2026, 6, 1, 10, 0, tzinfo=est)
+        after = datetime(2026, 6, 2, 10, 0, tzinfo=est)
+        assert session_is_billable(session, now=before) is False
+        assert session_is_billable(session, now=after) is True
+
+    def test_semi_private_session_combines_athlete_names(self):
+        from billing import describe_line
+        from invoice_billing import line_items_from_billable
+        from models import AttendanceType, InvoiceLineItem, ProgramType
+
+        assert describe_line(AttendanceType.full, ProgramType.semi_private) == "Semi-Private Lesson"
+
+        rafael = {
+            "id": "a1",
+            "full_name": "Rafael Carcamo",
+            "program_types": ["full_time"],
+            "rate_type": "daily",
+        }
+        daniel = {
+            "id": "a2",
+            "full_name": "Daniel Carcamo",
+            "program_types": ["full_time"],
+            "rate_type": "daily",
+        }
+        sp_sess = {
+            "id": "s-sp",
+            "date": "2026-06-05",
+            "session_type": "semi_private",
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "athlete_ids": ["a1", "a2"],
+        }
+        billable = [
+            {"id": "r1", "athlete_id": "a1", "session_id": "s-sp", "attendance_type": AttendanceType.full.value},
+            {"id": "r2", "athlete_id": "a2", "session_id": "s-sp", "attendance_type": AttendanceType.full.value},
+        ]
+        items = line_items_from_billable(
+            "inv-sp",
+            billable,
+            {"a1": rafael, "a2": daniel},
+            {"s-sp": sp_sess},
+            line_item_cls=InvoiceLineItem,
+        )
+        assert len(items) == 1
+        assert items[0].athlete_name == "Rafael Carcamo + Daniel Carcamo"
+        assert items[0].description == "Semi-Private Lesson"
+        assert items[0].quantity == 1
+        assert items[0].amount == 130
+        assert set(items[0].attendance_record_ids) == {"r1", "r2"}
+
 
 # ---------------- Families ----------------
 

@@ -195,6 +195,16 @@ def session_is_billable(session: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(SESSION_TIME_ZONE)
     if session_has_ended_in_est(session, now):
         return True
+    # Private lessons: rostered athletes are present once the session date has passed.
+    if session.get("session_type") == ProgramType.private.value:
+        athlete_ids = session.get("athlete_ids") or []
+        if athlete_ids and session.get("date"):
+            try:
+                session_day = date.fromisoformat(str(session["date"])[:10])
+                if session_day < now.date():
+                    return True
+            except ValueError:
+                pass
     # Past session dates with attendance saved (even if end_time missing).
     if session.get("attendance_logged_at") and session.get("date"):
         try:
@@ -307,6 +317,8 @@ def describe_line(
         ProgramType.private: "Private Lesson",
         ProgramType.semi_private: "Semi-Private Lesson",
     }[program_type]
+    if program_type == ProgramType.semi_private:
+        return pt_label
     at_label = {
         AttendanceType.full: "Daily Rate",
         AttendanceType.half: "Half-Day Rate",

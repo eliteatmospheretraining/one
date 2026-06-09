@@ -14,7 +14,7 @@ from billing import compute_billed_rate
 from db import db, now, serialize
 from google_calendar import delete_session_event, push_session
 from invoice_auto import auto_sync_invoices_for_session
-from invoice_billing import billing_status_for_session, relink_invoice_line_items
+from invoice_billing import billing_status_for_session, ensure_private_session_attendance, relink_invoice_line_items
 from models import (
     AttendanceRecord,
     AttendanceSave,
@@ -115,10 +115,17 @@ async def update_session(session_id: str, payload: SessionUpdate):
         updates["athlete_ids"] = await _sort_athlete_ids_by_name(updates["athlete_ids"] or [])
 
     if "status" in updates and updates["status"] == SessionStatus.completed.value:
-        # Require at least one attendance record for this session
-        count = await db.attendance_records.count_documents({"session_id": session_id})
-        if count == 0:
-            raise HTTPException(400, "Save attendance before marking the session complete.")
+        session = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+        if not session:
+            raise HTTPException(404, "Session not found")
+        if session.get("session_type") == ProgramType.private.value:
+            if not (session.get("athlete_ids") or []):
+                raise HTTPException(400, "Add an athlete to this private lesson before marking it complete.")
+            await ensure_private_session_attendance(session)
+        else:
+            count = await db.attendance_records.count_documents({"session_id": session_id})
+            if count == 0:
+                raise HTTPException(400, "Save attendance before marking the session complete.")
 
     became_completed = updates.get("status") == SessionStatus.completed.value
 

@@ -80,6 +80,7 @@ export default function SessionDetail() {
 
     const session = data.session;
     const roster = data.roster;
+    const isPrivate = session.session_type === "private";
 
     async function saveAttendance() {
         setSaving(true);
@@ -146,24 +147,30 @@ export default function SessionDetail() {
         }
     }
 
-    const attendanceComplete = Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
-    const hasSavedAttendance = (data.records || []).length > 0 || Boolean(session.attendance_logged_at);
+    const attendanceComplete = isPrivate
+        ? roster.length > 0
+        : Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
+    const hasSavedAttendance = isPrivate
+        ? roster.length > 0
+        : (data.records || []).length > 0 || Boolean(session.attendance_logged_at);
 
     async function pickStatus(nextStatus) {
         if (nextStatus === session.status) return;
         if (nextStatus === "cancelled" && !window.confirm("Cancel this session?")) return;
         if (nextStatus === "completed" && !attendanceComplete) {
-            toast.error("Mark attendance for all athletes first");
+            toast.error(isPrivate ? "Add an athlete to this private lesson first" : "Mark attendance for all athletes first");
             return;
         }
         if (nextStatus === "completed") {
             setSaving(true);
             try {
-                const entries = Object.entries(marks).map(([athlete_id, attendance_type]) => ({
-                    athlete_id,
-                    attendance_type,
-                }));
-                await api.post(`/sessions/${id}/attendance`, { entries });
+                if (!isPrivate) {
+                    const entries = Object.entries(marks).map(([athlete_id, attendance_type]) => ({
+                        athlete_id,
+                        attendance_type,
+                    }));
+                    await api.post(`/sessions/${id}/attendance`, { entries });
+                }
                 const patchRes = await api.patch(`/sessions/${id}`, { status: "completed" });
                 const synced = Array.isArray(patchRes.data?.invoices_synced) ? patchRes.data.invoices_synced : [];
                 const billAfter = Array.isArray(patchRes.data?.billing) ? patchRes.data.billing : [];
@@ -210,7 +217,9 @@ export default function SessionDetail() {
                                 title={
                                     session.status === "completed" || attendanceComplete
                                         ? "Change session status"
-                                        : "Save attendance for all athletes first"
+                                        : isPrivate
+                                            ? "Add an athlete first"
+                                            : "Save attendance for all athletes first"
                                 }
                             >
                                 <CheckCircle2 size={13} className="mr-1.5" strokeWidth={1.75} />
@@ -298,31 +307,56 @@ export default function SessionDetail() {
                     </div>
                 </div>
 
-                {/* Attendance */}
+                {/* Attendance — private lessons bill rostered athletes as present */}
                 <div className="mt-10">
                     <div className="flex items-end justify-between mb-4 flex-wrap gap-2">
-                        <h2 className="eat-h2">Attendance</h2>
-                        <div className="flex items-center gap-3">
-                            {hasSavedAttendance && (
-                                <button
-                                    data-testid="session-reset-attendance-btn"
-                                    onClick={resetAttendance}
-                                    disabled={saving}
-                                    className="eat-btn-ghost h-9 text-xs px-2"
-                                    title="Clear saved attendance and start over"
-                                >
-                                    <RotateCcw size={12} className="mr-1" strokeWidth={1.75} /> Reset
-                                </button>
-                            )}
-                            <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
-                                {Object.keys(marks).length}/{roster.length} marked
-                            </span>
-                        </div>
+                        <h2 className="eat-h2">{isPrivate ? "Athletes" : "Attendance"}</h2>
+                        {!isPrivate && (
+                            <div className="flex items-center gap-3">
+                                {hasSavedAttendance && (
+                                    <button
+                                        data-testid="session-reset-attendance-btn"
+                                        onClick={resetAttendance}
+                                        disabled={saving}
+                                        className="eat-btn-ghost h-9 text-xs px-2"
+                                        title="Clear saved attendance and start over"
+                                    >
+                                        <RotateCcw size={12} className="mr-1" strokeWidth={1.75} /> Reset
+                                    </button>
+                                )}
+                                <span className="text-xs text-muted uppercase tracking-wider2" style={{ fontWeight: 300 }}>
+                                    {Object.keys(marks).length}/{roster.length} marked
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {roster.length === 0 ? (
                         <div className="py-10 text-center text-muted text-sm font-light">
                             No athletes attached. Edit the session to add expected attendees.
+                        </div>
+                    ) : isPrivate ? (
+                        <div className="flex flex-col">
+                            {roster.map(({ athlete }, idx) => (
+                                <div key={athlete.id} className={`py-5 ${idx > 0 ? "border-t border-subtle" : ""}`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-thunder text-2xl uppercase tracking-tight text-paper truncate" style={{ fontWeight: 500 }}>
+                                                {athlete.full_name}
+                                            </div>
+                                            <div className="text-xs text-muted uppercase tracking-wider2 mt-0.5" style={{ fontWeight: 300 }}>
+                                                {formatAthletePrograms(athlete)}
+                                            </div>
+                                        </div>
+                                        <span className="shrink-0 h-8 px-3 inline-flex items-center border border-accent text-accent text-[11px] uppercase tracking-wider2" style={{ fontWeight: 500 }}>
+                                            Present
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                            <p className="text-xs text-muted font-light mt-4">
+                                Private lessons are billed as present for all rostered athletes.
+                            </p>
                         </div>
                     ) : (
                         <div className="flex flex-col">
@@ -373,7 +407,7 @@ export default function SessionDetail() {
                     )}
 
                     <div className="mt-8 pt-6 border-t border-subtle space-y-3">
-                        {roster.length > 0 && (
+                        {!isPrivate && roster.length > 0 && (
                             <button
                                 data-testid={SESSION.saveAttendanceBtn}
                                 onClick={saveAttendance}
