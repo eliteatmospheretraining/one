@@ -1,6 +1,7 @@
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "nixpacks"
+buildCommand = "pip install -r requirements-local.txt"
+nixpacksConfigPath = "nixpacks.toml"
 
 [deploy]
 startCommand = "uvicorn server:app --host 0.0.0.0 --port $PORT"
