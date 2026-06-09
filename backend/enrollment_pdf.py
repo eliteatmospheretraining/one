@@ -636,8 +636,10 @@ body {{
 
 
 def enrollment_pdf_filename(athlete_name: str) -> str:
+    """ASCII-safe filename for HTTP headers and email attachments."""
     title = enrollment_form_title(athlete_name)
     safe = re.sub(r'[<>:"/\\|?*\n\r]', "", title)
+    safe = safe.replace("\u2013", "-").replace("\u2014", "-")
     return f"{safe}.pdf"
 
 
