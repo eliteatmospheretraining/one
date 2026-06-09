@@ -20,26 +20,19 @@ def month_period_for(session_date: date) -> tuple[date, date]:
     )
 
 
-async def _find_family_draft(family_id: str, period_start: date, period_end: date) -> Optional[dict]:
-    return await db.invoices.find_one(
-        {
-            "family_id": family_id,
-            "status": InvoiceStatus.draft.value,
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-        },
-        {"_id": 0},
-    )
-
-
 async def sync_family_draft_invoice(
     family_id: str,
     period_start: date,
     period_end: date,
 ) -> Optional[dict]:
     """Create or refresh a draft invoice for a family/period. Returns summary or None."""
-    from invoice_billing import _billable_records_for_family, line_items_from_billable
-    from routes_invoices import _next_invoice_number, _recalc_invoice_totals
+    from invoice_billing import (
+        _billable_records_for_family,
+        _monthly_athletes_with_attendance,
+        line_items_from_billable,
+        monthly_tuition_line_items,
+    )
+    from routes_invoices import _find_family_draft, _next_invoice_number, _recalc_invoice_totals
 
     family = await db.families.find_one({"id": family_id}, {"_id": 0})
     if not family:
@@ -48,7 +41,8 @@ async def sync_family_draft_invoice(
     billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
         family_id, period_start, period_end, skip_invoiced=True
     )
-    if not billable:
+    monthly_attended = await _monthly_athletes_with_attendance(family_id, period_start, period_end)
+    if not billable and not monthly_attended:
         return None
 
     draft = await _find_family_draft(family_id, period_start, period_end)
@@ -59,6 +53,10 @@ async def sync_family_draft_invoice(
         new_items = line_items_from_billable(
             invoice_id, billable, athletes_by_id, sessions_by_id, line_item_cls=InvoiceLineItem
         )
+        monthly_items = await monthly_tuition_line_items(
+            invoice_id, family_id, period_start, period_end, line_item_cls=InvoiceLineItem
+        )
+        new_items = new_items + monthly_items
         if new_items:
             await db.invoice_line_items.insert_many([serialize(li.model_dump()) for li in new_items])
         await _recalc_invoice_totals(invoice_id)
@@ -75,6 +73,10 @@ async def sync_family_draft_invoice(
         line_items = line_items_from_billable(
             invoice.id, billable, athletes_by_id, sessions_by_id, line_item_cls=InvoiceLineItem
         )
+        monthly_items = await monthly_tuition_line_items(
+            invoice.id, family_id, period_start, period_end, line_item_cls=InvoiceLineItem
+        )
+        line_items = line_items + monthly_items
         invoice.subtotal = round(sum(li.amount for li in line_items), 2)
         invoice.total = invoice.subtotal
         await db.invoices.insert_one(serialize(invoice.model_dump()))

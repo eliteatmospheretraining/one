@@ -607,9 +607,8 @@ class TestInvoices:
         )
         assert gen2.status_code == 200
         inv2 = gen2.json()["invoice"]
-        n1 = int(inv1["invoice_number"].split("-")[1])
-        n2 = int(inv2["invoice_number"].split("-")[1])
-        assert n2 == n1 + 1, f"Invoice sequence broken: {inv1['invoice_number']} → {inv2['invoice_number']}"
+        assert inv2["id"] == inv1["id"], "Same family/period should reuse the existing draft"
+        assert gen2.json().get("reused_draft") is True
 
         # GET invoice detail
         det = requests.get(f"{API}/invoices/{inv1['id']}", headers=auth_headers).json()
@@ -689,8 +688,8 @@ class TestInvoices:
         d_paid = requests.delete(f"{API}/invoices/{inv1['id']}", headers=auth_headers)
         assert d_paid.status_code == 400
 
-        # Delete inv2 (still draft) — should work
-        d_draft = requests.delete(f"{API}/invoices/{inv2['id']}", headers=auth_headers)
+        # Delete inv1 (still draft) — should work
+        d_draft = requests.delete(f"{API}/invoices/{inv1['id']}", headers=auth_headers)
         assert d_draft.status_code == 200
 
         # Send invoice flow on a fresh draft. May fail if Resend domain not verified.

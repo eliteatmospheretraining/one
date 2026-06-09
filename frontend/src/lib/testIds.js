@@ -91,6 +91,7 @@ export const INVOICES = {
     periodStart: "invoice-period-start",
     periodEnd: "invoice-period-end",
     generateBtn: "invoice-generate-btn",
+    refreshBtn: "invoice-refresh-btn",
     addLineBtn: "invoice-add-line-btn",
     serviceSelect: "invoice-service-select",
     lineAthleteSelect: "invoice-line-athlete-select",

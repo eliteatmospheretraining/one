@@ -557,12 +557,15 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
             const r = await api.post("/invoices/generate", { family_id: familyId, period_start: start, period_end: end });
             const inv = r.data.invoice;
             const lineCount = r.data.line_items?.length ?? 0;
+            const verb = r.data.reused_draft ? "Updated" : "Created";
             if (lineCount > 0) {
                 toast.success(
-                    `Invoice ${inv.invoice_number} created · ${lineCount} line${lineCount === 1 ? "" : "s"} · ${fmtMoney(r.data.total ?? inv.total)}`
+                    `${verb} ${inv.invoice_number} · ${lineCount} line${lineCount === 1 ? "" : "s"} · ${fmtMoney(r.data.total ?? inv.total)}`
                 );
             } else {
-                toast.success(`Invoice ${inv.invoice_number} created`);
+                toast.message(`${verb} ${inv.invoice_number}`, {
+                    description: r.data.message || "No billable attendance in this period",
+                });
             }
             onCreated?.(r.data.invoice.id);
         } catch (e) {
@@ -606,9 +609,18 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
     );
 }
 
+const BILLING_SKIP_LABEL = {
+    not_completed: "Session not marked completed",
+    no_attendance: "No attendance recorded",
+    absent: "Marked absent",
+    already_invoiced: "Already on another invoice",
+    excluded: "Not billable",
+};
+
 function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [payOpen, setPayOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -686,6 +698,27 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
         }
     }
 
+    async function refreshFromAttendance() {
+        setRefreshing(true);
+        try {
+            const r = await api.post(`/invoices/${invoiceId}/refresh`);
+            const count = r.data.line_items?.length ?? 0;
+            if (count > 0) {
+                toast.success(
+                    `Updated from attendance · ${count} line${count === 1 ? "" : "s"} · ${fmtMoney(r.data.total)}`
+                );
+            } else {
+                toast.message("No new lines added", { description: r.data.message });
+            }
+            await load();
+            onChanged?.();
+        } catch (e) {
+            toast.error(e.response?.data?.detail || "Refresh failed");
+        } finally {
+            setRefreshing(false);
+        }
+    }
+
     async function confirmDeleteDraft() {
         setDeleting(true);
         try {
@@ -728,7 +761,27 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                             <div className="col-span-3 text-right">Amount</div>
                         </div>
                         {data.line_items.length === 0 && (
-                            <div className="py-4 text-sm text-muted font-light">No line items.</div>
+                            <div className="py-4 text-sm text-muted font-light space-y-2">
+                                <div>No line items yet.</div>
+                                {data.invoice.status === "draft" && (
+                                    <div className="text-xs">
+                                        Use <span className="text-paper">Refresh from attendance</span> to pull completed sessions and rate-card pricing for this period.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {data.billing_skips?.length > 0 && data.line_items.length === 0 && (
+                            <div className="pb-3 text-xs text-muted font-light space-y-1">
+                                {data.billing_skips.slice(0, 6).map((skip, i) => (
+                                    <div key={`${skip.date}-${skip.athlete_name}-${i}`}>
+                                        {skip.display_date || skip.date} · {skip.athlete_name} — {BILLING_SKIP_LABEL[skip.reason] || skip.reason}
+                                        {skip.invoice_number ? ` (${skip.invoice_number})` : ""}
+                                    </div>
+                                ))}
+                                {data.billing_skips.length > 6 && (
+                                    <div>+ {data.billing_skips.length - 6} more</div>
+                                )}
+                            </div>
                         )}
                         {data.line_items.map((li) => (
                             <div key={li.id} className="grid grid-cols-12 py-3 border-t border-subtle text-sm items-start gap-2">
@@ -799,6 +852,17 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
 
                     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-subtle">
                         <div className="flex flex-wrap gap-2">
+                            {data.invoice.status === "draft" && (
+                                <button
+                                    data-testid={INVOICES.refreshBtn}
+                                    type="button"
+                                    onClick={refreshFromAttendance}
+                                    disabled={refreshing}
+                                    className="eat-btn-secondary"
+                                >
+                                    {refreshing ? "Refreshing…" : "Refresh from attendance"}
+                                </button>
+                            )}
                             {data.invoice.status === "draft" && (
                                 <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-primary">
                                     <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send invoice email

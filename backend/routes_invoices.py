@@ -11,10 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from auth import get_current_coach
 from db import db, now, serialize
 from invoice_billing import (
-    _billable_records_for_family,
     billing_skips_for_period,
-    line_items_from_billable,
-    sync_attendance_billed_rates,
+    populate_draft_from_attendance,
 )
 from invoice_services import build_manual_line_item, list_service_options
 from models import (
@@ -55,18 +53,15 @@ async def _parse_date(v) -> date:
     raise ValueError(f"bad date: {v}")
 
 
-def _line_items_from_billable(
-    invoice_id: str,
-    billable: list[dict],
-    athletes_by_id: dict,
-    sessions_by_id: dict,
-) -> list[InvoiceLineItem]:
-    return line_items_from_billable(
-        invoice_id,
-        billable,
-        athletes_by_id,
-        sessions_by_id,
-        line_item_cls=InvoiceLineItem,
+async def _find_family_draft(family_id: str, period_start: date, period_end: date) -> dict | None:
+    return await db.invoices.find_one(
+        {
+            "family_id": family_id,
+            "status": InvoiceStatus.draft.value,
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+        },
+        {"_id": 0},
     )
 
 
@@ -99,13 +94,19 @@ async def invoice_service_options():
 
 @router.post("/generate")
 async def generate_invoice(req: InvoiceGenerateRequest):
-    """Create a draft invoice for a family and period, populated from completed attendance."""
+    """Create or refresh a draft invoice for a family and period from attendance + rate card."""
     family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
     if not family:
         raise HTTPException(404, "Family not found")
 
     period_start = await _parse_date(req.period_start)
     period_end = await _parse_date(req.period_end)
+
+    existing = await _find_family_draft(req.family_id, period_start, period_end)
+    if existing:
+        out = await refresh_invoice_draft(existing["id"])
+        out["reused_draft"] = True
+        return out
 
     invoice_number = await _next_invoice_number()
     invoice = Invoice(
@@ -117,49 +118,40 @@ async def generate_invoice(req: InvoiceGenerateRequest):
     )
     await db.invoices.insert_one(serialize(invoice.model_dump()))
 
-    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+    new_items, skipped, session_count = await populate_draft_from_attendance(
+        invoice.id,
         req.family_id,
         period_start,
         period_end,
-        skip_invoiced=True,
-        for_invoice_id=invoice.id,
+        line_item_cls=InvoiceLineItem,
     )
-
-    line_items: list[InvoiceLineItem] = []
-    if billable:
-        await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
-        line_items = _line_items_from_billable(
-            invoice.id, billable, athletes_by_id, sessions_by_id
-        )
-        if line_items:
-            await db.invoice_line_items.insert_many(
-                [serialize(li.model_dump()) for li in line_items]
-            )
-
     total = await _recalc_invoice_totals(invoice.id)
     inv = await db.invoices.find_one({"id": invoice.id}, {"_id": 0})
     items = await db.invoice_line_items.find({"invoice_id": invoice.id}, {"_id": 0}).to_list(1000)
-    skipped = await billing_skips_for_period(
-        req.family_id,
-        period_start,
-        period_end,
-        for_invoice_id=invoice.id,
-    )
 
     return {
         "status": "ok",
-        "added": len(line_items),
-        "session_count": sum(int(li.get("quantity") or 1) for li in items),
+        "added": len(new_items),
+        "session_count": session_count,
         "skipped": skipped,
         "invoice": inv,
         "line_items": items,
         "total": total,
-        "message": (
-            f"Added {len(line_items)} line item(s) from attendance"
-            if line_items
-            else "No billable completed attendance in this period"
-        ),
+        "reused_draft": False,
+        "message": _populate_message(new_items, skipped),
     }
+
+
+def _populate_message(new_items: list, skipped: list[dict]) -> str:
+    if new_items:
+        return f"Added {len(new_items)} line item(s) from attendance and rate card"
+    not_completed = sum(1 for s in skipped if s.get("reason") == "not_completed")
+    already = sum(1 for s in skipped if s.get("reason") == "already_invoiced")
+    if not_completed:
+        return f"No billable attendance — {not_completed} session(s) not marked completed"
+    if already:
+        return "Attendance already on another invoice for this period"
+    return "No billable completed attendance in this period"
 
 
 @router.post("/{invoice_id}/refresh")
@@ -174,63 +166,32 @@ async def refresh_invoice_draft(invoice_id: str):
     period_start = await _parse_date(inv["period_start"])
     period_end = await _parse_date(inv["period_end"])
 
-    # Remove only attendance-based lines; keep manual month/week services.
+    # Remove monthly tuition lines so refresh can re-add from attendance; keep other manual lines.
     await db.invoice_line_items.delete_many({
         "invoice_id": invoice_id,
-        "$or": [
-            {"attendance_record_id": {"$exists": True, "$ne": None}},
-            {"attendance_record_ids.0": {"$exists": True}},
-        ],
+        "description": {"$regex": r"Monthly Rate"},
     })
-    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+
+    new_items, skipped, session_count = await populate_draft_from_attendance(
+        invoice_id,
         inv["family_id"],
         period_start,
         period_end,
-        skip_invoiced=True,
-        for_invoice_id=invoice_id,
+        line_item_cls=InvoiceLineItem,
+        replace_attendance_lines=True,
     )
-    if not billable:
-        total = await _recalc_invoice_totals(invoice_id)
-        inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
-        items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
-        skipped = await billing_skips_for_period(
-            inv["family_id"],
-            period_start,
-            period_end,
-            for_invoice_id=invoice_id,
-        )
-        return {
-            "status": "ok",
-            "added": 0,
-            "session_count": 0,
-            "skipped": skipped,
-            "message": "No billable completed attendance in this period",
-            "invoice": inv,
-            "line_items": items,
-            "total": total,
-        }
-
-    await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
-    line_items = _line_items_from_billable(invoice_id, billable, athletes_by_id, sessions_by_id)
-    await db.invoice_line_items.insert_many([serialize(li.model_dump()) for li in line_items])
     total = await _recalc_invoice_totals(invoice_id)
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
-    session_count = sum(int(li.get("quantity") or 1) for li in items)
-    skipped = await billing_skips_for_period(
-        inv["family_id"],
-        period_start,
-        period_end,
-        for_invoice_id=invoice_id,
-    )
     return {
         "status": "ok",
-        "added": len(line_items),
+        "added": len(new_items),
         "session_count": session_count,
         "skipped": skipped,
         "invoice": inv,
         "line_items": items,
         "total": total,
+        "message": _populate_message(new_items, skipped),
     }
 
 
@@ -308,13 +269,23 @@ async def get_invoice(invoice_id: str):
     family = await db.families.find_one({"id": inv["family_id"]}, {"_id": 0})
     athletes = await db.athletes.find({"family_id": inv["family_id"]}, {"_id": 0}).to_list(500)
     payments = await db.payments.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(100)
-    return {
+    out = {
         "invoice": inv,
         "line_items": items,
         "family": family,
         "athletes": athletes,
         "payments": payments,
     }
+    if inv.get("status") == InvoiceStatus.draft.value:
+        period_start = await _parse_date(inv["period_start"])
+        period_end = await _parse_date(inv["period_end"])
+        out["billing_skips"] = await billing_skips_for_period(
+            inv["family_id"],
+            period_start,
+            period_end,
+            for_invoice_id=invoice_id,
+        )
+    return out
 
 
 @router.delete("/{invoice_id}")
