@@ -195,8 +195,8 @@ def session_is_billable(session: dict, now: datetime | None = None) -> bool:
     now = now or datetime.now(SESSION_TIME_ZONE)
     if session_has_ended_in_est(session, now):
         return True
-    # Private lessons: rostered athletes are present once the session date has passed.
-    if session.get("session_type") == ProgramType.private.value:
+    # Private / semi-private: rostered athletes are present once the session date has passed.
+    if session.get("session_type") in (ProgramType.private.value, ProgramType.semi_private.value):
         athlete_ids = session.get("athlete_ids") or []
         if athlete_ids and session.get("date"):
             try:

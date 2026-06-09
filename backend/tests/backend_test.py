@@ -308,6 +308,9 @@ class TestRateCard:
         assert session_is_billable(session, now=before) is False
         assert session_is_billable(session, now=after) is True
 
+        semi = {**session, "session_type": "semi_private", "athlete_ids": ["a1", "a2"]}
+        assert session_is_billable(semi, now=after) is True
+
     def test_semi_private_session_combines_athlete_names(self):
         from billing import describe_line
         from invoice_billing import line_items_from_billable

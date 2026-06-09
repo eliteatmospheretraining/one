@@ -171,9 +171,12 @@ async def _billed_session_athletes_for_family(family_id: str) -> set[tuple[str, 
     return pairs
 
 
-async def ensure_private_session_attendance(session: dict) -> int:
-    """Private lessons bill rostered athletes as present without manual attendance."""
-    if session.get("session_type") != ProgramType.private.value:
+async def ensure_rostered_lesson_attendance(session: dict) -> int:
+    """Private and semi-private lessons bill rostered athletes as present without manual attendance."""
+    if session.get("session_type") not in (
+        ProgramType.private.value,
+        ProgramType.semi_private.value,
+    ):
         return 0
     athlete_ids = list(session.get("athlete_ids") or [])
     if not athlete_ids:
@@ -229,12 +232,12 @@ async def ensure_private_session_attendance(session: dict) -> int:
     return len(new_records)
 
 
-async def ensure_private_sessions_for_family(
+async def ensure_rostered_lessons_for_family(
     family_id: str,
     period_start: date,
     period_end: date,
 ) -> int:
-    """Ensure present attendance exists for billable private sessions in the period."""
+    """Ensure present attendance exists for billable private/semi-private sessions in the period."""
     athletes = await db.athletes.find({"family_id": family_id}, {"id": 1, "_id": 0}).to_list(500)
     athlete_ids = [a["id"] for a in athletes]
     if not athlete_ids:
@@ -243,7 +246,9 @@ async def ensure_private_sessions_for_family(
     sessions = await db.sessions.find(
         {
             "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
-            "session_type": ProgramType.private.value,
+            "session_type": {
+                "$in": [ProgramType.private.value, ProgramType.semi_private.value],
+            },
             "athlete_ids": {"$in": athlete_ids},
             "status": {"$ne": SessionStatus.cancelled.value},
         },
@@ -255,8 +260,13 @@ async def ensure_private_sessions_for_family(
     for sess in sessions:
         if not session_is_billable(sess, now_ts):
             continue
-        created += await ensure_private_session_attendance(sess)
+        created += await ensure_rostered_lesson_attendance(sess)
     return created
+
+
+# Backwards-compatible alias
+ensure_private_session_attendance = ensure_rostered_lesson_attendance
+ensure_private_sessions_for_family = ensure_rostered_lessons_for_family
 
 
 async def relink_invoice_line_items(old_id_by_athlete: dict[str, str], new_id_by_athlete: dict[str, str]) -> int:
@@ -562,6 +572,77 @@ def _is_full_time_day_block(athlete: dict, sess: dict, record: dict) -> bool:
     return True
 
 
+def _semi_private_line_items(
+    invoice_id: str,
+    billable: list[dict],
+    athletes_by_id: dict,
+    sessions_by_id: dict,
+    *,
+    line_item_cls,
+) -> list:
+    """One invoice line per semi-private session; athlete names from session roster."""
+    records_by_session: dict[str, dict[str, dict]] = defaultdict(dict)
+    for r in billable:
+        sess = sessions_by_id.get(r["session_id"])
+        if not sess or sess.get("session_type") != ProgramType.semi_private.value:
+            continue
+        records_by_session[r["session_id"]][r["athlete_id"]] = r
+
+    items = []
+    for session_id in sorted(
+        records_by_session.keys(),
+        key=lambda sid: (sessions_by_id[sid]["date"], sid),
+    ):
+        sess = sessions_by_id[session_id]
+        session_records = records_by_session[session_id]
+        roster_ids = [aid for aid in (sess.get("athlete_ids") or []) if aid in athletes_by_id]
+        if not roster_ids:
+            roster_ids = sorted(
+                session_records.keys(),
+                key=lambda aid: athletes_by_id[aid]["full_name"].casefold(),
+            )
+        roster_order = {aid: idx for idx, aid in enumerate(sess.get("athlete_ids") or [])}
+        athletes = sorted(
+            [athletes_by_id[aid] for aid in roster_ids],
+            key=lambda a: (roster_order.get(a["id"], 999), a["full_name"].casefold()),
+        )
+        names = " + ".join(a["full_name"] for a in athletes)
+        record_ids: list[str] = []
+        total = 0.0
+        for athlete in athletes:
+            r = session_records.get(athlete["id"])
+            if not r:
+                continue
+            at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
+            override = athlete.get("rate_override")
+            if override is not None:
+                override = float(override)
+            per_session, _, _ = per_session_charge(
+                at,
+                ProgramType.semi_private,
+                override,
+                session=sess,
+                rate_type=athlete.get("rate_type"),
+            )
+            total += per_session
+            record_ids.append(r["id"])
+        if not record_ids:
+            continue
+        total = round(total, 2)
+        items.append(line_item_cls(
+            invoice_id=invoice_id,
+            athlete_id=athletes[0]["id"],
+            athlete_name=names,
+            attendance_record_id=record_ids[0],
+            attendance_record_ids=record_ids,
+            description=describe_line(AttendanceType.full, ProgramType.semi_private),
+            quantity=1.0,
+            unit_price=total,
+            amount=total,
+        ))
+    return items
+
+
 def line_items_from_billable(
     invoice_id: str,
     billable: list[dict],
@@ -581,6 +662,8 @@ def line_items_from_billable(
     for r in billable:
         athlete = athletes_by_id[r["athlete_id"]]
         sess = sessions_by_id[r["session_id"]]
+        if sess.get("session_type") == ProgramType.semi_private.value:
+            continue
         if _is_full_time_day_block(athlete, sess, r):
             day_blocks[(r["athlete_id"], sess["date"])].append((r, athlete, sess))
         else:
@@ -619,10 +702,8 @@ def line_items_from_billable(
         ))
 
     groups: dict[tuple[str, str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
-    semi_private_by_session: dict[str, list[tuple[dict, dict, dict]]] = defaultdict(list)
     for r, athlete, sess in per_session_rows:
         if sess.get("session_type") == ProgramType.semi_private.value:
-            semi_private_by_session[sess["id"]].append((r, athlete, sess))
             continue
         at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
         pt = billing_program_type(athlete, sess)
@@ -638,50 +719,18 @@ def line_items_from_billable(
         )
         groups[(r["athlete_id"], pt.value, at.value, per_session)].append((r, athlete, sess, per_session))
 
-    for session_id in sorted(
-        semi_private_by_session.keys(),
-        key=lambda sid: (sessions_by_id[sid]["date"], sid),
-    ):
-        sess = sessions_by_id[session_id]
-        roster_order = {
-            aid: idx for idx, aid in enumerate(sess.get("athlete_ids") or [])
-        }
-        rows = sorted(
-            semi_private_by_session[session_id],
-            key=lambda row: (roster_order.get(row[1]["id"], 999), row[1]["full_name"]),
-        )
-        names = " + ".join(athlete["full_name"] for _, athlete, _ in rows)
-        record_ids: list[str] = []
-        total = 0.0
-        for r, athlete, sess in rows:
-            at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
-            override = athlete.get("rate_override")
-            if override is not None:
-                override = float(override)
-            per_session, _, _ = per_session_charge(
-                at,
-                ProgramType.semi_private,
-                override,
-                session=sess,
-                rate_type=athlete.get("rate_type"),
-            )
-            total += per_session
-            record_ids.append(r["id"])
-        total = round(total, 2)
-        items.append(line_item_cls(
-            invoice_id=invoice_id,
-            athlete_id=rows[0][1]["id"],
-            athlete_name=names,
-            attendance_record_id=record_ids[0],
-            attendance_record_ids=record_ids,
-            description=describe_line(AttendanceType.full, ProgramType.semi_private),
-            quantity=1.0,
-            unit_price=total,
-            amount=total,
-        ))
+    items.extend(_semi_private_line_items(
+        invoice_id,
+        billable,
+        athletes_by_id,
+        sessions_by_id,
+        line_item_cls=line_item_cls,
+    ))
 
     for rows in groups.values():
         r0, athlete, sess0, unit_price = rows[0]
+        if sess0.get("session_type") == ProgramType.semi_private.value:
+            continue
         at = stored_attendance_type(r0["attendance_type"], athlete=athlete, session=sess0)
         pt = billing_program_type(athlete, sess0)
         count = len(rows)
@@ -822,12 +871,12 @@ async def auto_complete_family_sessions_in_period(
     now = datetime.now(SESSION_TIME_ZONE)
     completed = 0
     for sess in sessions:
-        if sess.get("session_type") == ProgramType.private.value:
+        if sess.get("session_type") in (ProgramType.private.value, ProgramType.semi_private.value):
             if not sess.get("athlete_ids"):
                 continue
             if not session_is_billable(sess, now):
                 continue
-            await ensure_private_session_attendance(sess)
+            await ensure_rostered_lesson_attendance(sess)
             if sess.get("status") != SessionStatus.completed.value:
                 await db.sessions.update_one(
                     {"id": sess["id"]},
@@ -859,7 +908,7 @@ async def populate_draft_from_attendance(
 ) -> tuple[list, list, int]:
     """Add attendance + monthly tuition lines. Returns (all_new_items, skipped, session_count)."""
     await auto_complete_family_sessions_in_period(family_id, period_start, period_end)
-    await ensure_private_sessions_for_family(family_id, period_start, period_end)
+    await ensure_rostered_lessons_for_family(family_id, period_start, period_end)
 
     if replace_attendance_lines:
         await db.invoice_line_items.delete_many({

@@ -80,7 +80,8 @@ export default function SessionDetail() {
 
     const session = data.session;
     const roster = data.roster;
-    const isPrivate = session.session_type === "private";
+    const isRosterLesson = session.session_type === "private" || session.session_type === "semi_private";
+    const rosterLessonLabel = session.session_type === "semi_private" ? "Semi-private" : "Private";
 
     async function saveAttendance() {
         setSaving(true);
@@ -147,10 +148,10 @@ export default function SessionDetail() {
         }
     }
 
-    const attendanceComplete = isPrivate
+    const attendanceComplete = isRosterLesson
         ? roster.length > 0
         : Object.keys(marks).length > 0 && roster.every((r) => marks[r.athlete.id]);
-    const hasSavedAttendance = isPrivate
+    const hasSavedAttendance = isRosterLesson
         ? roster.length > 0
         : (data.records || []).length > 0 || Boolean(session.attendance_logged_at);
 
@@ -158,13 +159,13 @@ export default function SessionDetail() {
         if (nextStatus === session.status) return;
         if (nextStatus === "cancelled" && !window.confirm("Cancel this session?")) return;
         if (nextStatus === "completed" && !attendanceComplete) {
-            toast.error(isPrivate ? "Add an athlete to this private lesson first" : "Mark attendance for all athletes first");
+            toast.error(isRosterLesson ? `Add athletes to this ${rosterLessonLabel.toLowerCase()} lesson first` : "Mark attendance for all athletes first");
             return;
         }
         if (nextStatus === "completed") {
             setSaving(true);
             try {
-                if (!isPrivate) {
+                if (!isRosterLesson) {
                     const entries = Object.entries(marks).map(([athlete_id, attendance_type]) => ({
                         athlete_id,
                         attendance_type,
@@ -217,8 +218,8 @@ export default function SessionDetail() {
                                 title={
                                     session.status === "completed" || attendanceComplete
                                         ? "Change session status"
-                                        : isPrivate
-                                            ? "Add an athlete first"
+                                        : isRosterLesson
+                                            ? "Add athletes first"
                                             : "Save attendance for all athletes first"
                                 }
                             >
@@ -307,11 +308,11 @@ export default function SessionDetail() {
                     </div>
                 </div>
 
-                {/* Attendance — private lessons bill rostered athletes as present */}
+                {/* Roster lessons (private / semi-private) bill expected athletes as present */}
                 <div className="mt-10">
                     <div className="flex items-end justify-between mb-4 flex-wrap gap-2">
-                        <h2 className="eat-h2">{isPrivate ? "Athletes" : "Attendance"}</h2>
-                        {!isPrivate && (
+                        <h2 className="eat-h2">{isRosterLesson ? "Athletes" : "Attendance"}</h2>
+                        {!isRosterLesson && (
                             <div className="flex items-center gap-3">
                                 {hasSavedAttendance && (
                                     <button
@@ -335,7 +336,7 @@ export default function SessionDetail() {
                         <div className="py-10 text-center text-muted text-sm font-light">
                             No athletes attached. Edit the session to add expected attendees.
                         </div>
-                    ) : isPrivate ? (
+                    ) : isRosterLesson ? (
                         <div className="flex flex-col">
                             {roster.map(({ athlete }, idx) => (
                                 <div key={athlete.id} className={`py-5 ${idx > 0 ? "border-t border-subtle" : ""}`}>
@@ -355,7 +356,7 @@ export default function SessionDetail() {
                                 </div>
                             ))}
                             <p className="text-xs text-muted font-light mt-4">
-                                Private lessons are billed as present for all rostered athletes.
+                                {rosterLessonLabel} lessons are billed as present for all expected athletes.
                             </p>
                         </div>
                     ) : (
@@ -407,7 +408,7 @@ export default function SessionDetail() {
                     )}
 
                     <div className="mt-8 pt-6 border-t border-subtle space-y-3">
-                        {!isPrivate && roster.length > 0 && (
+                        {!isRosterLesson && roster.length > 0 && (
                             <button
                                 data-testid={SESSION.saveAttendanceBtn}
                                 onClick={saveAttendance}
