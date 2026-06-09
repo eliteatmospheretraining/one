@@ -129,19 +129,18 @@ async def request_magic_link(req: MagicLinkRequest):
     magic_url = f"{APP_BASE_URL}/verify?token={token}"
     html = _build_email_html(magic_url)
 
+    from email_delivery import send_email
+
     params = {
         "from": f"Elite Atmosphere Training <{SENDER_EMAIL}>",
         "to": [email],
         "subject": "Your EAT Portal sign-in link",
         "html": html,
     }
-    if DEV_MODE:
-        logger.info("DEV_MODE: sign-in email suppressed for %s", email)
-    else:
-        try:
-            await asyncio.to_thread(resend.Emails.send, params)
-        except Exception as e:
-            logger.error(f"Resend send failed: {e}")
+    try:
+        await send_email(params, context="sign-in magic link")
+    except Exception:
+        pass  # auth still returns ok; coach can use dev_token in DEV_MODE
 
     resp = {"status": "ok", "message": "If that email is authorized, a sign-in link has been sent."}
     if DEV_MODE:

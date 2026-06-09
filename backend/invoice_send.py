@@ -112,9 +112,11 @@ async def send_guardian_invoice_email(invoice_id: str, kind: str) -> dict:
             "content": list(ctx["pdf_bytes"]),
         }],
     }
+    from email_delivery import send_email
+
     try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        email_id = (result or {}).get("id")
+        result = await send_email(params, context=f"invoice {kind}")
+        email_id = result.get("id")
     except Exception as e:
         logger.error(f"Resend invoice email ({kind}) failed: {e}")
         raise HTTPException(500, f"Email send failed: {e}")
@@ -127,4 +129,5 @@ async def send_guardian_invoice_email(invoice_id: str, kind: str) -> dict:
     }
     if DEV_MODE:
         resp["dev_magic_url"] = magic_url
+        resp["email_suppressed"] = True
     return resp

@@ -224,14 +224,17 @@ async def send_enrollment_confirmation_email(
             "content": list(pdf_bytes),
         }],
     }
+    from email_delivery import send_email
+
     try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        email_id = (result or {}).get("id")
+        result = await send_email(params, context="enrollment confirmation")
+        email_id = result.get("id")
     except Exception as e:
         logger.error("Resend enrollment confirmation failed: %s", e)
         raise HTTPException(500, f"Email send failed: {e}")
 
     resp = {"status": "sent", "email_id": email_id, "to": email}
     if DEV_MODE:
-        resp["dev_note"] = "Enrollment confirmation sent"
+        resp["email_suppressed"] = True
+        resp["dev_note"] = "DEV_MODE: email not sent to guardian"
     return resp
