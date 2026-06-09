@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { API, formatApiError } from "../lib/api";
 import { BRAND_LOGO_BLACK, BRAND_NAME } from "../constants/brand";
@@ -74,6 +74,50 @@ function calcAge(dobVal) {
     const monthDiff = today.getMonth() - birth.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
     return age;
+}
+
+function isSectionComplete(form, sectionIdx) {
+    switch (sectionIdx) {
+        case 0:
+            return !!(
+                form.full_name.trim() &&
+                form.date_of_birth &&
+                form.shirt_size &&
+                form.program_type
+            );
+        case 1:
+            if (!isSectionComplete(form, 0)) return false;
+            if (form.goals.length > 0 || form.utr.trim() || form.wtn.trim()) return true;
+            return !!(
+                form.guardian_name.trim() ||
+                form.guardian_phone.trim() ||
+                form.guardian_email.trim()
+            );
+        case 2:
+            return !!(
+                form.guardian_name.trim() &&
+                form.guardian_phone.trim() &&
+                form.guardian_email.trim()
+            );
+        case 3:
+            return !!(form.emergency_contact_name.trim() && form.emergency_contact_phone.trim());
+        case 4:
+            return form.medical_none || form.medical_flags.length > 0;
+        case 5:
+            if (!isSectionComplete(form, 4)) return false;
+            return !!(form.referral_source || form.additional_notes.trim());
+        default:
+            return false;
+    }
+}
+
+function completedSectionCount(form) {
+    let count = 0;
+    for (let i = 0; i < SECTION_COUNT; i++) {
+        if (!isSectionComplete(form, i)) break;
+        count += 1;
+    }
+    return count;
 }
 
 function EnrollHeader({ title, children, logoOnly = false }) {
@@ -198,17 +242,8 @@ export default function Enroll() {
     const [waiverShake, shakeWaiver] = useShake();
     const canvasRef = useRef(null);
     const waiverTopRef = useRef(null);
-    const sectionRefs = useRef([]);
-    const [activeSection, setActiveSection] = useState(0);
 
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-
-    const setSectionRef = useCallback(
-        (idx) => (el) => {
-            sectionRefs.current[idx] = el;
-        },
-        []
-    );
 
     const age = calcAge(form.date_of_birth);
     const isAdult = age !== null && age >= 18;
@@ -223,30 +258,6 @@ export default function Enroll() {
         });
         return () => window.cancelAnimationFrame(id);
     }, [phase]);
-
-    useEffect(() => {
-        if (phase !== "enroll") return undefined;
-
-        function updateActiveSection() {
-            const anchor = 168;
-            const nodes = sectionRefs.current.filter(Boolean);
-            if (!nodes.length) return;
-
-            let current = 0;
-            nodes.forEach((node, idx) => {
-                if (node.getBoundingClientRect().top <= anchor) current = idx;
-            });
-            setActiveSection(current);
-        }
-
-        updateActiveSection();
-        window.addEventListener("scroll", updateActiveSection, { passive: true });
-        window.addEventListener("resize", updateActiveSection);
-        return () => {
-            window.removeEventListener("scroll", updateActiveSection);
-            window.removeEventListener("resize", updateActiveSection);
-        };
-    }, [phase, isAdult]);
 
     function toggleGoal(goal) {
         setForm((f) => ({
@@ -378,14 +389,19 @@ export default function Enroll() {
         }
     }
 
-    const sectionLabels = [
-        "Athlete",
-        "Tennis Background",
-        isAdult ? "Contact" : "Guardian",
-        "Emergency Contact",
-        "Medical",
-        "Additional",
-    ];
+    const sectionLabels = useMemo(
+        () => [
+            "Athlete",
+            "Tennis Background",
+            isAdult ? "Contact" : "Guardian",
+            "Emergency Contact",
+            "Medical",
+            "Additional",
+        ],
+        [isAdult]
+    );
+    const sectionsDone = completedSectionCount(form);
+    const activeSection = Math.min(sectionsDone, SECTION_COUNT - 1);
     const phaseLabel =
         phase === "enroll"
             ? sectionLabels[activeSection]
@@ -393,7 +409,7 @@ export default function Enroll() {
               ? "Waiver"
               : "Complete";
     const progFilled =
-        phase === "enroll" ? activeSection : phase === "waiver" || phase === "thanks" ? SECTION_COUNT : 0;
+        phase === "enroll" ? sectionsDone : phase === "waiver" || phase === "thanks" ? SECTION_COUNT : 0;
 
     if (phase === "thanks" && submitted) {
         const email =
@@ -437,7 +453,7 @@ export default function Enroll() {
 
             {phase === "enroll" && (
                 <div className={`enroll-body${enrollShake ? " shake" : ""}`}>
-                    <section className="enroll-section" ref={setSectionRef(0)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">Athlete</div>
                     <div className="row col2">
                         <div className="field">
@@ -515,7 +531,7 @@ export default function Enroll() {
                     </div>
                     </section>
 
-                    <section className="enroll-section" ref={setSectionRef(1)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">Tennis Background</div>
                     <div className="row col2">
                         <div className="field">
@@ -552,7 +568,7 @@ export default function Enroll() {
                     </div>
                     </section>
 
-                    <section className="enroll-section" ref={setSectionRef(2)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">{isAdult ? "Contact" : "Guardian"}</div>
                     <div className="row col2">
                         <div className="field">
@@ -683,7 +699,7 @@ export default function Enroll() {
                     )}
                     </section>
 
-                    <section className="enroll-section" ref={setSectionRef(3)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">Emergency Contact</div>
                     <div className="row col2">
                         <div className="field">
@@ -736,7 +752,7 @@ export default function Enroll() {
                     </div>
                     </section>
 
-                    <section className="enroll-section" ref={setSectionRef(4)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">Medical</div>
                     <span className="chip-lbl">
                         Flag any of the following <span className="req">*</span>
@@ -770,7 +786,7 @@ export default function Enroll() {
                     </div>
                     </section>
 
-                    <section className="enroll-section" ref={setSectionRef(5)}>
+                    <section className="enroll-section">
                     <div className="sec-lbl">Additional</div>
                     <span className="chip-lbl">How did you hear about EAT?</span>
                     <div className="chips">
