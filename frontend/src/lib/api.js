@@ -73,6 +73,15 @@ export async function fetchInvoicePdfBlob(invoiceId) {
     return blob;
 }
 
+/** Fetch guardian invoice/receipt email HTML for in-app preview. */
+export async function fetchInvoiceEmailPreviewHtml(invoiceId, kind = "paid") {
+    const res = await api.get(`/invoices/${invoiceId}/email-preview`, {
+        params: { kind },
+        responseType: "text",
+    });
+    return res.data;
+}
+
 /** Open invoice PDF in a new browser tab. */
 export async function openInvoicePdf(invoiceId) {
     const blob = await fetchInvoicePdfBlob(invoiceId);

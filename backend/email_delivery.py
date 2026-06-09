@@ -14,10 +14,10 @@ DEV_MODE = os.environ.get("DEV_MODE", "false").lower() == "true"
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 
 
-async def send_email(params: dict, *, context: str = "email") -> dict[str, Any]:
-    """Send via Resend, or no-op in DEV_MODE (log only)."""
+async def send_email(params: dict, *, context: str = "email", force: bool = False) -> dict[str, Any]:
+    """Send via Resend, or no-op in DEV_MODE (log only). Use force=True for explicit test sends."""
     recipients = params.get("to") or []
-    if DEV_MODE:
+    if DEV_MODE and not force:
         logger.info("DEV_MODE: suppressed %s to %s", context, recipients)
         return {"id": None, "suppressed": True, "would_send_to": recipients}
     try:

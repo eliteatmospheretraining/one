@@ -1,7 +1,7 @@
 """HTML email templates for enrollment + waiver confirmation."""
 from __future__ import annotations
 
-from invoice_emails import EAT_FONT, EAT_INK, _guardian_first_name, email_layout, email_logo_html
+from invoice_emails import EAT_FONT, EAT_INK, _guardian_first_name, branded_email_layout
 
 
 def build_enrollment_email_html(
@@ -22,11 +22,31 @@ def build_enrollment_email_html(
           <p style="{p}">Your completed enrollment and signed waiver are attached.</p>
           <p style="{p_last}">We will confirm your program and start date shortly.</p>
         """
-    return subject, email_layout(
-        body_html=body,
-        header_html=email_logo_html(margin="0 0 24px 0"),
-        footer_style=(
-            f"margin:24px 0 0 0;font-size:11px;color:{EAT_INK};font-weight:700;"
-            f"letter-spacing:0.04em;text-transform:uppercase;text-align:center;font-family:{EAT_FONT};"
-        ),
+    return subject, branded_email_layout(body_html=body)
+
+
+def write_enrollment_email_sample() -> None:
+    """Write static HTML preview to backend/samples (run: python -m enrollment_emails)."""
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
+    from enrollment_pdf import sample_enrollment_context
+
+    base = Path(__file__).parent
+    load_dotenv(base / ".env")
+    ctx = sample_enrollment_context()
+    subject, html = build_enrollment_email_html(
+        contact_name=ctx["contact_name"],
+        athlete_name=ctx["athlete_name"],
+        program_label=ctx["program_label"],
     )
+    out_dir = base / "samples"
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / "EAT_Enrollment_Email_Sample.html"
+    path.write_text(html, encoding="utf-8")
+    print(f"Wrote {path} ({subject})")
+
+
+if __name__ == "__main__":
+    write_enrollment_email_sample()

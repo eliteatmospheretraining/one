@@ -3,19 +3,29 @@
 #
 # Usage:
 #   export EAT_TOKEN="…"   # JWT from browser localStorage (eat_jwt)
+#   ./scripts/preview_invoice_email.sh sample paid     # static sample (no invoice)
 #   ./scripts/preview_invoice_email.sh EAT-000012 due
 #   ./scripts/preview_invoice_email.sh <invoice-uuid> paid
 #
 # Or login via password:
 #   export EAT_EMAIL="you@example.com" EAT_PASSWORD="…"
-#   ./scripts/preview_invoice_email.sh EAT-000012
+#   ./scripts/preview_invoice_email.sh sample due
 #
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_URL="${EAT_API_URL:-http://127.0.0.1:8001/api}"
 
-INVOICE_ID="${1:?Usage: $0 <invoice_id> [due|paid]}"
-KIND="${2:-due}"
+TARGET="${1:?Usage: $0 <invoice_id|sample> [due|paid]}"
+if [[ "$TARGET" == "sample" ]]; then
+  KIND="${2:-due}"
+  PREVIEW_URL="${API_URL}/invoices/email-preview?kind=${KIND}"
+  OUT="${TMPDIR:-/tmp}/eat-invoice-email-sample-${KIND}.html"
+else
+  INVOICE_ID="$TARGET"
+  KIND="${2:-due}"
+  PREVIEW_URL="${API_URL}/invoices/${INVOICE_ID}/email-preview?kind=${KIND}"
+  OUT="${TMPDIR:-/tmp}/eat-email-${INVOICE_ID}-${KIND}.html"
+fi
 
 if [[ -z "${EAT_TOKEN:-}" && -n "${EAT_EMAIL:-}" && -n "${EAT_PASSWORD:-}" ]]; then
   EAT_TOKEN="$(
@@ -31,11 +41,10 @@ if [[ -z "${EAT_TOKEN:-}" ]]; then
   exit 1
 fi
 
-OUT="${TMPDIR:-/tmp}/eat-email-${INVOICE_ID}-${KIND}.html"
 HTTP_CODE="$(
   curl -sS -w "%{http_code}" -o "$OUT" \
     -H "Authorization: Bearer ${EAT_TOKEN}" \
-    "${API_URL}/invoices/${INVOICE_ID}/email-preview?kind=${KIND}"
+    "${PREVIEW_URL}"
 )"
 
 if [[ "$HTTP_CODE" != "200" ]]; then

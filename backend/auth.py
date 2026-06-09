@@ -92,20 +92,20 @@ async def get_current_coach(creds: Optional[HTTPAuthorizationCredentials] = Depe
 
 
 def _build_email_html(magic_url: str) -> str:
-    from invoice_emails import EAT_ACCENT, EAT_INK, EAT_MUTED, email_layout
+    from invoice_emails import EAT_FONT, EAT_INK, EAT_MUTED, branded_email_layout, email_button_html
 
+    text = f"color:{EAT_INK};font-family:{EAT_FONT};"
+    p = f"font-size:12px;{text}line-height:1.5;margin:0 0 14px 0;"
+    p_muted = f"font-size:12px;color:{EAT_MUTED};font-family:{EAT_FONT};line-height:1.5;margin:0;"
     body = f"""
-          <h1 style="font-family:Impact,Arial Black,Arial,sans-serif;font-size:20px;color:{EAT_INK};margin:0 0 16px 0;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;">Your sign-in link</h1>
-          <p style="font-size:15px;color:{EAT_INK};line-height:1.65;margin:0 0 24px 0;">
-            Tap the button below to sign in to the EAT admin portal. This link expires in 30 minutes and can be used once.
-          </p>
-          <a href="{magic_url}" style="display:inline-block;background:{EAT_ACCENT};color:{EAT_INK};font-weight:700;text-transform:uppercase;letter-spacing:0.12em;padding:14px 28px;text-decoration:none;border-radius:2px;font-size:12px;">Sign in to EAT</a>
-          <p style="font-size:12px;color:{EAT_MUTED};margin:28px 0 0 0;line-height:1.65;">
-            If the button doesn&rsquo;t work, copy this link:<br>
+          <p style="{p}">Tap below to sign in to the EAT admin portal.</p>
+          <p style="{p}">This link expires in 30 minutes and can be used once.</p>
+          {email_button_html(href=magic_url, label="Sign in to EAT")}
+          <p style="{p_muted}">If the button doesn&rsquo;t work, copy this link:<br>
             <span style="word-break:break-all;color:{EAT_INK};">{magic_url}</span>
           </p>
     """
-    return email_layout(body_html=body)
+    return branded_email_layout(body_html=body)
 
 
 @router.post("/request-magic-link")

@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable, Optional
+from urllib.parse import quote
 
 BASE = Path(__file__).parent
 
@@ -51,6 +53,38 @@ def _svg_b64() -> str:
 
 def _fmt(v: float) -> str:
     return f"${v:,.2f}"
+
+
+def invoice_receipt_pdf_title(*, period_start: date, period_end: date) -> str:
+    """Display/save title for paid receipt PDFs, e.g. EAT Receipt · 06/08-06/12/2026."""
+    start = period_start.strftime("%m/%d")
+    end = period_end.strftime("%m/%d/%Y")
+    return f"EAT Receipt · {start}-{end}"
+
+
+def invoice_pdf_filename(
+    *,
+    invoice_number: str,
+    period_start: date,
+    period_end: date,
+    paid: bool,
+) -> str:
+    """HTTP attachment/download filename."""
+    title = (
+        invoice_receipt_pdf_title(period_start=period_start, period_end=period_end)
+        if paid
+        else invoice_number
+    )
+    safe = re.sub(r'[<>:"\\|?*\n\r]', "", title)
+    return f"{safe}.pdf"
+
+
+def pdf_content_disposition(filename: str, *, inline: bool = True) -> str:
+    """Content-Disposition with UTF-8 filename* so mobile saves the receipt title."""
+    disposition = "inline" if inline else "attachment"
+    fallback = filename.replace("/", "-")
+    encoded = quote(filename)
+    return f'{disposition}; filename="{fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def render_invoice_pdf(
@@ -117,6 +151,12 @@ def render_invoice_pdf(
         </div>"""
 
     total_label = "TOTAL PAID" if paid else "TOTAL DUE"
+    document_title = (
+        invoice_receipt_pdf_title(period_start=period_start, period_end=period_end)
+        if paid
+        else f"EAT Invoice {invoice_number}"
+    )
+    meta_eyebrow = "Receipt" if paid else "Invoice"
     logo_html = (
         f'<img class="logo" src="data:image/svg+xml;base64,{logo}" />'
         if logo
@@ -127,6 +167,7 @@ def render_invoice_pdf(
 <html>
 <head>
 <meta charset="utf-8">
+<title>{document_title}</title>
 <style>
 {font_faces}
 
@@ -426,7 +467,7 @@ body {{
   <div class="header">
     {logo_html}
     <div class="meta-right">
-      <div class="meta-eyebrow">Invoice</div>
+      <div class="meta-eyebrow">{meta_eyebrow}</div>
       <div class="invoice-number">{invoice_number}</div>
       <div class="issued-date">Issued {issue_date.strftime('%B %d, %Y')}</div>
     </div>
@@ -523,13 +564,18 @@ if __name__ == "__main__":
     out_dir = BASE / "samples"
     out_dir.mkdir(exist_ok=True)
     (out_dir / "EAT_Invoice_Sample.pdf").write_bytes(render_invoice_pdf(**common, paid=False))
-    (out_dir / "EAT_Invoice_Sample_PAID.pdf").write_bytes(
-        render_invoice_pdf(
-            **common,
-            paid=True,
-            payment_date=date(2026, 6, 3),
-            payment_method="Zelle",
-        )
+    paid_pdf = render_invoice_pdf(
+        **common,
+        paid=True,
+        payment_date=date(2026, 6, 3),
+        payment_method="Zelle",
     )
+    paid_name = invoice_pdf_filename(
+        invoice_number=common["invoice_number"],
+        period_start=common["period_start"],
+        period_end=common["period_end"],
+        paid=True,
+    )
+    (out_dir / paid_name).write_bytes(paid_pdf)
     print(f"Wrote {out_dir}/EAT_Invoice_Sample.pdf")
-    print(f"Wrote {out_dir}/EAT_Invoice_Sample_PAID.pdf")
+    print(f"Wrote {out_dir}/{paid_name}")

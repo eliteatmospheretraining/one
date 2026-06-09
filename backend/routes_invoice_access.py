@@ -5,6 +5,7 @@ from fastapi import APIRouter, Response
 
 from db import db
 from invoice_magic_links import resolve_invoice_access_token
+from pdf import pdf_content_disposition
 from routes_invoices import _build_pdf
 
 router = APIRouter(prefix="/invoice-access", tags=["invoice-access"])
@@ -36,5 +37,5 @@ async def download_invoice_pdf(token: str):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": pdf_content_disposition(filename)},
     )

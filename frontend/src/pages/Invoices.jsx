@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, formatApiError, fetchInvoicePdfBlob } from "../lib/api";
+import { api, formatApiError, fetchInvoiceEmailPreviewHtml, fetchInvoicePdfBlob } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
@@ -945,29 +945,56 @@ function ReceiptPreviewModal({
     sending,
     onSend,
 }) {
+    const [previewTab, setPreviewTab] = useState("pdf");
     const [pdfUrl, setPdfUrl] = useState(null);
+    const [emailHtml, setEmailHtml] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (!open || !invoiceId) return undefined;
+        if (!open) {
+            setPreviewTab("pdf");
+            return undefined;
+        }
+        if (!invoiceId) return undefined;
+
         let objectUrl = null;
         let cancelled = false;
         setLoading(true);
         setError(null);
         setPdfUrl(null);
-        fetchInvoicePdfBlob(invoiceId)
+        setEmailHtml(null);
+
+        const pdfPromise = fetchInvoicePdfBlob(invoiceId)
             .then((blob) => {
                 if (cancelled) return;
                 objectUrl = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
                 setPdfUrl(objectUrl);
-            })
-            .catch((e) => {
-                if (!cancelled) setError(formatApiError(e) || "Could not load receipt PDF");
+            });
+
+        const emailPromise = fetchInvoiceEmailPreviewHtml(invoiceId, "paid")
+            .then((html) => {
+                if (!cancelled) setEmailHtml(html);
+            });
+
+        Promise.allSettled([pdfPromise, emailPromise])
+            .then((results) => {
+                if (cancelled) return;
+                const failures = results.filter((r) => r.status === "rejected");
+                if (failures.length === results.length) {
+                    const first = failures[0];
+                    setError(
+                        formatApiError(first.reason) || "Could not load receipt preview",
+                    );
+                } else if (failures.length > 0) {
+                    const rejected = failures[0].reason;
+                    setError(formatApiError(rejected) || "Part of the preview could not be loaded");
+                }
             })
             .finally(() => {
                 if (!cancelled) setLoading(false);
             });
+
         return () => {
             cancelled = true;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -975,6 +1002,7 @@ function ReceiptPreviewModal({
     }, [open, invoiceId]);
 
     const sendLabel = receiptSent ? "Resend to guardian" : "Send to guardian";
+    const activePreview = previewTab === "email" ? emailHtml : pdfUrl;
 
     return (
         <Modal
@@ -986,21 +1014,58 @@ function ReceiptPreviewModal({
             <div className="flex flex-col gap-4">
                 <p className="text-sm text-muted font-light">
                     {guardianEmail
-                        ? `This PDF will be emailed to ${guardianEmail}.`
+                        ? `This receipt PDF and email will be sent to ${guardianEmail}.`
                         : "No guardian email on file — add one to the family before sending."}
                 </p>
+                <div className="flex gap-2 border-b border-subtle pb-2">
+                    <button
+                        type="button"
+                        data-testid={INVOICES.previewReceiptPdfTab}
+                        onClick={() => setPreviewTab("pdf")}
+                        className={`px-3 py-1.5 text-xs uppercase tracking-wider2 border ${
+                            previewTab === "pdf"
+                                ? "border-ink bg-ink text-paper"
+                                : "border-subtle text-muted hover:text-ink"
+                        }`}
+                    >
+                        PDF attachment
+                    </button>
+                    <button
+                        type="button"
+                        data-testid={INVOICES.previewReceiptEmailTab}
+                        onClick={() => setPreviewTab("email")}
+                        className={`px-3 py-1.5 text-xs uppercase tracking-wider2 border ${
+                            previewTab === "email"
+                                ? "border-ink bg-ink text-paper"
+                                : "border-subtle text-muted hover:text-ink"
+                        }`}
+                    >
+                        Email body
+                    </button>
+                </div>
                 {loading && (
-                    <div className="text-center py-16 text-muted uppercase tracking-wider2 text-sm">Loading PDF…</div>
+                    <div className="text-center py-16 text-muted uppercase tracking-wider2 text-sm">Loading preview…</div>
                 )}
-                {error && (
+                {error && !activePreview && (
                     <div className="text-center py-10 text-danger text-sm">{error}</div>
                 )}
-                {pdfUrl && !loading && (
+                {previewTab === "pdf" && pdfUrl && !loading && (
                     <iframe
-                        title="Receipt preview"
+                        title="Receipt PDF preview"
                         src={pdfUrl}
                         className="w-full h-[min(70vh,640px)] border border-subtle bg-ink"
                     />
+                )}
+                {previewTab === "email" && emailHtml && !loading && (
+                    <iframe
+                        title="Receipt email preview"
+                        srcDoc={emailHtml}
+                        sandbox=""
+                        className="w-full h-[min(70vh,640px)] border border-subtle bg-white"
+                    />
+                )}
+                {error && activePreview && (
+                    <p className="text-xs text-danger">{error}</p>
                 )}
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-subtle">
                     <button
@@ -1015,7 +1080,7 @@ function ReceiptPreviewModal({
                         type="button"
                         data-testid={INVOICES.previewReceiptSendBtn}
                         onClick={onSend}
-                        disabled={sending || loading || Boolean(error) || !guardianEmail}
+                        disabled={sending || loading || !guardianEmail}
                         className="eat-btn-primary flex-1 min-w-[7rem] disabled:opacity-50"
                     >
                         {sending ? "Sending…" : sendLabel}

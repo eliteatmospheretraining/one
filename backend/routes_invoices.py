@@ -25,7 +25,7 @@ from models import (
     Payment,
     PaymentCreate,
 )
-from pdf import render_invoice_pdf
+from pdf import invoice_pdf_filename, pdf_content_disposition, render_invoice_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/invoices", tags=["invoices"], dependencies=[Depends(get_current_coach)])
@@ -288,6 +288,15 @@ async def delete_invoice_line_item(invoice_id: str, line_item_id: str):
     return {"status": "ok", "total": total}
 
 
+@router.get("/email-preview")
+async def preview_sample_invoice_email(kind: str = "due"):
+    """Coach-only HTML preview of guardian invoice emails (sample data)."""
+    from invoice_send import build_sample_preview_html
+
+    _, html, _ = build_sample_preview_html(kind)
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
 @router.get("/{invoice_id}")
 async def get_invoice(invoice_id: str, sync: bool = False):
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -384,11 +393,14 @@ async def _build_pdf(invoice_id: str) -> tuple[bytes, str, dict]:
             "amount": float(li["amount"]),
         })
 
+    period_start = await _parse_date(inv["period_start"])
+    period_end = await _parse_date(inv["period_end"])
+    paid = inv["status"] == InvoiceStatus.paid.value
     pdf_bytes = render_invoice_pdf(
         invoice_number=inv["invoice_number"],
         issue_date=await _parse_date(inv["issue_date"]),
-        period_start=await _parse_date(inv["period_start"]),
-        period_end=await _parse_date(inv["period_end"]),
+        period_start=period_start,
+        period_end=period_end,
         family_name=family["family_name"],
         guardian_name=family["guardian_name"],
         guardian_email=family["guardian_email"],
@@ -398,9 +410,14 @@ async def _build_pdf(invoice_id: str) -> tuple[bytes, str, dict]:
         total=float(inv["total"]),
         payment_date=payment_date,
         payment_method=payment_method,
-        paid=inv["status"] == InvoiceStatus.paid.value,
+        paid=paid,
     )
-    filename = f"{inv['invoice_number']}.pdf"
+    filename = invoice_pdf_filename(
+        invoice_number=inv["invoice_number"],
+        period_start=period_start,
+        period_end=period_end,
+        paid=paid,
+    )
     return pdf_bytes, filename, {"invoice": inv, "family": family}
 
 
@@ -410,8 +427,17 @@ async def download_invoice_pdf(invoice_id: str):
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": pdf_content_disposition(filename)},
     )
+
+
+@router.get("/{invoice_id}/email-preview")
+async def preview_invoice_email(invoice_id: str, kind: str = "due"):
+    """Coach-only HTML preview of the guardian email for this invoice."""
+    from invoice_send import build_preview_html
+
+    _, html, _ = await build_preview_html(invoice_id, kind)
+    return Response(content=html, media_type="text/html; charset=utf-8")
 
 
 @router.post("/{invoice_id}/send")

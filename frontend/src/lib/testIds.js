@@ -98,6 +98,8 @@ export const INVOICES = {
     sendBtn: "invoice-send-btn",
     sendReceiptBtn: "invoice-send-receipt-btn",
     previewReceiptBtn: "invoice-preview-receipt-btn",
+    previewReceiptPdfTab: "invoice-preview-receipt-pdf-tab",
+    previewReceiptEmailTab: "invoice-preview-receipt-email-tab",
     previewReceiptSendBtn: "invoice-preview-receipt-send-btn",
     deleteBtn: "invoice-delete-btn",
     deleteConfirmBtn: "invoice-delete-confirm-btn",

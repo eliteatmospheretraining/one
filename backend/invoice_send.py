@@ -4,7 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import resend
 from fastapi import HTTPException
@@ -26,6 +29,43 @@ async def _email_context(invoice_id: str) -> dict:
 
     pdf_bytes, filename, ctx = await _build_pdf(invoice_id)
     return {**ctx, "pdf_bytes": pdf_bytes, "filename": filename}
+
+
+def sample_invoice_context() -> dict:
+    """Static invoice/family data matching backend/samples PDF examples."""
+    return {
+        "invoice": {
+            "invoice_number": "EAT-000001",
+            "period_start": "2026-05-26",
+            "period_end": "2026-05-30",
+            "total": 270.00,
+            "issue_date": "2026-06-02",
+        },
+        "family": {
+            "guardian_name": "Maria Hernandez",
+            "guardian_email": "maria@example.com",
+        },
+    }
+
+
+def build_sample_preview_html(kind: str) -> tuple[str, str, str]:
+    """HTML preview using sample data (no database)."""
+    if kind not in ("due", "paid"):
+        raise HTTPException(400, "kind must be 'due' or 'paid'")
+    ctx = sample_invoice_context()
+    inv = ctx["invoice"]
+    family = ctx["family"]
+    magic_url = invoice_view_url("preview-token", APP_BASE_URL)
+    pdf_url = invoice_pdf_url("preview-token", APP_BASE_URL)
+    payment = None
+    if kind == "paid":
+        payment = {
+            "amount_received": inv["total"],
+            "method": "Zelle",
+            "received_date": "2026-06-03",
+        }
+    subject, html = _subject_and_html(kind, inv, family, magic_url, pdf_url, payment)
+    return subject, html, magic_url
 
 
 async def build_preview_html(invoice_id: str, kind: str) -> tuple[str, str, str]:
@@ -131,3 +171,76 @@ async def send_guardian_invoice_email(invoice_id: str, kind: str) -> dict:
         resp["dev_magic_url"] = magic_url
         resp["email_suppressed"] = True
     return resp
+
+
+SAMPLES_DIR = Path(__file__).parent / "samples"
+
+
+async def send_sample_invoice_email(*, to: str, kind: str = "paid", force: bool = False) -> dict:
+    """Email a sample guardian invoice (HTML + PDF attachment) to any address."""
+    if kind not in ("due", "paid"):
+        raise HTTPException(400, "kind must be 'due' or 'paid'")
+    email = (to or "").strip()
+    if not email:
+        raise HTTPException(400, "Recipient email is required")
+
+    subject, html, _ = build_sample_preview_html(kind)
+    ctx = sample_invoice_context()
+    inv = ctx["invoice"]
+    if kind == "paid":
+        from datetime import date
+
+        from pdf import invoice_pdf_filename
+
+        pdf_name = invoice_pdf_filename(
+            invoice_number=inv["invoice_number"],
+            period_start=date.fromisoformat(str(inv["period_start"])[:10]),
+            period_end=date.fromisoformat(str(inv["period_end"])[:10]),
+            paid=True,
+        )
+    else:
+        pdf_name = "EAT_Invoice_Sample.pdf"
+    pdf_path = SAMPLES_DIR / pdf_name
+
+    # Hidden body marker so Gmail does not collapse repeated samples in one thread.
+    sample_tag = datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d%H%M%S")
+    html = html.replace(
+        "<body ",
+        f'<!-- eat-sample-{sample_tag} --><div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">sample-{sample_tag}</div><body ',
+        1,
+    )
+
+    params = {
+        "from": f"Elite Atmosphere Training <{SENDER_EMAIL}>",
+        "to": [email],
+        "subject": f"[SAMPLE] {subject}",
+        "html": html,
+        "headers": {
+            "X-Entity-Ref-ID": f"eat-sample-{sample_tag}",
+        },
+    }
+    pdf_attached = False
+    if pdf_path.exists():
+        params["attachments"] = [{
+            "filename": pdf_name,
+            "content": list(pdf_path.read_bytes()),
+        }]
+        pdf_attached = True
+    else:
+        logger.warning("Sample PDF missing (%s) — sending HTML only", pdf_path)
+    from email_delivery import send_email
+
+    try:
+        result = await send_email(params, context=f"sample invoice {kind}", force=force)
+    except Exception as e:
+        logger.error("Sample invoice email failed: %s", e)
+        raise HTTPException(500, f"Email send failed: {e}")
+
+    return {
+        "status": "sent",
+        "kind": kind,
+        "to": email,
+        "email_id": result.get("id"),
+        "suppressed": bool(result.get("suppressed")),
+        "pdf_attached": pdf_attached,
+    }
