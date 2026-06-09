@@ -568,6 +568,12 @@ class TestInvoices:
             ]},
             headers=auth_headers,
         )
+        complete = requests.patch(
+            f"{API}/sessions/{sess['id']}",
+            json={"status": "completed"},
+            headers=auth_headers,
+        )
+        assert complete.status_code == 200, complete.text
 
         period_start = (date.today() - timedelta(days=7)).isoformat()
         period_end = (date.today() + timedelta(days=1)).isoformat()
@@ -581,9 +587,10 @@ class TestInvoices:
         inv1 = gen1.json()["invoice"]
         assert inv1["invoice_number"].startswith("EAT-")
         assert int(inv1["invoice_number"].split("-")[1]) >= 1
-        assert inv1["total"] == 0
+        assert inv1["total"] == 60
         assert inv1["status"] == "draft"
-        assert gen1.json()["line_items"] == []
+        assert len(gen1.json()["line_items"]) == 1
+        assert gen1.json()["line_items"][0]["amount"] == 60
 
         add_line = requests.post(
             f"{API}/invoices/{inv1['id']}/line-items",
@@ -591,7 +598,7 @@ class TestInvoices:
             headers=auth_headers,
         )
         assert add_line.status_code == 200, add_line.text
-        assert add_line.json()["total"] == 1100
+        assert add_line.json()["total"] == 1160
 
         gen2 = requests.post(
             f"{API}/invoices/generate",
@@ -608,10 +615,11 @@ class TestInvoices:
         det = requests.get(f"{API}/invoices/{inv1['id']}", headers=auth_headers).json()
         assert det["invoice"]["id"] == inv1["id"]
         assert det["family"]["id"] == fam["id"]
-        assert len(det["line_items"]) >= 1
+        assert len(det["line_items"]) >= 2
         assert len(det["athletes"]) >= 1
-        assert det["line_items"][0]["amount"] == 1100
-        assert "Eat w/ EAT" in det["line_items"][0]["description"]
+        amounts = sorted(li["amount"] for li in det["line_items"])
+        assert amounts == [60, 1100]
+        assert any("Eat w/ EAT" in li["description"] for li in det["line_items"])
 
         # PDF returns application/pdf
         pdf = requests.get(f"{API}/invoices/{inv1['id']}/pdf", headers=auth_headers, timeout=60)
@@ -644,13 +652,15 @@ class TestInvoices:
             json={"entries": [{"athlete_id": ath["id"], "attendance_type": "absent"}]},
             headers=auth_headers,
         )
-        # Generate over a date range that ONLY has the absent session - should error
+        # Generate over a date range with no billable completed attendance — empty draft
         gen_abs = requests.post(
             f"{API}/invoices/generate",
             json={"family_id": fam["id"], "period_start": "2030-01-01", "period_end": "2030-01-31"},
             headers=auth_headers,
         )
-        assert gen_abs.status_code == 400  # no billable
+        assert gen_abs.status_code == 200, gen_abs.text
+        assert gen_abs.json()["line_items"] == []
+        assert gen_abs.json()["invoice"]["total"] == 0
 
         # Payment flow on inv1
         pay = requests.post(
@@ -693,6 +703,11 @@ class TestInvoices:
         requests.post(
             f"{API}/sessions/{sess4['id']}/attendance",
             json={"entries": [{"athlete_id": ath["id"], "attendance_type": "full"}]},
+            headers=auth_headers,
+        )
+        requests.patch(
+            f"{API}/sessions/{sess4['id']}",
+            json={"status": "completed"},
             headers=auth_headers,
         )
         gen3 = requests.post(

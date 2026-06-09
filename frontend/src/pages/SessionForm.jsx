@@ -99,7 +99,6 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                 setType("full_time");
                 setLocation("");
                 setNotes("");
-                setSelectedIds(expectedAthleteIds(athletes, "full_time"));
                 setRepeat(false);
                 setRepeatFrequency("weekly");
                 setRepeatInterval(1);
@@ -108,6 +107,11 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
             }
         }
     }, [open, session, defaultDate]);
+
+    useEffect(() => {
+        if (!open || session || type !== "full_time") return;
+        setSelectedIds(expectedAthleteIds(athletes, type));
+    }, [open, session, athletes, type]);
 
     useEffect(() => {
         if (isEdit || !repeat || repeatFrequency !== "weekly" || type !== "full_time") return;

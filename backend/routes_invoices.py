@@ -99,10 +99,13 @@ async def invoice_service_options():
 
 @router.post("/generate")
 async def generate_invoice(req: InvoiceGenerateRequest):
-    """Create an empty draft invoice for a family and period (add lines manually)."""
+    """Create a draft invoice for a family and period, populated from completed attendance."""
     family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
     if not family:
         raise HTTPException(404, "Family not found")
+
+    period_start = await _parse_date(req.period_start)
+    period_end = await _parse_date(req.period_end)
 
     invoice_number = await _next_invoice_number()
     invoice = Invoice(
@@ -114,9 +117,48 @@ async def generate_invoice(req: InvoiceGenerateRequest):
     )
     await db.invoices.insert_one(serialize(invoice.model_dump()))
 
+    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+        req.family_id,
+        period_start,
+        period_end,
+        skip_invoiced=True,
+        for_invoice_id=invoice.id,
+    )
+
+    line_items: list[InvoiceLineItem] = []
+    if billable:
+        await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
+        line_items = _line_items_from_billable(
+            invoice.id, billable, athletes_by_id, sessions_by_id
+        )
+        if line_items:
+            await db.invoice_line_items.insert_many(
+                [serialize(li.model_dump()) for li in line_items]
+            )
+
+    total = await _recalc_invoice_totals(invoice.id)
+    inv = await db.invoices.find_one({"id": invoice.id}, {"_id": 0})
+    items = await db.invoice_line_items.find({"invoice_id": invoice.id}, {"_id": 0}).to_list(1000)
+    skipped = await billing_skips_for_period(
+        req.family_id,
+        period_start,
+        period_end,
+        for_invoice_id=invoice.id,
+    )
+
     return {
-        "invoice": invoice.model_dump(),
-        "line_items": [],
+        "status": "ok",
+        "added": len(line_items),
+        "session_count": sum(int(li.get("quantity") or 1) for li in items),
+        "skipped": skipped,
+        "invoice": inv,
+        "line_items": items,
+        "total": total,
+        "message": (
+            f"Added {len(line_items)} line item(s) from attendance"
+            if line_items
+            else "No billable completed attendance in this period"
+        ),
     }
 
 

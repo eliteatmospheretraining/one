@@ -555,7 +555,15 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
         setBusy(true);
         try {
             const r = await api.post("/invoices/generate", { family_id: familyId, period_start: start, period_end: end });
-            toast.success(`Invoice ${r.data.invoice.invoice_number} created`);
+            const inv = r.data.invoice;
+            const lineCount = r.data.line_items?.length ?? 0;
+            if (lineCount > 0) {
+                toast.success(
+                    `Invoice ${inv.invoice_number} created · ${lineCount} line${lineCount === 1 ? "" : "s"} · ${fmtMoney(r.data.total ?? inv.total)}`
+                );
+            } else {
+                toast.success(`Invoice ${inv.invoice_number} created`);
+            }
             onCreated?.(r.data.invoice.id);
         } catch (e) {
             toast.error(e.response?.data?.detail || "Generate failed");
