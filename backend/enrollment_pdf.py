@@ -454,6 +454,7 @@ body {{
   margin: 0 0 8pt;
 }}
 .cond .form-row {{ margin-bottom: 0; }}
+.page-break {{ page-break-before: always; padding-top: 4pt; }}
 .waiver-page {{ page-break-before: always; padding-top: 4pt; }}
 .prefill-tag {{
   font-family: 'Barlow Condensed', sans-serif;
@@ -558,6 +559,7 @@ body {{
   {_sec(contact_label)}
   {contact_block}
 
+  <div class="page-break">
   {_sec("Emergency Contact")}
   {_row(
       _field("Name", ctx.get("emergency_contact_name")),
@@ -577,6 +579,7 @@ body {{
   {_chip_lbl("How did you hear about EAT?")}
   {_chips([(r, r) for r in REFERRALS], ctx.get("referral_source") or "")}
   {_row(_field("Anything else?", ctx.get("additional_notes"), colspan=2, multiline=True))}
+  </div>
 
   <div class="waiver-page">
     <div class="prefill-tag">{_esc(athlete_name.upper())}</div>
