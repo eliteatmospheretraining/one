@@ -10,6 +10,7 @@ import { toast } from "sonner";
 const PROGRAMS = [
     { value: "full_time", label: "Eat w/ EAT" },
     { value: "private", label: "Private" },
+    { value: "semi_private", label: "Semi-Private" },
 ];
 const STATUSES = [
     { value: "pending", label: "Pending" },

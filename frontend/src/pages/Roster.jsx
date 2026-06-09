@@ -11,6 +11,7 @@ import { toast } from "sonner";
 const PROGRAM_FILTERS = [
     { value: "full_time", label: "Eat w/ EAT" },
     { value: "private", label: "Private" },
+    { value: "semi_private", label: "Semi-Private" },
     { value: "all", label: "All" },
 ];
 
