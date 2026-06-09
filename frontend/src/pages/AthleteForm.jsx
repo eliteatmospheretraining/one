@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, formatApiError, openEnrollmentPdf } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
@@ -212,11 +212,33 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
     const phoneKey = selectedContact === "one" ? "guardian_phone" : "guardian_phone_secondary";
     const isPrimary = selectedContact === "one";
 
+    async function viewEnrollmentForms(event) {
+        event?.preventDefault();
+        event?.stopPropagation();
+        if (!athlete?.id) return;
+        try {
+            await openEnrollmentPdf(athlete.id);
+        } catch (err) {
+            toast.error(formatApiError(err) || "Could not open enrollment forms");
+        }
+    }
+
     return (
         <Modal open={open} onOpenChange={onOpenChange} title={isEdit ? "Edit Athlete" : "New Athlete"}>
             <form onSubmit={submit} className="flex flex-col gap-4">
                 <div>
-                    <label className="eat-label">Programs</label>
+                    <div className="flex items-center justify-between gap-3">
+                        <label className="eat-label">Programs</label>
+                        {isEdit && athlete?.waiver_signature ? (
+                            <button
+                                type="button"
+                                onClick={viewEnrollmentForms}
+                                className="text-accent hover:underline text-xs shrink-0"
+                            >
+                                View Forms
+                            </button>
+                        ) : null}
+                    </div>
                     <div className="flex gap-2 flex-wrap mt-1.5">
                         {PROGRAMS.map((p) => {
                             const selected = form.program_types?.includes(p.value);

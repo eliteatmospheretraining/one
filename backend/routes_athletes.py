@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from auth import get_current_coach
 from db import db, serialize
+from enrollment_pdf import enrollment_pdf_filename, render_enrollment_pdf
+from enrollment_send import build_enrollment_context_from_records
 from models import Athlete, AthleteCreate, AthleteStatus, AthleteUpdate, ProgramType
 
 router = APIRouter(prefix="/athletes", tags=["athletes"], dependencies=[Depends(get_current_coach)])
@@ -52,6 +54,28 @@ async def get_athlete(athlete_id: str):
     if not a:
         raise HTTPException(404, "Athlete not found")
     return a
+
+
+@router.get("/{athlete_id}/enrollment-pdf")
+async def download_enrollment_pdf(athlete_id: str):
+    athlete = await db.athletes.find_one({"id": athlete_id}, {"_id": 0})
+    if not athlete:
+        raise HTTPException(404, "Athlete not found")
+    if not (athlete.get("waiver_signature") or "").strip():
+        raise HTTPException(404, "No enrollment waiver on file for this athlete")
+
+    family = await db.families.find_one({"id": athlete["family_id"]}, {"_id": 0})
+    if not family:
+        raise HTTPException(404, "Family not found")
+
+    ctx = build_enrollment_context_from_records(athlete, family)
+    pdf_bytes = render_enrollment_pdf(ctx)
+    filename = enrollment_pdf_filename(ctx["athlete_name"])
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.patch("/{athlete_id}", response_model=Athlete)

@@ -163,6 +163,7 @@ class AthleteBase(BaseModel):
     waiver_photo_release: Optional[bool] = None
     waiver_typed_signature: Optional[str] = None
     waiver_signature: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
     rate_type: RateType = RateType.daily
     rate_override: Optional[float] = None  # null = use rate card default
     family_id: str

@@ -1,12 +1,14 @@
 """Public athlete enrollment form."""
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
+from auth import get_current_coach
 from db import db, serialize
 from models import (
     Athlete,
@@ -18,6 +20,7 @@ from models import (
 )
 
 router = APIRouter(prefix="/enroll", tags=["enrollment"])
+logger = logging.getLogger(__name__)
 
 PROGRAM_LABELS = {
     ProgramType.full_time: "Eat w/ EAT — Full-Time",
@@ -152,6 +155,15 @@ async def _upsert_family(payload: EnrollmentSubmit, contact_name: str, contact_e
     return fam.id
 
 
+@router.get("/email-preview")
+async def preview_enrollment_email(_coach: dict = Depends(get_current_coach)):
+    """Coach-only HTML preview of the enrollment confirmation email (sample data)."""
+    from enrollment_send import build_preview_html
+
+    _, html, _ = build_preview_html()
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
 @router.post("", response_model=EnrollmentResponse)
 async def submit_enrollment(payload: EnrollmentSubmit):
     if not (payload.waiver_typed_signature or "").strip():
@@ -181,13 +193,28 @@ async def submit_enrollment(payload: EnrollmentSubmit):
         waiver_photo_release=payload.photo_release,
         waiver_typed_signature=payload.waiver_typed_signature.strip(),
         waiver_signature=payload.waiver_signature.strip(),
+        emergency_contact_relationship=payload.emergency_contact_relationship or None,
         family_id=family_id,
     )
     await db.athletes.insert_one(serialize(athlete.model_dump()))
+    program_label = PROGRAM_LABELS.get(payload.program_type, payload.program_type.value)
+    try:
+        from enrollment_send import send_enrollment_confirmation_email
+
+        await send_enrollment_confirmation_email(
+            payload=payload,
+            contact_name=contact_name,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            program_label=program_label,
+        )
+    except Exception as e:
+        logger.error("Enrollment saved but confirmation email failed: %s", e)
+
     return EnrollmentResponse(
         athlete_id=athlete.id,
         family_id=family_id,
         athlete_name=athlete.full_name,
         guardian_email=lookup_email,
-        program_label=PROGRAM_LABELS.get(payload.program_type, payload.program_type.value),
+        program_label=program_label,
     )

@@ -22,6 +22,12 @@ import {
 } from "../lib/format";
 import { toast } from "sonner";
 
+function expectedAthleteIds(athletes, sessionType) {
+    return athletes
+        .filter((a) => a.status === "active" && athleteHasProgram(a, sessionType))
+        .map((a) => a.id);
+}
+
 function EatCheckbox({ checked, onChange, testId, children }) {
     return (
         <label className="flex items-start gap-3 cursor-pointer" data-testid={testId}>
@@ -93,7 +99,7 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                 setType("full_time");
                 setLocation("");
                 setNotes("");
-                setSelectedIds([]);
+                setSelectedIds(expectedAthleteIds(athletes, "full_time"));
                 setRepeat(false);
                 setRepeatFrequency("weekly");
                 setRepeatInterval(1);
@@ -211,7 +217,15 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
 
                 <div>
                     <label className="eat-label">Program Type</label>
-                    <Select value={type} onValueChange={(v) => setType(v)}>
+                    <Select
+                        value={type}
+                        onValueChange={(v) => {
+                            setType(v);
+                            if (!isEdit) {
+                                setSelectedIds(v === "full_time" ? expectedAthleteIds(athletes, v) : []);
+                            }
+                        }}
+                    >
                         <SelectTrigger data-testid={SESSION_FORM.type} className="mt-1.5 h-11">
                             <SelectValue />
                         </SelectTrigger>

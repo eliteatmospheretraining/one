@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronRight, MapPin, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, formatApiError, openEnrollmentPdf } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { SessionStatusPill } from "../components/Pills";
 import WeatherIcon from "../components/WeatherIcon";
 import { fmtMoney, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms, effectiveSessionStatus } from "../lib/format";
 import { AthleteFormModal } from "./AthleteForm";
+import { toast } from "sonner";
 
 const TYPE_BAR = {
     full_time: "bg-accent",
@@ -134,6 +135,16 @@ export default function Home() {
     const [editingAthlete, setEditingAthlete] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    async function viewEnrollmentForms(athleteId, event) {
+        event?.stopPropagation();
+        event?.preventDefault();
+        try {
+            await openEnrollmentPdf(athleteId);
+        } catch (err) {
+            toast.error(formatApiError(err) || "Could not open enrollment forms");
+        }
+    }
 
     useEffect(() => {
         async function fetchDashboard() {
@@ -391,9 +402,20 @@ export default function Home() {
                                             <div className="font-thunder uppercase tracking-tight text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
                                                 Pending Enrollment
                                             </div>
-                                            <div className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted font-light leading-relaxed">
-                                                {athlete.full_name}
-                                                <span className="text-muted/80"> · {formatAthletePrograms(athlete)}</span>
+                                            <div className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted font-light leading-relaxed flex items-start justify-between gap-3">
+                                                <span className="min-w-0">
+                                                    {athlete.full_name}
+                                                    <span className="text-muted/80"> · {formatAthletePrograms(athlete)}</span>
+                                                </span>
+                                                {athlete.waiver_signature ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => viewEnrollmentForms(athlete.id, e)}
+                                                        className="shrink-0 text-accent hover:underline text-xs sm:text-sm"
+                                                    >
+                                                        View Forms
+                                                    </button>
+                                                ) : null}
                                             </div>
                                         </div>
                                         <ChevronRight size={18} className="text-muted shrink-0 mt-0.5" strokeWidth={2} />

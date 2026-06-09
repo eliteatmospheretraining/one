@@ -31,6 +31,14 @@ api.interceptors.response.use(
     }
 );
 
+/** Open enrollment + waiver PDF for a coach-authenticated athlete record. */
+export async function openEnrollmentPdf(athleteId) {
+    const res = await api.get(`/athletes/${athleteId}/enrollment-pdf`, { responseType: "blob" });
+    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /** Human-readable message from a FastAPI / axios error. */
 export function formatApiError(err) {
     const detail = err?.response?.data?.detail;

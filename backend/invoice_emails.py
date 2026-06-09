@@ -1,8 +1,12 @@
 """HTML email templates for guardian invoice magic links."""
 from __future__ import annotations
 
+import base64
 from datetime import date
+from pathlib import Path
 from typing import Optional
+
+BASE = Path(__file__).parent
 
 # Brand tokens (match frontend tailwind: ink, paper, accent, muted)
 EAT_INK = "#141414"
@@ -50,7 +54,58 @@ def _format_period_range(period_start: str, period_end: str) -> str:
     return f"{start} &ndash; {end}"
 
 
-def email_layout(*, body_html: str) -> str:
+def _email_logo_src() -> str:
+    """Inline data URI for the enrollment email wordmark."""
+    candidates = (
+        ("assets/AlternateLogo_BLK.png", "image/png"),
+        ("assets/AlternateLogo_BLK.jpg", "image/jpeg"),
+        ("assets/EAT_black.svg", "image/svg+xml"),
+        ("EAT_black.svg", "image/svg+xml"),
+    )
+    for name, mime in candidates:
+        path = BASE / name
+        if path.exists():
+            encoded = base64.b64encode(path.read_bytes()).decode()
+            return f"data:{mime};base64,{encoded}"
+    return ""
+
+
+def email_logo_html(*, width: int = 48, margin: str = "0 0 24px 0") -> str:
+    """Centered EAT logo for email headers."""
+    logo_src = _email_logo_src()
+    if logo_src:
+        return (
+            f'<div style="margin:{margin};text-align:center;">'
+            f'<img src="{logo_src}" alt="EAT" width="{width}" '
+            f'style="display:inline-block;width:{width}px;height:auto;border:0;" />'
+            f"</div>"
+        )
+    return (
+        f'<p style="margin:{margin};font-size:11px;color:{EAT_INK};font-weight:700;'
+        f"letter-spacing:0.14em;text-transform:uppercase;text-align:center;font-family:{EAT_FONT};"
+        f'">EAT</p>'
+    )
+
+
+def email_layout(
+    *,
+    body_html: str,
+    header_html: Optional[str] = None,
+    footer_style: Optional[str] = None,
+    footer_html: Optional[str] = None,
+) -> str:
+    if footer_html == "":
+        footer_block = ""
+    elif footer_html is None:
+        if footer_style is None:
+            footer_style = (
+                f"margin:24px 0 0 0;font-size:11px;color:{EAT_MUTED};letter-spacing:0.14em;"
+                f"text-transform:uppercase;text-align:center;font-family:{EAT_FONT};"
+            )
+        footer_block = f'<p style="{footer_style}">Elite Atmosphere Training</p>'
+    else:
+        footer_block = footer_html
+    header_block = header_html or ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -62,6 +117,7 @@ def email_layout(*, body_html: str) -> str:
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{EAT_WHITE};padding:48px 20px;">
     <tr>
       <td align="center">
+        {header_block}
         <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="width:520px;max-width:100%;background:{EAT_WHITE};border:1px solid {EAT_BORDER};border-radius:0;">
           <tr>
             <td style="padding:48px 40px;text-align:left;background:{EAT_WHITE};color:{EAT_INK};">
@@ -69,9 +125,7 @@ def email_layout(*, body_html: str) -> str:
             </td>
           </tr>
         </table>
-        <p style="margin:24px 0 0 0;font-size:11px;color:{EAT_MUTED};letter-spacing:0.14em;text-transform:uppercase;text-align:center;font-family:{EAT_FONT};">
-          Elite Atmosphere Training
-        </p>
+        {footer_block}
       </td>
     </tr>
   </table>
