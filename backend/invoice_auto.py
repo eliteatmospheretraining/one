@@ -1,15 +1,19 @@
 """Auto-create or refresh draft invoices when sessions are completed."""
 from __future__ import annotations
 
+import asyncio
 import calendar
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional
 
-from db import db, serialize
+from billing import SESSION_TIME_ZONE
+from db import db, now, serialize
 from models import AttendanceType, Invoice, InvoiceLineItem, InvoiceStatus, ProgramType
 
 logger = logging.getLogger(__name__)
+
+WEEKLY_BATCH_JOB = "weekly_invoices"
 
 
 def month_period_for(session_date: date) -> tuple[date, date]:
@@ -131,3 +135,145 @@ async def auto_sync_invoices_for_session(session_id: str) -> list[dict]:
             logger.exception(f"Auto-invoice sync failed for family {family_id}: {e}")
 
     return results
+
+
+def prior_mon_fri_period(as_of: date) -> Optional[tuple[date, date]]:
+    """Mon–Fri of the training week ending the Friday before as_of (for Saturday batch runs)."""
+    if as_of.weekday() != 5:
+        return None
+    friday = as_of - timedelta(days=1)
+    monday = friday - timedelta(days=4)
+    return monday, friday
+
+
+async def _family_has_billable_period(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+) -> bool:
+    from invoice_billing import _billable_records_for_family, _monthly_athletes_with_attendance
+
+    billable, _, _ = await _billable_records_for_family(
+        family_id, period_start, period_end, skip_invoiced=True
+    )
+    if billable:
+        return True
+    monthly = await _monthly_athletes_with_attendance(family_id, period_start, period_end)
+    return bool(monthly)
+
+
+async def run_saturday_weekly_batch(
+    *,
+    as_of: Optional[date] = None,
+    force: bool = False,
+) -> dict:
+    """Create draft invoices for all families with billable Mon–Fri attendance."""
+    as_of = as_of or datetime.now(SESSION_TIME_ZONE).date()
+    period = prior_mon_fri_period(as_of)
+    if not period and not force:
+        return {
+            "status": "skipped",
+            "reason": "not_saturday",
+            "as_of": as_of.isoformat(),
+        }
+
+    if period:
+        period_start, period_end = period
+    else:
+        # Manual run on a non-Saturday: bill the most recent Mon–Fri week.
+        weekday = as_of.weekday()
+        friday = as_of - timedelta(days=(weekday - 4) % 7)
+        if weekday == 5:
+            friday = as_of - timedelta(days=1)
+        elif weekday == 6:
+            friday = as_of - timedelta(days=2)
+        period_start = friday - timedelta(days=4)
+        period_end = friday
+
+    run_key = f"{period_start.isoformat()}_{period_end.isoformat()}"
+    if not force:
+        existing = await db.scheduled_job_runs.find_one(
+            {"job": WEEKLY_BATCH_JOB, "period_key": run_key},
+            {"_id": 0},
+        )
+        if existing:
+            return {
+                "status": "skipped",
+                "reason": "already_ran",
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "ran_at": existing.get("ran_at"),
+            }
+
+    from routes_invoices import generate_family_period_invoice
+
+    families = await db.families.find({}, {"_id": 0, "id": 1, "family_name": 1}).to_list(500)
+    created: list[dict] = []
+    skipped_families: list[str] = []
+    errors: list[dict] = []
+
+    for fam in families:
+        family_id = fam["id"]
+        try:
+            if not await _family_has_billable_period(family_id, period_start, period_end):
+                skipped_families.append(family_id)
+                continue
+            summary = await generate_family_period_invoice(family_id, period_start, period_end)
+            inv = summary.get("invoice") or {}
+            if float(inv.get("total") or 0) <= 0 and not summary.get("added"):
+                skipped_families.append(family_id)
+                continue
+            created.append({
+                "family_id": family_id,
+                "family_name": fam.get("family_name"),
+                "invoice_number": inv.get("invoice_number"),
+                "total": inv.get("total"),
+                "reused_draft": summary.get("reused_draft"),
+            })
+        except Exception as e:
+            logger.exception("Weekly invoice batch failed for family %s", family_id)
+            errors.append({"family_id": family_id, "error": str(e)})
+
+    await db.scheduled_job_runs.insert_one(serialize({
+        "job": WEEKLY_BATCH_JOB,
+        "period_key": run_key,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "ran_at": now().isoformat(),
+        "created_count": len(created),
+        "skipped_count": len(skipped_families),
+        "error_count": len(errors),
+    }))
+
+    return {
+        "status": "ok",
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "created": created,
+        "skipped_families": len(skipped_families),
+        "errors": errors,
+    }
+
+
+async def _weekly_invoice_scheduler_loop() -> None:
+    """Hourly check: on Saturday (Eastern), auto-create Mon–Fri draft invoices."""
+    await asyncio.sleep(30)
+    while True:
+        try:
+            today = datetime.now(SESSION_TIME_ZONE).date()
+            if today.weekday() == 5:
+                result = await run_saturday_weekly_batch(as_of=today)
+                if result.get("status") == "ok":
+                    logger.info(
+                        "Saturday weekly invoices: %s drafts for %s–%s",
+                        len(result.get("created") or []),
+                        result.get("period_start"),
+                        result.get("period_end"),
+                    )
+        except Exception:
+            logger.exception("Weekly invoice scheduler failed")
+        await asyncio.sleep(3600)
+
+
+def start_weekly_invoice_scheduler() -> None:
+    asyncio.create_task(_weekly_invoice_scheduler_loop())

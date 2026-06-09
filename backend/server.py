@@ -26,6 +26,7 @@ from routes_invoices import router as invoices_router  # noqa: E402
 from routes_sessions import router as sessions_router  # noqa: E402
 from routes_enrollment import router as enrollment_router  # noqa: E402
 from weather import router as weather_router  # noqa: E402
+from invoice_auto import start_weekly_invoice_scheduler  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,4 +106,5 @@ async def on_startup():
         await refresh_rate_card_from_notion()
     else:
         logger.info("Rate card: built-in defaults (Notion not configured)")
+    start_weekly_invoice_scheduler()
     logger.info("EAT Portal backend ready.")

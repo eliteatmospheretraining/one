@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, formatApiError } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
@@ -59,6 +59,7 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
     const [repeatDuration, setRepeatDuration] = useState(1);
     const [repeatWeekdays, setRepeatWeekdays] = useState(() => defaultRepeatWeekdays("full_time"));
     const [saving, setSaving] = useState(false);
+    const athletesTouchedRef = useRef(false);
 
     const recurringDates = useMemo(() => {
         if (isEdit || !repeat || !date) return [];
@@ -82,36 +83,39 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
     }, [open]);
 
     useEffect(() => {
-        if (open) {
-            if (session) {
-                setDate(session.date);
-                setStartTime(snapTimeToQuarterHour(session.start_time || ""));
-                setEndTime(snapTimeToQuarterHour(session.end_time || ""));
-                setType(session.session_type);
-                setLocation(session.location || "");
-                setNotes(session.notes || "");
-                setSelectedIds(session.athlete_ids || []);
-            } else {
-                const start = nextHourStartFromNow();
-                setDate(defaultDate || "");
-                setStartTime(start);
-                setEndTime(addHoursToTime24(start, 5));
-                setType("full_time");
-                setLocation("");
-                setNotes("");
-                setRepeat(false);
-                setRepeatFrequency("weekly");
-                setRepeatInterval(1);
-                setRepeatDuration(1);
-                setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
-            }
+        if (!open) {
+            athletesTouchedRef.current = false;
+            return;
+        }
+        if (session) {
+            setDate(session.date);
+            setStartTime(snapTimeToQuarterHour(session.start_time || ""));
+            setEndTime(snapTimeToQuarterHour(session.end_time || ""));
+            setType(session.session_type);
+            setLocation(session.location || "");
+            setNotes(session.notes || "");
+            setSelectedIds(session.athlete_ids || []);
+        } else {
+            const start = nextHourStartFromNow();
+            setDate(defaultDate || "");
+            setStartTime(start);
+            setEndTime(addHoursToTime24(start, 5));
+            setType("full_time");
+            setLocation("");
+            setNotes("");
+            setRepeat(false);
+            setRepeatFrequency("weekly");
+            setRepeatInterval(1);
+            setRepeatDuration(1);
+            setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
+            athletesTouchedRef.current = false;
         }
     }, [open, session, defaultDate]);
 
     useEffect(() => {
-        if (!open || session || type !== "full_time") return;
+        if (!open || isEdit || type !== "full_time" || athletesTouchedRef.current) return;
         setSelectedIds(expectedAthleteIds(athletes, type));
-    }, [open, session, athletes, type]);
+    }, [open, isEdit, type, athletes]);
 
     useEffect(() => {
         if (isEdit || !repeat || repeatFrequency !== "weekly" || type !== "full_time") return;
@@ -121,6 +125,7 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
     const filteredAthletes = athletes.filter((a) => a.status === "active" && athleteHasProgram(a, type));
 
     const toggle = (id) => {
+        athletesTouchedRef.current = true;
         setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     };
 
@@ -226,7 +231,13 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
                         onValueChange={(v) => {
                             setType(v);
                             if (!isEdit) {
-                                setSelectedIds(v === "full_time" ? expectedAthleteIds(athletes, v) : []);
+                                if (v === "full_time") {
+                                    athletesTouchedRef.current = false;
+                                    setSelectedIds(expectedAthleteIds(athletes, v));
+                                } else {
+                                    athletesTouchedRef.current = true;
+                                    setSelectedIds([]);
+                                }
                             }
                         }}
                     >

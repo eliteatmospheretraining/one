@@ -136,43 +136,67 @@ async def invoice_service_options():
     return list_service_options()
 
 
+async def generate_family_period_invoice(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+) -> dict:
+    """Create or refresh a draft invoice for a family and period from attendance + rate card."""
+    family = await db.families.find_one({"id": family_id}, {"_id": 0})
+    if not family:
+        raise HTTPException(404, "Family not found")
+    if period_end < period_start:
+        raise HTTPException(400, "Period end must be on or after period start")
+
+    existing = await _find_family_draft(family_id, period_start, period_end)
+    if existing:
+        out = await _sync_draft_invoice(existing["id"], replace=True)
+        out["reused_draft"] = True
+        return out
+
+    invoice_number = await _next_invoice_number()
+    invoice = Invoice(
+        invoice_number=invoice_number,
+        family_id=family_id,
+        period_start=period_start,
+        period_end=period_end,
+        status=InvoiceStatus.draft,
+    )
+    await db.invoices.insert_one(serialize(invoice.model_dump()))
+
+    out = await _sync_draft_invoice(invoice.id, replace=False)
+    out["reused_draft"] = False
+    return out
+
+
 @router.post("/generate")
 async def generate_invoice(req: InvoiceGenerateRequest):
     """Create or refresh a draft invoice for a family and period from attendance + rate card."""
     try:
-        family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
-        if not family:
-            raise HTTPException(404, "Family not found")
-
         period_start = await _parse_date(req.period_start)
         period_end = await _parse_date(req.period_end)
-        if period_end < period_start:
-            raise HTTPException(400, "Period end must be on or after period start")
-
-        existing = await _find_family_draft(req.family_id, period_start, period_end)
-        if existing:
-            out = await _sync_draft_invoice(existing["id"], replace=True)
-            out["reused_draft"] = True
-            return out
-
-        invoice_number = await _next_invoice_number()
-        invoice = Invoice(
-            invoice_number=invoice_number,
-            family_id=req.family_id,
-            period_start=req.period_start,
-            period_end=req.period_end,
-            status=InvoiceStatus.draft,
-        )
-        await db.invoices.insert_one(serialize(invoice.model_dump()))
-
-        out = await _sync_draft_invoice(invoice.id, replace=False)
-        out["reused_draft"] = False
-        return out
+        return await generate_family_period_invoice(req.family_id, period_start, period_end)
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("Invoice generate failed for family %s", req.family_id)
         raise HTTPException(500, f"Invoice generate failed: {e}") from e
+
+
+@router.post("/run-weekly-batch")
+async def run_weekly_invoice_batch(force: bool = True):
+    """Create Mon–Fri draft invoices for all families (Saturday auto-batch; coach can run anytime)."""
+    from invoice_auto import run_saturday_weekly_batch
+
+    return await run_saturday_weekly_batch(force=force)
+
+
+@router.get("/ready-to-invoice")
+async def ready_to_invoice():
+    """Billable completed sessions not yet on any invoice, grouped by family and athlete."""
+    from invoice_billing import ready_to_invoice_summary
+
+    return await ready_to_invoice_summary()
 
 
 def _populate_message(new_items: list, skipped: list[dict]) -> str:
@@ -390,18 +414,6 @@ async def download_invoice_pdf(invoice_id: str):
     )
 
 
-@router.get("/{invoice_id}/email-preview")
-async def preview_invoice_email(invoice_id: str, kind: str = "due"):
-    """Coach-only HTML preview of the guardian invoice email (due or paid)."""
-    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
-    if not inv:
-        raise HTTPException(404, "Invoice not found")
-    from invoice_send import build_preview_html
-
-    _, html, _ = await build_preview_html(invoice_id, kind)
-    return Response(content=html, media_type="text/html; charset=utf-8")
-
-
 @router.post("/{invoice_id}/send")
 async def send_invoice(invoice_id: str):
     """Email guardian a magic link to view the due invoice (PDF attached)."""
@@ -434,7 +446,12 @@ async def send_invoice_receipt(invoice_id: str):
     if inv["status"] != InvoiceStatus.paid.value:
         raise HTTPException(400, "Invoice must be paid before sending a receipt email")
 
-    return await send_guardian_invoice_email(invoice_id, "paid")
+    result = await send_guardian_invoice_email(invoice_id, "paid")
+    await db.invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {"receipt_sent_at": now().isoformat()}},
+    )
+    return result
 
 
 @router.post("/{invoice_id}/payments")
@@ -455,14 +472,19 @@ async def record_payment(invoice_id: str, payload: PaymentCreate, coach: dict = 
     await db.invoices.update_one({"id": invoice_id}, {"$set": {"status": InvoiceStatus.paid.value}})
 
     receipt_email = None
-    try:
-        from invoice_send import send_guardian_invoice_email
+    if payload.send_receipt:
+        try:
+            from invoice_send import send_guardian_invoice_email
 
-        receipt_email = await send_guardian_invoice_email(invoice_id, "paid")
-    except HTTPException as e:
-        logger.warning(f"Paid receipt email not sent for {invoice_id}: {e.detail}")
-    except Exception as e:
-        logger.warning(f"Paid receipt email failed for {invoice_id}: {e}")
+            receipt_email = await send_guardian_invoice_email(invoice_id, "paid")
+            await db.invoices.update_one(
+                {"id": invoice_id},
+                {"$set": {"receipt_sent_at": now().isoformat()}},
+            )
+        except HTTPException as e:
+            logger.warning(f"Paid receipt email not sent for {invoice_id}: {e.detail}")
+        except Exception as e:
+            logger.warning(f"Paid receipt email failed for {invoice_id}: {e}")
 
     out = {"status": "paid", "payment": pay.model_dump()}
     if receipt_email:

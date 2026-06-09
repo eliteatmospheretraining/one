@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from billing import (
     SESSION_TIME_ZONE,
@@ -754,3 +754,135 @@ async def billing_status_for_session(session_id: str) -> list[dict]:
             "description": li.get("description"),
         })
     return out
+
+
+async def ready_to_invoice_summary(*, lookback_days: int = 120) -> dict:
+    """Families and athletes with billable attendance not yet on an invoice."""
+    today = datetime.now(SESSION_TIME_ZONE).date()
+    period_start = today - timedelta(days=lookback_days)
+
+    families = await db.families.find({}, {"_id": 0, "id": 1, "family_name": 1}).to_list(500)
+    fam_by_id = {f["id"]: f for f in families}
+    athletes = await db.athletes.find(
+        {"status": {"$in": ["active", "pending"]}},
+        {"_id": 0},
+    ).to_list(2000)
+    athletes_by_id = {a["id"]: a for a in athletes}
+    athlete_family: dict[str, str] = {
+        a["id"]: a["family_id"] for a in athletes if a.get("family_id")
+    }
+
+    family_billed: dict[str, set[tuple[str, str]]] = {}
+    for fam in families:
+        family_billed[fam["id"]] = await _billed_session_athletes_for_family(fam["id"])
+
+    locked = await _invoiced_attendance_ids()
+
+    sessions = await db.sessions.find(
+        {
+            "date": {"$gte": period_start.isoformat(), "$lte": today.isoformat()},
+            "status": {
+                "$in": [
+                    SessionStatus.completed.value,
+                    SessionStatus.scheduled.value,
+                ]
+            },
+        },
+        {"_id": 0},
+    ).to_list(10000)
+    sessions = [s for s in sessions if session_is_billable(s)]
+    sessions_by_id = {s["id"]: s for s in sessions}
+    if not sessions_by_id:
+        return {"total_sessions": 0, "total_families": 0, "families": []}
+
+    records = await db.attendance_records.find(
+        {"session_id": {"$in": list(sessions_by_id.keys())}},
+        {"_id": 0},
+    ).to_list(20000)
+
+    # family_id -> athlete_id -> {session_ids, dates}
+    grouped: dict[str, dict[str, dict]] = defaultdict(
+        lambda: defaultdict(lambda: {"session_ids": set(), "dates": set()})
+    )
+    all_session_ids: set[str] = set()
+
+    for r in records:
+        if r.get("attendance_type") == AttendanceType.absent.value:
+            continue
+        if r["id"] in locked:
+            continue
+        aid = r["athlete_id"]
+        fid = athlete_family.get(aid)
+        if not fid or fid not in fam_by_id:
+            continue
+        sid = r["session_id"]
+        if (sid, aid) in family_billed.get(fid, set()):
+            continue
+        sess = sessions_by_id.get(sid)
+        if not sess:
+            continue
+
+        grouped[fid][aid]["session_ids"].add(sid)
+        grouped[fid][aid]["dates"].add(sess["date"])
+        all_session_ids.add(sid)
+
+    family_rows: list[dict] = []
+    for fid, by_athlete in grouped.items():
+        fam = fam_by_id[fid]
+        family_session_ids: set[str] = set()
+        athlete_rows: list[dict] = []
+
+        for aid, data in by_athlete.items():
+            athlete = athletes_by_id.get(aid)
+            if not athlete:
+                continue
+            family_session_ids.update(data["session_ids"])
+            dates = sorted(data["dates"])
+            monthly = _is_monthly_prepay(athlete.get("rate_type"))
+            full_time = athlete_on_full_time(athlete)
+            day_count = len(dates)
+            session_count = len(data["session_ids"])
+
+            if monthly:
+                unit_label = "training day" if day_count == 1 else "training days"
+                detail = f"{day_count} {unit_label} · monthly rate"
+            elif full_time:
+                unit_label = "training day" if day_count == 1 else "training days"
+                detail = f"{day_count} {unit_label}"
+            else:
+                unit_label = "session" if session_count == 1 else "sessions"
+                detail = f"{session_count} {unit_label}"
+
+            athlete_rows.append({
+                "athlete_id": aid,
+                "athlete_name": athlete.get("full_name") or "Athlete",
+                "session_count": session_count,
+                "training_days": day_count,
+                "detail": detail,
+                "date_start": dates[0] if dates else None,
+                "date_end": dates[-1] if dates else None,
+                "rate_type": athlete.get("rate_type"),
+                "program_types": athlete.get("program_types") or [],
+            })
+
+        if not athlete_rows:
+            continue
+
+        athlete_rows.sort(key=lambda a: (-a["session_count"], a["athlete_name"]))
+        fam_dates = sorted({d for a in athlete_rows for d in [a["date_start"], a["date_end"]] if d})
+        family_rows.append({
+            "family_id": fid,
+            "family_name": fam.get("family_name") or "Family",
+            "session_count": len(family_session_ids),
+            "athletes": athlete_rows,
+            "period_start": fam_dates[0] if fam_dates else None,
+            "period_end": fam_dates[-1] if fam_dates else None,
+        })
+
+    family_rows.sort(key=lambda f: (-f["session_count"], f["family_name"]))
+
+    return {
+        "total_sessions": len(all_session_ids),
+        "total_families": len(family_rows),
+        "families": family_rows,
+    }

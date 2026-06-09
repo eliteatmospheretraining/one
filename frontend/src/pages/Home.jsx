@@ -6,8 +6,9 @@ import { useAuth } from "../lib/auth";
 import { useGreeting } from "../lib/greeting";
 import { SessionStatusPill } from "../components/Pills";
 import WeatherIcon from "../components/WeatherIcon";
-import { fmtMoney, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms, effectiveSessionStatus } from "../lib/format";
+import { fmtMoney, fmtInvoiceDate, sessionRosterPreviewLabel, todayISO, fmtTime, formatAthletePrograms, effectiveSessionStatus } from "../lib/format";
 import { AthleteFormModal } from "./AthleteForm";
+import { Modal } from "../components/Modal";
 import { toast } from "sonner";
 
 const TYPE_BAR = {
@@ -128,7 +129,9 @@ export default function Home() {
     const [outstandingTotal, setOutstandingTotal] = useState(0);
     const [sessionsThisMonth, setSessionsThisMonth] = useState(0);
     const [revenueThisMonth, setRevenueThisMonth] = useState(0);
-    const [readyToInvoiceCount, setReadyToInvoiceCount] = useState(0);
+    const [readyToInvoice, setReadyToInvoice] = useState({ total_sessions: 0, families: [] });
+    const [readyToInvoiceOpen, setReadyToInvoiceOpen] = useState(false);
+    const [readyToInvoiceLoading, setReadyToInvoiceLoading] = useState(false);
     const [pendingAthletes, setPendingAthletes] = useState([]);
     const [families, setFamilies] = useState([]);
     const [athleteFormOpen, setAthleteFormOpen] = useState(false);
@@ -184,22 +187,8 @@ export default function Home() {
                         .reduce((sum, payment) => sum + Number(payment.amount_received || 0), 0)
                 );
 
-                const invoicedAttendanceIds = new Set(
-                    allInvoiceDetails
-                        .flatMap((detail) => detail.data.line_items || [])
-                        .map((item) => item.attendance_record_id)
-                        .filter(Boolean)
-                );
-
-                const completedSessions = (await api.get("/sessions", { params: { status: "completed" } })).data || [];
-                const completedAttendances = await Promise.all(
-                    completedSessions.map((session) => api.get(`/sessions/${session.id}/attendance`))
-                );
-                setReadyToInvoiceCount(
-                    completedAttendances.filter((recordResp) =>
-                        (recordResp.data.records || []).some((record) => !invoicedAttendanceIds.has(record.id))
-                    ).length
-                );
+                const readyResp = await api.get("/invoices/ready-to-invoice");
+                setReadyToInvoice(readyResp.data || { total_sessions: 0, families: [] });
             } catch (e) {
                 setError(e.response?.data?.detail || "Could not load dashboard data.");
             } finally {
@@ -247,6 +236,29 @@ export default function Home() {
         fetchAttendance();
     }, [todaySessions]);
 
+    async function openReadyToInvoice() {
+        setReadyToInvoiceOpen(true);
+        setReadyToInvoiceLoading(true);
+        try {
+            const r = await api.get("/invoices/ready-to-invoice");
+            setReadyToInvoice(r.data || { total_sessions: 0, families: [] });
+        } catch (e) {
+            toast.error(e.response?.data?.detail || "Could not load uninvoiced sessions");
+        } finally {
+            setReadyToInvoiceLoading(false);
+        }
+    }
+
+    function createInvoiceForFamily(family) {
+        const params = new URLSearchParams({ new: "true" });
+        if (family.family_id) params.set("family_id", family.family_id);
+        if (family.period_start) params.set("period_start", family.period_start);
+        if (family.period_end) params.set("period_end", family.period_end);
+        setReadyToInvoiceOpen(false);
+        nav(`/invoices?${params.toString()}`);
+    }
+
+    const readyToInvoiceCount = readyToInvoice.total_sessions || 0;
     const sessionCards = todaySessions.slice(0, 4);
     const invoiceActions = [
         {
@@ -265,7 +277,7 @@ export default function Home() {
             count: readyToInvoiceCount,
             label: "Ready to Invoice",
             detail: `${readyToInvoiceCount} completed session${readyToInvoiceCount === 1 ? "" : "s"} not yet on a draft invoice`,
-            onClick: () => nav("/invoices?new=true"),
+            onClick: openReadyToInvoice,
         },
     ]
         .filter((item) => item.count > 0)
@@ -495,6 +507,78 @@ export default function Home() {
                     refreshPending();
                 }}
             />
+
+            <Modal
+                open={readyToInvoiceOpen}
+                onOpenChange={setReadyToInvoiceOpen}
+                title="Ready to Invoice"
+                description="Sessions with billable attendance not yet on an invoice"
+                maxW="max-w-xl"
+            >
+                {readyToInvoiceLoading ? (
+                    <div className="text-center py-8 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
+                ) : readyToInvoiceCount === 0 ? (
+                    <div className="text-sm text-muted font-light py-4">All billable sessions are on invoices.</div>
+                ) : (
+                    <div className="flex flex-col gap-4">
+                        <p className="text-sm text-muted font-light">
+                            {readyToInvoiceCount} session{readyToInvoiceCount === 1 ? "" : "s"} across{" "}
+                            {readyToInvoice.total_families || readyToInvoice.families?.length || 0} famil
+                            {(readyToInvoice.total_families || readyToInvoice.families?.length || 0) === 1 ? "y" : "ies"}{" "}
+                            need invoicing.
+                        </p>
+                        <div className="flex flex-col gap-3">
+                            {(readyToInvoice.families || []).map((family) => (
+                                <div key={family.family_id} className="border border-subtle bg-ink p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="font-thunder uppercase text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
+                                                {family.family_name} Family
+                                            </div>
+                                            <div className="text-xs text-muted font-light mt-1">
+                                                {family.session_count} session{family.session_count === 1 ? "" : "s"}
+                                                {family.period_start && family.period_end ? (
+                                                    <span>
+                                                        {" "}
+                                                        · {fmtInvoiceDate(family.period_start)}
+                                                        {family.period_end !== family.period_start
+                                                            ? ` – ${fmtInvoiceDate(family.period_end)}`
+                                                            : ""}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => createInvoiceForFamily(family)}
+                                            className="shrink-0 text-[10px] uppercase tracking-wider2 text-accent hover:underline"
+                                        >
+                                            Create invoice
+                                        </button>
+                                    </div>
+                                    <ul className="mt-3 flex flex-col gap-2 border-t border-subtle pt-3">
+                                        {(family.athletes || []).map((athlete) => (
+                                            <li key={athlete.athlete_id} className="flex items-baseline justify-between gap-3 text-sm">
+                                                <span className="text-paper font-light min-w-0 truncate">{athlete.athlete_name}</span>
+                                                <span className="text-muted text-xs shrink-0 text-right">
+                                                    {athlete.detail}
+                                                    {athlete.date_start && athlete.date_end && athlete.date_end !== athlete.date_start ? (
+                                                        <span className="block text-[10px] mt-0.5">
+                                                            {fmtInvoiceDate(athlete.date_start)} – {fmtInvoiceDate(athlete.date_end)}
+                                                        </span>
+                                                    ) : athlete.date_start ? (
+                                                        <span className="block text-[10px] mt-0.5">{fmtInvoiceDate(athlete.date_start)}</span>
+                                                    ) : null}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 }

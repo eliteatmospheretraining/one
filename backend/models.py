@@ -370,6 +370,7 @@ class Invoice(BaseModel):
     status: InvoiceStatus = InvoiceStatus.draft
     pdf_url: Optional[str] = None
     sent_at: Optional[datetime] = None
+    receipt_sent_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -409,6 +410,7 @@ class PaymentCreate(BaseModel):
     received_date: date
     method: str = "Zelle"
     note: Optional[str] = None
+    send_receipt: bool = False
 
 
 # ---------- Auth ----------

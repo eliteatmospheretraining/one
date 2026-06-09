@@ -58,6 +58,7 @@ export default function Invoices() {
     const [families, setFamilies] = useState([]);
     const [loading, setLoading] = useState(true);
     const [generateOpen, setGenerateOpen] = useState(false);
+    const [generatePresets, setGeneratePresets] = useState(null);
     const [detailId, setDetailId] = useState(null);
     const currentCalendarYear = new Date().getFullYear();
     const revenueYearMax = Math.max(FIRST_DATA_YEAR, currentCalendarYear);
@@ -106,7 +107,18 @@ export default function Invoices() {
         }
         if (next.get("new") === "true") {
             setGenerateOpen(true);
+            const presets = {};
+            const familyId = next.get("family_id");
+            const periodStart = next.get("period_start");
+            const periodEnd = next.get("period_end");
+            if (familyId) presets.familyId = familyId;
+            if (periodStart) presets.periodStart = periodStart;
+            if (periodEnd) presets.periodEnd = periodEnd;
+            if (Object.keys(presets).length) setGeneratePresets(presets);
             next.delete("new");
+            next.delete("family_id");
+            next.delete("period_start");
+            next.delete("period_end");
             changed = true;
         }
         if (changed) setSearchParams(next, { replace: true });
@@ -345,9 +357,10 @@ export default function Invoices() {
 
             <GenerateInvoiceModal
                 open={generateOpen}
-                onOpenChange={setGenerateOpen}
+                onOpenChange={(v) => { setGenerateOpen(v); if (!v) setGeneratePresets(null); }}
                 families={families}
-                onCreated={(invId) => { setGenerateOpen(false); load(); setDetailId(invId); }}
+                presets={generatePresets}
+                onCreated={(invId) => { setGenerateOpen(false); setGeneratePresets(null); load(); setDetailId(invId); }}
             />
 
             {detailId && (
@@ -528,7 +541,7 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     );
 }
 
-function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
+function GenerateInvoiceModal({ open, onOpenChange, families, presets, onCreated }) {
     const [familyId, setFamilyId] = useState("");
     const [start, setStart] = useState("");
     const [end, setEnd] = useState(todayISO());
@@ -536,14 +549,18 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
 
     useEffect(() => {
         if (open) {
-            setFamilyId(families[0]?.id || "");
             const d = new Date();
             d.setDate(1);
             const monthStart = d.toISOString().slice(0, 10);
-            setStart(monthStart);
-            setEnd(lastDayOfMonthIso(monthStart));
+            const defaultFamily = families[0]?.id || "";
+            const presetFamily = presets?.familyId && families.some((f) => f.id === presets.familyId)
+                ? presets.familyId
+                : defaultFamily;
+            setFamilyId(presetFamily);
+            setStart(presets?.periodStart || monthStart);
+            setEnd(presets?.periodEnd || lastDayOfMonthIso(presets?.periodStart || monthStart));
         }
-    }, [open, families]);
+    }, [open, families, presets]);
 
     function onPeriodStartChange(iso) {
         setStart(iso);
@@ -648,35 +665,21 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     }
 
     async function sendReceipt() {
-        if (!window.confirm("Resend the paid receipt email with a magic link?")) return;
+        const isResend = Boolean(data?.invoice?.receipt_sent_at);
+        const prompt = isResend
+            ? "Resend the paid receipt email with a magic link?"
+            : "Email the guardian their paid invoice receipt (PDF attached)?";
+        if (!window.confirm(prompt)) return;
         try {
             const r = await api.post(`/invoices/${invoiceId}/send-receipt`);
-            toast.success("Receipt emailed");
+            toast.success(isResend ? "Receipt re-sent" : "Receipt emailed");
             if (r.data?.dev_magic_url) {
                 toast.message("Dev link", { description: r.data.dev_magic_url, duration: 12000 });
             }
+            await load();
+            onChanged?.();
         } catch (e) {
             toast.error(e.response?.data?.detail || "Send failed");
-        }
-    }
-
-    async function previewEmail(kind) {
-        try {
-            const r = await api.get(`/invoices/${invoiceId}/email-preview`, {
-                params: { kind },
-                responseType: "text",
-            });
-            const html = typeof r.data === "string" ? r.data : String(r.data ?? "");
-            const url = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-            const opened = window.open(url, "_blank");
-            if (!opened) {
-                URL.revokeObjectURL(url);
-                toast.error("Pop-up blocked — allow pop-ups to preview the email.");
-                return;
-            }
-            setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        } catch (e) {
-            toast.error(e.response?.data?.detail || "Could not load preview");
         }
     }
 
@@ -785,40 +788,22 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                         </div>
                     )}
 
-                    <div className="border-t border-subtle pt-4 flex flex-wrap gap-2">
-                        <button
-                            data-testid={INVOICES.previewDueEmailBtn}
-                            type="button"
-                            onClick={() => previewEmail("due")}
-                            className="eat-btn-secondary"
-                        >
-                            <Mail size={13} className="mr-1.5" strokeWidth={1.75} /> Preview invoice ready
-                        </button>
-                        <button
-                            data-testid={INVOICES.previewPaidEmailBtn}
-                            type="button"
-                            onClick={() => previewEmail("paid")}
-                            className="eat-btn-secondary"
-                        >
-                            <Mail size={13} className="mr-1.5" strokeWidth={1.75} /> Preview payment received
-                        </button>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-subtle">
+                    <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-subtle">
                         <div className="flex flex-wrap gap-2">
-                            {data.invoice.status === "draft" && (
-                                <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-primary">
-                                    <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send invoice email
-                                </button>
-                            )}
-                            {data.invoice.status === "sent" && (
+                            {(data.invoice.status === "draft" || data.invoice.status === "sent") && (
                                 <button data-testid={INVOICES.markPaidBtn} onClick={() => setPayOpen(true)} className="eat-btn-primary">
                                     <DollarSign size={13} className="mr-1.5" strokeWidth={1.75} /> Mark Paid
                                 </button>
                             )}
                             {data.invoice.status === "paid" && (
-                                <button data-testid={INVOICES.sendReceiptBtn} type="button" onClick={sendReceipt} className="eat-btn-secondary">
-                                    <Mail size={13} className="mr-1.5" strokeWidth={1.75} /> Resend receipt
+                                <button data-testid={INVOICES.sendReceiptBtn} type="button" onClick={sendReceipt} className="eat-btn-primary">
+                                    <Mail size={13} className="mr-1.5" strokeWidth={1.75} />
+                                    {data.invoice.receipt_sent_at ? "Resend receipt" : "Send receipt"}
+                                </button>
+                            )}
+                            {data.invoice.status === "draft" && (
+                                <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-secondary">
+                                    <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send due invoice
                                 </button>
                             )}
                         </div>
@@ -922,7 +907,7 @@ function PaymentModal({ open, onOpenChange, invoiceId, amountSuggest, onPaid }) 
                 note: note || null,
             });
             addPaymentMethodPreset(methodTrimmed);
-            toast.success("Payment logged · Invoice paid");
+            toast.success("Payment logged — send receipt when ready");
             onPaid?.();
         } catch (e) {
             toast.error(e.response?.data?.detail || "Save failed");

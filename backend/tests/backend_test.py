@@ -687,20 +687,6 @@ class TestInvoices:
         assert "application/pdf" in pdf.headers.get("content-type", "")
         assert pdf.content[:4] == b"%PDF"
 
-        # Email HTML previews (due + paid after payment below)
-        prev_due = requests.get(
-            f"{API}/invoices/{inv1['id']}/email-preview",
-            params={"kind": "due"},
-            headers=auth_headers,
-        )
-        assert prev_due.status_code == 200, prev_due.text[:200]
-        assert "text/html" in prev_due.headers.get("content-type", "")
-        assert "is ready" in prev_due.text.lower()
-        assert "View invoice" in prev_due.text
-        assert "EAT family" in prev_due.text
-        assert "If the button doesn't work" not in prev_due.text
-        assert "/06/" in prev_due.text or "06/" in prev_due.text
-
         # Test absent records excluded from invoice
         sess3 = requests.post(
             f"{API}/sessions",
@@ -732,18 +718,6 @@ class TestInvoices:
         det2 = requests.get(f"{API}/invoices/{inv1['id']}", headers=auth_headers).json()
         assert det2["invoice"]["status"] == "paid"
         assert len(det2["payments"]) == 1
-
-        prev_paid = requests.get(
-            f"{API}/invoices/{inv1['id']}/email-preview",
-            params={"kind": "paid"},
-            headers=auth_headers,
-        )
-        assert prev_paid.status_code == 200
-        assert "Much appreciated" in prev_paid.text
-        assert "is attached" in prev_paid.text
-        assert "View invoice" in prev_paid.text
-        assert "/api/invoice-access/pdf?token=" in prev_paid.text
-        assert "See you on the court" in prev_paid.text
 
         # DELETE only for drafts: inv1 is paid → must fail
         d_paid = requests.delete(f"{API}/invoices/{inv1['id']}", headers=auth_headers)
