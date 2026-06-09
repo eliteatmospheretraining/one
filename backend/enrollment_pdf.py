@@ -135,18 +135,18 @@ def _signature_img_html(signature_data: str) -> str:
         return '<div class="sig-empty">Signature on file</div>'
 
 
-def _field(label: str, value: Any, *, wide: bool = False) -> str:
+def _field(label: str, value: Any, *, colspan: int = 1, multiline: bool = False) -> str:
     val = _display(value)
-    cls = "field field-wide" if wide else "field"
-    return f"""
-    <div class="{cls}">
+    val_cls = "fld-val fld-multiline" if multiline else "fld-val"
+    content = _esc(val) if val else "&#160;"
+    return f"""<td class="fld-cell" colspan="{colspan}">
       <div class="fld-lbl">{_esc(label)}</div>
-      <div class="fld-val">{_esc(val) if val else "&nbsp;"}</div>
-    </div>"""
+      <div class="{val_cls}">{content}</div>
+    </td>"""
 
 
-def _row(fields: str, cols: int = 2) -> str:
-    return f'<div class="row col{cols}">{fields}</div>'
+def _row(*cells: str, cols: int = 2) -> str:
+    return f'<table class="form-row cols-{cols}"><tr>{"".join(cells)}</tr></table>'
 
 
 def _sec(title: str) -> str:
@@ -163,27 +163,41 @@ def _chips(options: Iterable[tuple[str, str]], selected: Any) -> str:
     for value, label in options:
         on = " on" if value in selected_set else ""
         items.append(f'<span class="chip{on}">{_esc(label)}</span>')
-    return f'<div class="chips">{"".join(items)}</div>'
+    return f'<div class="chip-row">{"".join(items)}</div>'
+
+
+def _med_cell(label: str, checked: bool) -> str:
+    on = " on" if checked else ""
+    mark = "&#10003;" if checked else "&#160;"
+    return f"""<td class="med-cell{on}">
+      <table class="med-inner"><tr>
+        <td class="ck-wrap"><span class="ck{on}">{mark}</span></td>
+        <td class="med-txt">{_esc(label)}</td>
+      </tr></table>
+    </td>"""
 
 
 def _med_grid(medical_none: bool, medical_flags: list[str]) -> str:
     flags = set(medical_flags or [])
-    items = [
-        f'<div class="mi{" on" if medical_none else ""}"><span class="ck"></span><span class="mt">None / No known issues</span></div>'
-    ]
-    for flag in MEDICAL_FLAGS:
-        on = " on" if flag in flags else ""
-        items.append(f'<div class="mi{on}"><span class="ck"></span><span class="mt">{_esc(flag)}</span></div>')
-    return f'<div class="med-grid">{"".join(items)}</div>'
+    labels = ["None / No known issues", *MEDICAL_FLAGS]
+    checked = [medical_none, *[f in flags for f in MEDICAL_FLAGS]]
+    rows = []
+    for i in range(0, len(labels), 2):
+        cells = [
+            _med_cell(labels[i], checked[i]),
+            _med_cell(labels[i + 1], checked[i + 1]) if i + 1 < len(labels) else '<td class="med-cell med-pad"></td>',
+        ]
+        rows.append(f"<tr>{''.join(cells)}</tr>")
+    return f'<table class="med-table">{"".join(rows)}</table>'
 
 
 def _radio(label: str, detail: str, selected: bool) -> str:
     on = " on" if selected else ""
-    return f"""
-    <div class="radio-row">
-      <span class="rb{on}"></span>
-      <span class="rt"><strong>{_esc(label)}</strong> — {_esc(detail)}</span>
-    </div>"""
+    mark = "&#10003;" if selected else "&#160;"
+    return f"""<table class="radio-table"><tr>
+      <td class="rb-wrap"><span class="rb{on}">{mark}</span></td>
+      <td class="rt"><strong>{_esc(label)}</strong> — {_esc(detail)}</td>
+    </tr></table>"""
 
 
 def _waiver_html() -> str:
@@ -223,38 +237,39 @@ def render_enrollment_pdf(ctx: dict) -> bytes:
     # Contact section rows mirror Enroll.jsx adult vs minor layouts.
     if is_adult:
         contact_block = "".join([
-            _row("".join([
+            _row(
                 _field("Name", ctx.get("contact_name")),
                 _field("Phone", ctx.get("contact_phone")),
-            ])),
-            _row("".join([
+            ),
+            _row(
                 _field("Email", ctx.get("contact_email")),
                 _field("Street Address", ctx.get("street_address")),
-            ]), cols=2),
-            _row(_field("City / State / Zip", ctx.get("city_state_zip"), wide=True), cols=1),
+            ),
+            _row(_field("City / State / Zip", ctx.get("city_state_zip"), colspan=2)),
         ])
     else:
         contact_block = "".join([
-            _row("".join([
+            _row(
                 _field("Name", ctx.get("contact_name")),
                 _field("Relationship", ctx.get("contact_relationship")),
-            ])),
-            _row("".join([
+            ),
+            _row(
                 _field("Phone", ctx.get("contact_phone")),
                 _field("Email", ctx.get("contact_email")),
-            ])),
-            _row("".join([
+            ),
+            _row(
                 _field("Street Address", ctx.get("street_address")),
                 _field("City / State / Zip", ctx.get("city_state_zip")),
-            ])),
+            ),
         ])
 
     medical_details_block = ""
     if medical_details and not medical_none:
-        medical_details_block = f"""
-        <div class="cond show">
-          {_field("Please describe", medical_details, wide=True)}
-        </div>"""
+        medical_details_block = (
+            '<div class="cond show">'
+            + _row(_field("Please describe", medical_details, colspan=2, multiline=True))
+            + "</div>"
+        )
 
     doc = f"""<!DOCTYPE html>
 <html>
@@ -330,12 +345,20 @@ body {{
   padding-bottom: 4pt;
   border-bottom: 1pt solid #e8e8e8;
 }}
-.row {{ display: grid; gap: 8pt; margin-bottom: 8pt; }}
-.col1 {{ grid-template-columns: 1fr; }}
-.col2 {{ grid-template-columns: 1fr 1fr; }}
-.col3 {{ grid-template-columns: 1fr 1fr 1fr; }}
-.field {{ display: flex; flex-direction: column; gap: 3pt; }}
-.field-wide {{ grid-column: 1 / -1; }}
+.form-row {{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-bottom: 8pt;
+  table-layout: fixed;
+}}
+.form-row.cols-2 .fld-cell {{ width: 50%; padding: 0 5pt 0 0; }}
+.form-row.cols-2 .fld-cell:last-child {{ padding-right: 0; padding-left: 5pt; }}
+.form-row.cols-2 .fld-cell[colspan="2"] {{ padding-left: 0; padding-right: 0; width: 100%; }}
+.form-row.cols-3 .fld-cell {{ width: 33.33%; padding: 0 4pt; }}
+.form-row.cols-3 .fld-cell:first-child {{ padding-left: 0; }}
+.form-row.cols-3 .fld-cell:last-child {{ padding-right: 0; }}
+.form-row .fld-cell {{ vertical-align: top; }}
 .fld-lbl {{
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
@@ -343,17 +366,23 @@ body {{
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #999;
+  margin-bottom: 3pt;
 }}
 .fld-val {{
+  display: block;
+  width: 100%;
   background: #fff;
   border: 1pt solid #e0e0e0;
   border-radius: 1pt;
   color: #222;
   font-size: 10pt;
   font-weight: 300;
-  padding: 7pt 9pt;
-  min-height: 28pt;
+  padding: 8pt 10pt;
+  min-height: 30pt;
+  line-height: 1.35;
+  word-wrap: break-word;
 }}
+.fld-multiline {{ min-height: 52pt; }}
 .chip-lbl {{
   font-family: 'Barlow Condensed', sans-serif;
   font-weight: 600;
@@ -363,8 +392,11 @@ body {{
   color: #999;
   margin: 0 0 6pt;
 }}
-.chips {{ display: flex; flex-wrap: wrap; gap: 5pt; margin-bottom: 8pt; }}
+.chip-row {{ margin-bottom: 8pt; line-height: 2.4; }}
 .chip {{
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 5pt 5pt 0;
   background: #fff;
   border: 1pt solid #e0e0e0;
   border-radius: 1pt;
@@ -373,63 +405,55 @@ body {{
   font-size: 8.5pt;
   font-weight: 700;
   letter-spacing: 0.06em;
-  padding: 5pt 9pt;
+  padding: 6pt 10pt;
   text-transform: uppercase;
+  line-height: 1.2;
 }}
 .chip.on {{
   background: #c8f000;
   border-color: #c8f000;
   color: #222;
 }}
-.med-grid {{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.med-table {{
+  width: 100%;
+  border-collapse: collapse;
   border: 1pt solid #e0e0e0;
-  border-radius: 1pt;
-  overflow: hidden;
   margin-bottom: 8pt;
+  table-layout: fixed;
 }}
-.mi {{
-  display: flex;
-  align-items: center;
-  gap: 7pt;
-  padding: 7pt 9pt;
-  border-bottom: 1pt solid #f0f0f0;
-  border-right: 1pt solid #f0f0f0;
+.med-cell {{
+  width: 50%;
+  border: 1pt solid #f0f0f0;
   background: #fff;
+  padding: 0;
+  vertical-align: middle;
 }}
-.mi:nth-child(2n) {{ border-right: none; }}
-.mi:nth-last-child(-n+2) {{ border-bottom: none; }}
-.mi.on {{ background: #fafef0; }}
-.ck {{
-  width: 11pt;
-  height: 11pt;
+.med-cell.on {{ background: #fafef0; }}
+.med-cell.med-pad {{ border-color: #f0f0f0; }}
+.med-inner {{ width: 100%; border-collapse: collapse; }}
+.ck-wrap, .rb-wrap {{ width: 18pt; vertical-align: middle; padding: 8pt 0 8pt 9pt; }}
+.med-txt {{ font-size: 9pt; color: #555; vertical-align: middle; padding: 8pt 9pt 8pt 0; line-height: 1.3; }}
+.ck, .rb {{
+  display: inline-block;
+  width: 12pt;
+  height: 12pt;
   border: 1pt solid #ddd;
   border-radius: 1pt;
-  flex-shrink: 0;
   background: #fff;
-  position: relative;
+  text-align: center;
+  font-size: 8pt;
+  line-height: 12pt;
+  color: #222;
+  vertical-align: middle;
 }}
-.mi.on .ck {{ background: #c8f000; border-color: #c8f000; }}
-.mi.on .ck::after {{
-  content: '';
-  position: absolute;
-  left: 2pt;
-  top: 1.5pt;
-  width: 6pt;
-  height: 3.5pt;
-  border-left: 1.2pt solid #222;
-  border-bottom: 1.2pt solid #222;
-  transform: rotate(-45deg);
-}}
-.mt {{ font-size: 9pt; color: #555; }}
+.ck.on, .rb.on {{ background: #c8f000; border-color: #c8f000; }}
 .cond {{
   background: #fafafa;
   border-left: 2pt solid #c8f000;
-  padding: 8pt 10pt;
+  padding: 8pt 10pt 2pt;
   margin: 0 0 8pt;
 }}
-.cond .fld-val {{ background: #fff; }}
+.cond .form-row {{ margin-bottom: 0; }}
 .waiver-page {{ page-break-before: always; padding-top: 4pt; }}
 .prefill-tag {{
   font-family: 'Barlow Condensed', sans-serif;
@@ -453,37 +477,14 @@ body {{
   margin-bottom: 12pt;
 }}
 .waiver-txt strong {{ color: #444; font-weight: 500; }}
-.radio-row {{
-  display: flex;
-  align-items: flex-start;
-  gap: 8pt;
-  padding: 7pt 0;
+.radio-table {{
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0;
   border-bottom: 1pt solid #f0f0f0;
 }}
-.radio-row:last-child {{ border-bottom: none; }}
-.rb {{
-  width: 11pt;
-  height: 11pt;
-  border: 1pt solid #ddd;
-  border-radius: 1pt;
-  flex-shrink: 0;
-  margin-top: 1pt;
-  background: #fff;
-  position: relative;
-}}
-.rb.on {{ background: #c8f000; border-color: #c8f000; }}
-.rb.on::after {{
-  content: '';
-  position: absolute;
-  left: 2pt;
-  top: 1.5pt;
-  width: 6pt;
-  height: 3.5pt;
-  border-left: 1.2pt solid #222;
-  border-bottom: 1.2pt solid #222;
-  transform: rotate(-45deg);
-}}
-.rt {{ font-size: 9pt; color: #666; line-height: 1.45; }}
+.radio-table:last-child {{ border-bottom: none; }}
+.rt {{ font-size: 9pt; color: #666; line-height: 1.45; vertical-align: middle; padding: 8pt 0; }}
 .rt strong {{ color: #333; font-weight: 500; }}
 .sig-block {{
   margin-top: 10pt;
@@ -533,23 +534,24 @@ body {{
   </div>
 
   {_sec("Athlete")}
-  {_row("".join([
+  {_row(
       _field("Full Name", athlete_name),
       _field("Date of Birth", _fmt_date(ctx.get("date_of_birth"))),
-  ]))}
-  {_row("".join([
+  )}
+  {_row(
       _field("School", ctx.get("school")),
       _field("Grade", ctx.get("grade")),
       _field("T-Shirt", ctx.get("shirt_size")),
-  ]), cols=3)}
+      cols=3,
+  )}
   {_chip_lbl("Program of Interest")}
   {_chips(PROGRAMS, program_type)}
 
   {_sec("Tennis Background")}
-  {_row("".join([
+  {_row(
       _field("UTR Rating", ctx.get("utr")),
       _field("WTN Rating", ctx.get("wtn")),
-  ]))}
+  )}
   {_chip_lbl("Primary Goal(s)")}
   {_chips([(g, g) for g in GOALS], goals)}
 
@@ -557,14 +559,14 @@ body {{
   {contact_block}
 
   {_sec("Emergency Contact")}
-  {_row("".join([
+  {_row(
       _field("Name", ctx.get("emergency_contact_name")),
       _field("Relationship", ctx.get("emergency_contact_relationship")),
-  ]))}
-  {_row("".join([
+  )}
+  {_row(
       _field("Phone", ctx.get("emergency_contact_phone")),
       _field("Email", ctx.get("emergency_contact_email")),
-  ]))}
+  )}
 
   {_sec("Medical")}
   {_chip_lbl("Flag any of the following")}
@@ -574,7 +576,7 @@ body {{
   {_sec("Additional")}
   {_chip_lbl("How did you hear about EAT?")}
   {_chips([(r, r) for r in REFERRALS], ctx.get("referral_source") or "")}
-  {_row(_field("Anything else?", ctx.get("additional_notes"), wide=True), cols=1)}
+  {_row(_field("Anything else?", ctx.get("additional_notes"), colspan=2, multiline=True))}
 
   <div class="waiver-page">
     <div class="prefill-tag">{_esc(athlete_name.upper())}</div>
@@ -595,7 +597,7 @@ body {{
     )}
 
     {_sec("Confirm Your Name")}
-    {_row(_field("Typed Name", typed_sig, wide=True), cols=1)}
+    {_row(_field("Typed Name", typed_sig, colspan=2))}
 
     {_sec("Draw Your Signature")}
     <div class="sig-block">
