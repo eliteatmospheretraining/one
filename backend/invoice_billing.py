@@ -20,7 +20,7 @@ from billing import (
     session_is_billable,
     stored_attendance_type,
 )
-from db import db
+from db import db, serialize
 from models import AttendanceType, InvoiceStatus, ProgramType, SessionStatus
 
 
