@@ -55,15 +55,58 @@ async def _parse_date(v) -> date:
 
 
 async def _find_family_draft(family_id: str, period_start: date, period_end: date) -> dict | None:
-    return await db.invoices.find_one(
-        {
-            "family_id": family_id,
-            "status": InvoiceStatus.draft.value,
-            "period_start": period_start.isoformat(),
-            "period_end": period_end.isoformat(),
-        },
+    start = period_start.isoformat()
+    end = period_end.isoformat()
+    drafts = await db.invoices.find(
+        {"family_id": family_id, "status": InvoiceStatus.draft.value},
         {"_id": 0},
+    ).to_list(200)
+    for inv in drafts:
+        ps = str(inv.get("period_start", ""))[:10]
+        pe = str(inv.get("period_end", ""))[:10]
+        if ps == start and pe == end:
+            return inv
+    return None
+
+
+async def _sync_draft_invoice(invoice_id: str, *, replace: bool = False) -> dict:
+    """Rebuild draft lines from attendance + rate card."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.draft.value:
+        raise HTTPException(400, "Only draft invoices can be synced")
+
+    period_start = await _parse_date(inv["period_start"])
+    period_end = await _parse_date(inv["period_end"])
+
+    if replace:
+        await db.invoice_line_items.delete_many({
+            "invoice_id": invoice_id,
+            "description": {"$regex": r"Monthly Rate"},
+        })
+
+    new_items, skipped, session_count = await populate_draft_from_attendance(
+        invoice_id,
+        inv["family_id"],
+        period_start,
+        period_end,
+        line_item_cls=InvoiceLineItem,
+        replace_attendance_lines=replace,
     )
+    total = await _recalc_invoice_totals(invoice_id)
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
+    return {
+        "status": "ok",
+        "added": len(new_items),
+        "session_count": session_count,
+        "skipped": skipped,
+        "invoice": inv,
+        "line_items": items,
+        "total": total,
+        "message": _populate_message(new_items, skipped),
+    }
 
 
 async def _recalc_invoice_totals(invoice_id: str) -> float:
@@ -96,51 +139,40 @@ async def invoice_service_options():
 @router.post("/generate")
 async def generate_invoice(req: InvoiceGenerateRequest):
     """Create or refresh a draft invoice for a family and period from attendance + rate card."""
-    family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
-    if not family:
-        raise HTTPException(404, "Family not found")
+    try:
+        family = await db.families.find_one({"id": req.family_id}, {"_id": 0})
+        if not family:
+            raise HTTPException(404, "Family not found")
 
-    period_start = await _parse_date(req.period_start)
-    period_end = await _parse_date(req.period_end)
+        period_start = await _parse_date(req.period_start)
+        period_end = await _parse_date(req.period_end)
+        if period_end < period_start:
+            raise HTTPException(400, "Period end must be on or after period start")
 
-    existing = await _find_family_draft(req.family_id, period_start, period_end)
-    if existing:
-        out = await refresh_invoice_draft(existing["id"])
-        out["reused_draft"] = True
+        existing = await _find_family_draft(req.family_id, period_start, period_end)
+        if existing:
+            out = await _sync_draft_invoice(existing["id"], replace=True)
+            out["reused_draft"] = True
+            return out
+
+        invoice_number = await _next_invoice_number()
+        invoice = Invoice(
+            invoice_number=invoice_number,
+            family_id=req.family_id,
+            period_start=req.period_start,
+            period_end=req.period_end,
+            status=InvoiceStatus.draft,
+        )
+        await db.invoices.insert_one(serialize(invoice.model_dump()))
+
+        out = await _sync_draft_invoice(invoice.id, replace=False)
+        out["reused_draft"] = False
         return out
-
-    invoice_number = await _next_invoice_number()
-    invoice = Invoice(
-        invoice_number=invoice_number,
-        family_id=req.family_id,
-        period_start=req.period_start,
-        period_end=req.period_end,
-        status=InvoiceStatus.draft,
-    )
-    await db.invoices.insert_one(serialize(invoice.model_dump()))
-
-    new_items, skipped, session_count = await populate_draft_from_attendance(
-        invoice.id,
-        req.family_id,
-        period_start,
-        period_end,
-        line_item_cls=InvoiceLineItem,
-    )
-    total = await _recalc_invoice_totals(invoice.id)
-    inv = await db.invoices.find_one({"id": invoice.id}, {"_id": 0})
-    items = await db.invoice_line_items.find({"invoice_id": invoice.id}, {"_id": 0}).to_list(1000)
-
-    return {
-        "status": "ok",
-        "added": len(new_items),
-        "session_count": session_count,
-        "skipped": skipped,
-        "invoice": inv,
-        "line_items": items,
-        "total": total,
-        "reused_draft": False,
-        "message": _populate_message(new_items, skipped),
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Invoice generate failed for family %s", req.family_id)
+        raise HTTPException(500, f"Invoice generate failed: {e}") from e
 
 
 def _populate_message(new_items: list, skipped: list[dict]) -> str:
@@ -158,42 +190,13 @@ def _populate_message(new_items: list, skipped: list[dict]) -> str:
 @router.post("/{invoice_id}/refresh")
 async def refresh_invoice_draft(invoice_id: str):
     """Rebuild draft line items from billable completed attendance in the invoice period."""
-    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
-    if not inv:
-        raise HTTPException(404, "Invoice not found")
-    if inv["status"] != InvoiceStatus.draft.value:
-        raise HTTPException(400, "Only draft invoices can be refreshed")
-
-    period_start = await _parse_date(inv["period_start"])
-    period_end = await _parse_date(inv["period_end"])
-
-    # Remove monthly tuition lines so refresh can re-add from attendance; keep other manual lines.
-    await db.invoice_line_items.delete_many({
-        "invoice_id": invoice_id,
-        "description": {"$regex": r"Monthly Rate"},
-    })
-
-    new_items, skipped, session_count = await populate_draft_from_attendance(
-        invoice_id,
-        inv["family_id"],
-        period_start,
-        period_end,
-        line_item_cls=InvoiceLineItem,
-        replace_attendance_lines=True,
-    )
-    total = await _recalc_invoice_totals(invoice_id)
-    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
-    items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
-    return {
-        "status": "ok",
-        "added": len(new_items),
-        "session_count": session_count,
-        "skipped": skipped,
-        "invoice": inv,
-        "line_items": items,
-        "total": total,
-        "message": _populate_message(new_items, skipped),
-    }
+    try:
+        return await _sync_draft_invoice(invoice_id, replace=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Invoice refresh failed for %s", invoice_id)
+        raise HTTPException(500, f"Invoice refresh failed: {e}") from e
 
 
 @router.post("/{invoice_id}/line-items")

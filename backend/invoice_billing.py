@@ -18,6 +18,7 @@ from billing import (
     per_session_charge,
     session_date_from_line_description,
     session_is_billable,
+    stored_attendance_type,
 )
 from db import db
 from models import AttendanceType, InvoiceStatus, ProgramType, SessionStatus
@@ -448,7 +449,7 @@ def line_items_from_billable(
 
     groups: dict[tuple[str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
     for r, athlete, sess in per_session_rows:
-        at = AttendanceType(r["attendance_type"])
+        at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
         pt = billing_program_type(athlete, sess)
         override = athlete.get("rate_override")
         if override is not None:
@@ -690,7 +691,7 @@ async def sync_attendance_billed_rates(billable: list[dict], athletes_by_id: dic
     for r in billable:
         athlete = athletes_by_id[r["athlete_id"]]
         sess = sessions_by_id[r["session_id"]]
-        at = AttendanceType(r["attendance_type"])
+        at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
         pt = billing_program_type(athlete, sess)
         override = athlete.get("rate_override")
         if override is not None:

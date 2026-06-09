@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, formatApiError } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
@@ -569,7 +569,7 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
             }
             onCreated?.(r.data.invoice.id);
         } catch (e) {
-            toast.error(e.response?.data?.detail || "Generate failed");
+            toast.error(formatApiError(e) || "Generate failed");
         } finally {
             setBusy(false);
         }

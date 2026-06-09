@@ -237,6 +237,23 @@ def _full_time_present_billing_type(session: dict) -> AttendanceType:
     return AttendanceType.half
 
 
+def stored_attendance_type(
+    stored: str | AttendanceType,
+    *,
+    athlete: dict,
+    session: dict,
+) -> AttendanceType:
+    """Normalize a stored attendance row to a billable attendance type."""
+    at = AttendanceType(stored) if not isinstance(stored, AttendanceType) else stored
+    if at == AttendanceType.present:
+        return resolve_attendance_type(
+            at,
+            program_type=billing_program_type(athlete, session),
+            session=session,
+        )
+    return at
+
+
 def resolve_attendance_type(
     attendance_type: AttendanceType,
     *,
@@ -301,10 +318,11 @@ def describe_line(
     at_label = {
         AttendanceType.full: "Daily Rate",
         AttendanceType.half: "Half-Day Rate",
+        AttendanceType.present: "Daily Rate",
         AttendanceType.drop_in_full: "Drop-In Rate (Full-Day)",
         AttendanceType.drop_in_half: "Drop-In Rate (Half-Day)",
         AttendanceType.absent: "Absent",
-    }[attendance_type]
+    }.get(attendance_type, "Session")
     if session_count > 1:
         return f"{pt_label} — {at_label} ({display_date}) · {session_count} sessions"
     return f"{pt_label} — {at_label} ({display_date})"
