@@ -49,6 +49,7 @@ export const ROSTER = {
     searchInput: "roster-search-input",
     filterProgram: "roster-filter-program",
     filterStatus: "roster-filter-status",
+    addBtn: "roster-add-btn",
     newBtn: "roster-new-athlete-btn",
     newFamilyBtn: "roster-new-family-btn",
     card: (id) => `athlete-card-${id}`,

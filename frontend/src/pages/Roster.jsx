@@ -2,10 +2,17 @@ import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 import { ROSTER } from "../lib/testIds";
 import { computeAge, athleteHasProgram, formatAthletePrograms } from "../lib/format";
-import { Archive } from "lucide-react";
+import { Archive, Plus } from "lucide-react";
 import { AthleteFormModal } from "./AthleteForm";
+import { FamilyFormModal } from "./FamilyForm";
 import { toast } from "sonner";
 
 const PROGRAM_FILTERS = [
@@ -28,7 +35,13 @@ export default function Roster() {
     const [status, setStatus] = useState("active");
     const [loading, setLoading] = useState(true);
     const [athleteFormOpen, setAthleteFormOpen] = useState(false);
+    const [familyFormOpen, setFamilyFormOpen] = useState(false);
     const [editingAthlete, setEditingAthlete] = useState(null);
+
+    function openNewAthlete() {
+        setEditingAthlete(null);
+        setAthleteFormOpen(true);
+    }
 
     async function load() {
         setLoading(true);
@@ -61,10 +74,10 @@ export default function Roster() {
             <div className="px-5 md:px-10 mt-8">
                 <div className="space-y-2.5">
                     <div
-                        className="flex flex-wrap items-center justify-between gap-2 max-md:flex-nowrap max-md:overflow-x-auto max-md:scrollbar-none max-md:-mx-5 max-md:px-5"
+                        className="flex items-center gap-2 max-md:-mx-5 max-md:px-5"
                         data-testid={ROSTER.filterProgram}
                     >
-                        <div className="flex flex-wrap max-md:flex-nowrap items-center gap-2 overflow-x-auto scrollbar-none min-w-0">
+                        <div className="flex flex-1 min-w-0 flex-wrap max-md:flex-nowrap items-center gap-2 overflow-x-auto scrollbar-none">
                             {PROGRAM_FILTERS.map((f) => (
                                 <button
                                     key={f.value}
@@ -79,7 +92,7 @@ export default function Roster() {
                                 </button>
                             ))}
                         </div>
-                        <div className="hidden md:flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
+                        <div className="hidden md:flex flex-wrap items-center gap-2 overflow-x-auto scrollbar-none shrink-0" data-testid={ROSTER.filterStatus}>
                             {STATUS_FILTERS.map((f) => (
                                 <button
                                     key={f.value}
@@ -94,6 +107,43 @@ export default function Roster() {
                                 </button>
                             ))}
                         </div>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button
+                                    type="button"
+                                    data-testid={ROSTER.addBtn}
+                                    aria-label="Add family or athlete"
+                                    className="shrink-0 inline-flex items-center justify-center eat-btn-primary h-9 w-9 p-0 md:h-auto md:w-auto md:px-4 md:py-2.5"
+                                >
+                                    <Plus size={18} strokeWidth={1.75} className="md:hidden" />
+                                    <Plus size={16} strokeWidth={1.75} className="hidden md:block md:mr-1.5" />
+                                    <span className="hidden md:inline uppercase tracking-wider2 text-sm" style={{ fontWeight: 500 }}>
+                                        Add
+                                    </span>
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="end"
+                                className="min-w-[10rem] rounded-none border border-subtle bg-mid p-1 shadow-lg"
+                            >
+                                <DropdownMenuItem
+                                    data-testid={ROSTER.newFamilyBtn}
+                                    onSelect={() => setFamilyFormOpen(true)}
+                                    className="uppercase tracking-wider2 text-sm text-paper focus:bg-subtle focus:text-paper cursor-pointer rounded-none font-thunder"
+                                    style={{ fontWeight: 500 }}
+                                >
+                                    New Family
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    data-testid={ROSTER.newBtn}
+                                    onSelect={openNewAthlete}
+                                    className="uppercase tracking-wider2 text-sm text-paper focus:bg-subtle focus:text-paper cursor-pointer rounded-none font-thunder"
+                                    style={{ fontWeight: 500 }}
+                                >
+                                    New Athlete
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                     </div>
                 </div>
 
@@ -150,6 +200,12 @@ export default function Roster() {
                 athlete={editingAthlete}
                 families={families}
                 onSaved={() => { setAthleteFormOpen(false); load(); }}
+            />
+
+            <FamilyFormModal
+                open={familyFormOpen}
+                onOpenChange={setFamilyFormOpen}
+                onSaved={() => { setFamilyFormOpen(false); load(); }}
             />
         </div>
     );
