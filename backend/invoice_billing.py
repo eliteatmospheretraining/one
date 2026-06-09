@@ -499,6 +499,7 @@ def line_items_from_billable(
             per_session_rows.append((r, athlete, sess))
 
     items = []
+    ft_groups: dict[tuple[str, str, float], list[list[str]]] = defaultdict(list)
     for (athlete_id, session_date), rows in sorted(day_blocks.items(), key=lambda x: (x[0][1], x[0][0])):
         athlete = rows[0][1]
         day_at = full_time_day_rate_type(len(rows))
@@ -507,7 +508,16 @@ def line_items_from_billable(
             override = float(override)
         unit_price = full_time_flat_rate(day_at, override)
         record_ids = [row[0]["id"] for row in rows]
-        desc = describe_line(day_at, ProgramType.full_time, session_date, session_count=1)
+        ft_groups[(athlete_id, day_at.value, unit_price)].append(record_ids)
+
+    for (athlete_id, at_value, unit_price), day_record_lists in sorted(
+        ft_groups.items(), key=lambda x: (x[0][0], x[0][1])
+    ):
+        athlete = athletes_by_id[athlete_id]
+        day_at = AttendanceType(at_value)
+        count = len(day_record_lists)
+        record_ids = [rid for day_ids in day_record_lists for rid in day_ids]
+        desc = describe_line(day_at, ProgramType.full_time, session_count=count)
         items.append(line_item_cls(
             invoice_id=invoice_id,
             athlete_id=athlete_id,
@@ -515,9 +525,9 @@ def line_items_from_billable(
             attendance_record_id=record_ids[0],
             attendance_record_ids=record_ids,
             description=desc,
-            quantity=1.0,
+            quantity=float(count),
             unit_price=unit_price,
-            amount=round(unit_price, 2),
+            amount=round(unit_price * count, 2),
         ))
 
     groups: dict[tuple[str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
@@ -534,17 +544,15 @@ def line_items_from_billable(
             session=sess,
             rate_type=athlete.get("rate_type"),
         )
-        groups[(r["athlete_id"], at.value, per_session)].append((r, athlete, sess, per_session))
+        groups[(r["athlete_id"], pt.value, at.value, per_session)].append((r, athlete, sess, per_session))
 
     for rows in groups.values():
         r0, athlete, sess0, unit_price = rows[0]
-        at = AttendanceType(r0["attendance_type"])
+        at = stored_attendance_type(r0["attendance_type"], athlete=athlete, session=sess0)
         pt = billing_program_type(athlete, sess0)
         count = len(rows)
         record_ids = [row[0]["id"] for row in rows]
-        dates = sorted({row[2]["date"] for row in rows})
-        date_label = dates[0] if count == 1 else f"{dates[0]} – {dates[-1]}"
-        desc = describe_line(at, pt, date_label, session_count=count)
+        desc = describe_line(at, pt, session_count=count)
         items.append(line_item_cls(
             invoice_id=invoice_id,
             athlete_id=athlete["id"],

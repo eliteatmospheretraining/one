@@ -271,15 +271,8 @@ def resolve_attendance_type(
 
 
 def billing_program_type(athlete: dict, session: dict) -> ProgramType:
-    """Use the session program when the athlete is enrolled in it."""
-    session_pt = ProgramType(session["session_type"])
-    program_types = athlete.get("program_types") or []
-    if program_types and session_pt.value in program_types:
-        return session_pt
-    primary = athlete.get("program_type")
-    if primary:
-        return ProgramType(primary)
-    return session_pt
+    """Bill for the service delivered on the session, not just enrollment profile."""
+    return ProgramType(session["session_type"])
 
 
 def compute_billed_rate(
@@ -304,12 +297,11 @@ def compute_billed_rate(
 def describe_line(
     attendance_type: AttendanceType,
     program_type: ProgramType,
-    session_date: str,
+    session_date: str = "",
     *,
     session_count: int = 1,
 ) -> str:
     """Human-readable description for an invoice line item."""
-    display_date = format_invoice_display_date(session_date)
     pt_label = {
         ProgramType.full_time: "Eat w/ EAT",
         ProgramType.private: "Private Lesson",
@@ -323,9 +315,7 @@ def describe_line(
         AttendanceType.drop_in_half: "Drop-In Rate (Half-Day)",
         AttendanceType.absent: "Absent",
     }.get(attendance_type, "Session")
-    if session_count > 1:
-        return f"{pt_label} — {at_label} ({display_date}) · {session_count} sessions"
-    return f"{pt_label} — {at_label} ({display_date})"
+    return f"{pt_label} — {at_label}"
 
 
 def pricing_for_attendance(

@@ -175,8 +175,8 @@ class TestRateCard:
 
         assert format_invoice_display_date("2026-06-03") == "06-03-2026"
         desc = describe_line(AttendanceType.full, ProgramType.full_time, "2026-06-03")
-        assert "06-03-2026" in desc
-        assert "hr @" not in desc
+        assert desc == "Eat w/ EAT — Daily Rate"
+        assert "06-03-2026" not in desc
 
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
@@ -240,6 +240,7 @@ class TestRateCard:
         )
         assert len(items) == 1
         assert items[0].amount == 60
+        assert items[0].quantity == 1
         assert "Daily Rate" in items[0].description
         assert set(items[0].attendance_record_ids) == {"r1", "r2"}
         assert full_time_day_rate_type(2) == AttendanceType.full
@@ -254,7 +255,40 @@ class TestRateCard:
         )
         assert len(half_only) == 1
         assert half_only[0].amount == 30
+        assert half_only[0].quantity == 1
         assert "Half-Day Rate" in half_only[0].description
+
+        s3 = {"id": "s3", "date": "2026-06-03", "session_type": "full_time", "start_time": "08:00", "end_time": "11:00"}
+        s4 = {"id": "s4", "date": "2026-06-04", "session_type": "full_time", "start_time": "08:00", "end_time": "11:00"}
+        multi_half = line_items_from_billable(
+            "inv3",
+            [
+                {"id": "r1", "athlete_id": "a1", "session_id": "s1", "attendance_type": AttendanceType.half.value},
+                {"id": "r3", "athlete_id": "a1", "session_id": "s3", "attendance_type": AttendanceType.half.value},
+                {"id": "r4", "athlete_id": "a1", "session_id": "s4", "attendance_type": AttendanceType.half.value},
+            ],
+            {"a1": athlete},
+            {"s1": am, "s3": s3, "s4": s4},
+            line_item_cls=InvoiceLineItem,
+        )
+        assert len(multi_half) == 1
+        assert multi_half[0].quantity == 3
+        assert multi_half[0].amount == 90
+        assert set(multi_half[0].attendance_record_ids) == {"r1", "r3", "r4"}
+
+    def test_billing_program_type_uses_session_service(self):
+        from billing import billing_program_type
+        from models import ProgramType
+
+        athlete = {
+            "id": "a1",
+            "full_name": "Rafael Carcamo",
+            "program_types": ["full_time"],
+            "rate_type": "daily",
+        }
+        assert billing_program_type(athlete, {"session_type": "full_time"}) == ProgramType.full_time
+        assert billing_program_type(athlete, {"session_type": "semi_private"}) == ProgramType.semi_private
+        assert billing_program_type(athlete, {"session_type": "private"}) == ProgramType.private
 
 
 # ---------------- Families ----------------

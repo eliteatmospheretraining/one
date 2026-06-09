@@ -27,7 +27,7 @@ import {
     parseMoneyInput,
     todayISO,
 } from "../lib/format";
-import { Plus, Send, Trash2, DollarSign, ChevronLeft, ChevronRight, Mail } from "lucide-react";
+import { Plus, Send, Trash2, DollarSign, ChevronLeft, ChevronRight, Mail, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 /** First calendar year with billing data — revenue view won't go earlier than this. */
@@ -632,6 +632,7 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [payOpen, setPayOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -683,6 +684,20 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
         }
     }
 
+    async function refreshFromAttendance() {
+        setRefreshing(true);
+        try {
+            const r = await api.post(`/invoices/${invoiceId}/refresh`);
+            toast.success(r.data.message || "Invoice refreshed from training");
+            await load();
+            onChanged?.();
+        } catch (e) {
+            toast.error(e.response?.data?.detail || "Could not refresh invoice");
+        } finally {
+            setRefreshing(false);
+        }
+    }
+
     async function removeLine(lineItemId) {
         try {
             await api.delete(`/invoices/${invoiceId}/line-items/${lineItemId}`);
@@ -711,7 +726,29 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
 
     return (
         <>
-        <Modal open={open} onOpenChange={onOpenChange} title={data?.invoice?.invoice_number || "Invoice"} maxW="max-w-2xl">
+        <Modal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={(
+                <span className="inline-flex items-center gap-2.5">
+                    {data?.invoice?.invoice_number || "Invoice"}
+                    {data?.invoice?.status === "draft" && (
+                        <button
+                            type="button"
+                            data-testid={INVOICES.refreshBtn}
+                            onClick={refreshFromAttendance}
+                            disabled={refreshing || loading}
+                            title="Refresh from training attendance"
+                            aria-label="Refresh from training attendance"
+                            className="inline-flex items-center justify-center text-muted hover:text-accent transition-colors disabled:opacity-40"
+                        >
+                            <RefreshCw size={16} strokeWidth={1.75} className={refreshing ? "animate-spin" : ""} />
+                        </button>
+                    )}
+                </span>
+            )}
+            maxW="max-w-2xl"
+        >
             {loading || !data ? (
                 <div className="text-center py-10 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
             ) : (

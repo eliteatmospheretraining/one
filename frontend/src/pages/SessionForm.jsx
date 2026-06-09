@@ -24,8 +24,14 @@ import { toast } from "sonner";
 
 function expectedAthleteIds(athletes, sessionType) {
     return athletes
-        .filter((a) => a.status === "active" && athleteHasProgram(a, sessionType))
+        .filter((a) => a.status === "active" && athleteEligibleForSession(a, sessionType))
         .map((a) => a.id);
+}
+
+function athleteEligibleForSession(athlete, sessionType) {
+    if (sessionType === "full_time") return athleteHasProgram(athlete, "full_time");
+    // Private / semi-private: any active athlete may attend (often overlaps with Eat w/ EAT).
+    return true;
 }
 
 function EatCheckbox({ checked, onChange, testId, children }) {
@@ -122,7 +128,7 @@ export function SessionFormModal({ open, onOpenChange, defaultDate, athletes = [
         setRepeatWeekdays(defaultRepeatWeekdays("full_time"));
     }, [type, isEdit, repeat, repeatFrequency]);
 
-    const filteredAthletes = athletes.filter((a) => a.status === "active" && athleteHasProgram(a, type));
+    const filteredAthletes = athletes.filter((a) => a.status === "active" && athleteEligibleForSession(a, type));
 
     const toggle = (id) => {
         athletesTouchedRef.current = true;
