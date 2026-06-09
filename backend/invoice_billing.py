@@ -756,10 +756,32 @@ async def billing_status_for_session(session_id: str) -> list[dict]:
     return out
 
 
-async def ready_to_invoice_summary(*, lookback_days: int = 120) -> dict:
-    """Families and athletes with billable attendance not yet on an invoice."""
+async def ready_to_invoice_summary() -> dict:
+    """Families with uninvoiced billable attendance for the prior Mon–Fri week (Sundays only)."""
+    from invoice_auto import training_week_mon_fri
+
     today = datetime.now(SESSION_TIME_ZONE).date()
-    period_start = today - timedelta(days=lookback_days)
+    empty = {
+        "visible": False,
+        "billing_week": None,
+        "total_sessions": 0,
+        "total_families": 0,
+        "families": [],
+    }
+    if today.weekday() != 6:
+        empty["reason"] = "not_sunday"
+        return empty
+
+    period = training_week_mon_fri(today)
+    if not period:
+        empty["reason"] = "no_billing_week"
+        return empty
+
+    period_start, period_end = period
+    billing_week = {
+        "start": period_start.isoformat(),
+        "end": period_end.isoformat(),
+    }
 
     families = await db.families.find({}, {"_id": 0, "id": 1, "family_name": 1}).to_list(500)
     fam_by_id = {f["id"]: f for f in families}
@@ -780,7 +802,7 @@ async def ready_to_invoice_summary(*, lookback_days: int = 120) -> dict:
 
     sessions = await db.sessions.find(
         {
-            "date": {"$gte": period_start.isoformat(), "$lte": today.isoformat()},
+            "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
             "status": {
                 "$in": [
                     SessionStatus.completed.value,
@@ -793,7 +815,13 @@ async def ready_to_invoice_summary(*, lookback_days: int = 120) -> dict:
     sessions = [s for s in sessions if session_is_billable(s)]
     sessions_by_id = {s["id"]: s for s in sessions}
     if not sessions_by_id:
-        return {"total_sessions": 0, "total_families": 0, "families": []}
+        return {
+            "visible": True,
+            "billing_week": billing_week,
+            "total_sessions": 0,
+            "total_families": 0,
+            "families": [],
+        }
 
     records = await db.attendance_records.find(
         {"session_id": {"$in": list(sessions_by_id.keys())}},
@@ -869,19 +897,20 @@ async def ready_to_invoice_summary(*, lookback_days: int = 120) -> dict:
             continue
 
         athlete_rows.sort(key=lambda a: (-a["session_count"], a["athlete_name"]))
-        fam_dates = sorted({d for a in athlete_rows for d in [a["date_start"], a["date_end"]] if d})
         family_rows.append({
             "family_id": fid,
             "family_name": fam.get("family_name") or "Family",
             "session_count": len(family_session_ids),
             "athletes": athlete_rows,
-            "period_start": fam_dates[0] if fam_dates else None,
-            "period_end": fam_dates[-1] if fam_dates else None,
+            "period_start": billing_week["start"],
+            "period_end": billing_week["end"],
         })
 
     family_rows.sort(key=lambda f: (-f["session_count"], f["family_name"]))
 
     return {
+        "visible": True,
+        "billing_week": billing_week,
         "total_sessions": len(all_session_ids),
         "total_families": len(family_rows),
         "families": family_rows,

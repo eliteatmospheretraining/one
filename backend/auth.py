@@ -135,10 +135,13 @@ async def request_magic_link(req: MagicLinkRequest):
         "subject": "Your EAT Portal sign-in link",
         "html": html,
     }
-    try:
-        await asyncio.to_thread(resend.Emails.send, params)
-    except Exception as e:
-        logger.error(f"Resend send failed: {e}")
+    if DEV_MODE:
+        logger.info("DEV_MODE: sign-in email suppressed for %s", email)
+    else:
+        try:
+            await asyncio.to_thread(resend.Emails.send, params)
+        except Exception as e:
+            logger.error(f"Resend send failed: {e}")
 
     resp = {"status": "ok", "message": "If that email is authorized, a sign-in link has been sent."}
     if DEV_MODE:

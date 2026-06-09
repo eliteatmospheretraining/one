@@ -129,7 +129,7 @@ export default function Home() {
     const [outstandingTotal, setOutstandingTotal] = useState(0);
     const [sessionsThisMonth, setSessionsThisMonth] = useState(0);
     const [revenueThisMonth, setRevenueThisMonth] = useState(0);
-    const [readyToInvoice, setReadyToInvoice] = useState({ total_sessions: 0, families: [] });
+    const [readyToInvoice, setReadyToInvoice] = useState({ visible: false, total_sessions: 0, families: [] });
     const [readyToInvoiceOpen, setReadyToInvoiceOpen] = useState(false);
     const [readyToInvoiceLoading, setReadyToInvoiceLoading] = useState(false);
     const [pendingAthletes, setPendingAthletes] = useState([]);
@@ -188,7 +188,7 @@ export default function Home() {
                 );
 
                 const readyResp = await api.get("/invoices/ready-to-invoice");
-                setReadyToInvoice(readyResp.data || { total_sessions: 0, families: [] });
+                setReadyToInvoice(readyResp.data || { visible: false, total_sessions: 0, families: [] });
             } catch (e) {
                 setError(e.response?.data?.detail || "Could not load dashboard data.");
             } finally {
@@ -241,7 +241,7 @@ export default function Home() {
         setReadyToInvoiceLoading(true);
         try {
             const r = await api.get("/invoices/ready-to-invoice");
-            setReadyToInvoice(r.data || { total_sessions: 0, families: [] });
+            setReadyToInvoice(r.data || { visible: false, total_sessions: 0, families: [] });
         } catch (e) {
             toast.error(e.response?.data?.detail || "Could not load uninvoiced sessions");
         } finally {
@@ -259,6 +259,10 @@ export default function Home() {
     }
 
     const readyToInvoiceCount = readyToInvoice.total_sessions || 0;
+    const billingWeek = readyToInvoice.billing_week;
+    const readyToInvoiceDetail = billingWeek
+        ? `Week ${fmtInvoiceDate(billingWeek.start)} – ${fmtInvoiceDate(billingWeek.end)} · ${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`
+        : `${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`;
     const sessionCards = todaySessions.slice(0, 4);
     const invoiceActions = [
         {
@@ -273,12 +277,14 @@ export default function Home() {
             detail: `${sentCount} invoice${sentCount === 1 ? "" : "s"} sent, not yet paid — ${fmtMoney(outstandingTotal)}`,
             onClick: () => nav("/invoices?status=sent"),
         },
-        {
-            count: readyToInvoiceCount,
-            label: "Ready to Invoice",
-            detail: `${readyToInvoiceCount} completed session${readyToInvoiceCount === 1 ? "" : "s"} not yet on a draft invoice`,
-            onClick: openReadyToInvoice,
-        },
+        ...(readyToInvoice.visible && readyToInvoiceCount > 0
+            ? [{
+                count: readyToInvoiceCount,
+                label: "Ready to Invoice",
+                detail: readyToInvoiceDetail,
+                onClick: openReadyToInvoice,
+            }]
+            : []),
     ]
         .filter((item) => item.count > 0)
         .slice(0, 3);
@@ -517,11 +523,19 @@ export default function Home() {
             >
                 {readyToInvoiceLoading ? (
                     <div className="text-center py-8 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
+                ) : !readyToInvoice.visible ? (
+                    <div className="text-sm text-muted font-light py-4">Ready to Invoice appears on Sundays for the prior Mon–Fri training week.</div>
                 ) : readyToInvoiceCount === 0 ? (
-                    <div className="text-sm text-muted font-light py-4">All billable sessions are on invoices.</div>
+                    <div className="text-sm text-muted font-light py-4">All billable sessions for this week are on invoices.</div>
                 ) : (
                     <div className="flex flex-col gap-4">
                         <p className="text-sm text-muted font-light">
+                            {billingWeek ? (
+                                <>
+                                    Week {fmtInvoiceDate(billingWeek.start)} – {fmtInvoiceDate(billingWeek.end)}
+                                    {" · "}
+                                </>
+                            ) : null}
                             {readyToInvoiceCount} session{readyToInvoiceCount === 1 ? "" : "s"} across{" "}
                             {readyToInvoice.total_families || readyToInvoice.families?.length || 0} famil
                             {(readyToInvoice.total_families || readyToInvoice.families?.length || 0) === 1 ? "y" : "ies"}{" "}

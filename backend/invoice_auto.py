@@ -137,13 +137,23 @@ async def auto_sync_invoices_for_session(session_id: str) -> list[dict]:
     return results
 
 
-def prior_mon_fri_period(as_of: date) -> Optional[tuple[date, date]]:
-    """Mon–Fri of the training week ending the Friday before as_of (for Saturday batch runs)."""
-    if as_of.weekday() != 5:
+def training_week_mon_fri(as_of: date) -> Optional[tuple[date, date]]:
+    """Mon–Fri of the training week that ended on the most recent Friday."""
+    if as_of.weekday() == 5:  # Saturday — week ended yesterday
+        friday = as_of - timedelta(days=1)
+    elif as_of.weekday() == 6:  # Sunday — same billing week
+        friday = as_of - timedelta(days=2)
+    else:
         return None
-    friday = as_of - timedelta(days=1)
     monday = friday - timedelta(days=4)
     return monday, friday
+
+
+def prior_mon_fri_period(as_of: date) -> Optional[tuple[date, date]]:
+    """Mon–Fri for Saturday auto-batch runs."""
+    if as_of.weekday() != 5:
+        return None
+    return training_week_mon_fri(as_of)
 
 
 async def _family_has_billable_period(
