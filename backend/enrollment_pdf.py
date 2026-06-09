@@ -207,9 +207,16 @@ def _waiver_html() -> str:
     return "<br /><br />".join(parts)
 
 
-def _safe_filename(name: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", (name or "Athlete").strip())
-    return cleaned.strip("_") or "Athlete"
+def enrollment_form_title(athlete_name: str) -> str:
+    """e.g. Tai Faustin → T.Faustin – Enrollment Form"""
+    parts = (athlete_name or "Athlete").strip().split()
+    if len(parts) >= 2:
+        stem = f"{parts[0][0].upper()}.{parts[-1]}"
+    elif parts:
+        stem = parts[0]
+    else:
+        stem = "Athlete"
+    return f"{stem} – Enrollment Form"
 
 
 def render_enrollment_pdf(ctx: dict) -> bytes:
@@ -233,6 +240,10 @@ def render_enrollment_pdf(ctx: dict) -> bytes:
     submitted = _fmt_date(ctx.get("submitted_date") or date.today())
     sig_html = _signature_img_html(ctx.get("waiver_signature") or "")
     typed_sig = _display(ctx.get("waiver_typed_signature"))
+    referral_detail = _display(ctx.get("referral_detail"))
+    referral_detail_block = ""
+    if referral_detail and (ctx.get("referral_source") or "") == "Referral":
+        referral_detail_block = _row(_field("Who referred you?", referral_detail, colspan=2))
 
     # Contact section rows mirror Enroll.jsx adult vs minor layouts.
     if is_adult:
@@ -271,10 +282,13 @@ def render_enrollment_pdf(ctx: dict) -> bytes:
             + "</div>"
         )
 
+    form_title = enrollment_form_title(athlete_name)
+
     doc = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<title>{_esc(form_title)}</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500&display=swap');
 
@@ -578,6 +592,7 @@ body {{
   {_sec("Additional")}
   {_chip_lbl("How did you hear about EAT?")}
   {_chips([(r, r) for r in REFERRALS], ctx.get("referral_source") or "")}
+  {referral_detail_block}
   {_row(_field("Anything else?", ctx.get("additional_notes"), colspan=2, multiline=True))}
   </div>
 
@@ -621,7 +636,9 @@ body {{
 
 
 def enrollment_pdf_filename(athlete_name: str) -> str:
-    return f"EAT_Enrollment_{_safe_filename(athlete_name)}.pdf"
+    title = enrollment_form_title(athlete_name)
+    safe = re.sub(r'[<>:"/\\|?*\n\r]', "", title)
+    return f"{safe}.pdf"
 
 
 def sample_enrollment_context() -> dict:

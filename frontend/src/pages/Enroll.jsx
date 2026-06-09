@@ -4,8 +4,7 @@ import { API, formatApiError } from "../lib/api";
 import { BRAND_LOGO_BLACK, BRAND_NAME } from "../constants/brand";
 import "./Enroll.css";
 
-const TOTAL = 6;
-const WAIVER_PROG = 5;
+const SECTION_COUNT = 6;
 
 const PROGRAMS = [
     { value: "full_time", label: "Eat w/ EAT — Full-Time" },
@@ -63,6 +62,7 @@ const blankForm = () => ({
     medical_flags: [],
     medical_details: "",
     referral_source: "",
+    referral_detail: "",
     additional_notes: "",
 });
 
@@ -88,10 +88,10 @@ function EnrollHeader({ title, children, logoOnly = false }) {
     );
 }
 
-function ProgressBar({ filled }) {
+function ProgressBar({ filled, total }) {
     return (
         <div className="prog-wrap" aria-hidden="true">
-            {Array.from({ length: TOTAL }, (_, i) => (
+            {Array.from({ length: total }, (_, i) => (
                 <div key={i} className={`ps${i < filled ? " on" : ""}${i === filled ? " active" : ""}`} />
             ))}
         </div>
@@ -198,8 +198,17 @@ export default function Enroll() {
     const [waiverShake, shakeWaiver] = useShake();
     const canvasRef = useRef(null);
     const waiverTopRef = useRef(null);
+    const sectionRefs = useRef([]);
+    const [activeSection, setActiveSection] = useState(0);
 
     const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+    const setSectionRef = useCallback(
+        (idx) => (el) => {
+            sectionRefs.current[idx] = el;
+        },
+        []
+    );
 
     const age = calcAge(form.date_of_birth);
     const isAdult = age !== null && age >= 18;
@@ -214,6 +223,30 @@ export default function Enroll() {
         });
         return () => window.cancelAnimationFrame(id);
     }, [phase]);
+
+    useEffect(() => {
+        if (phase !== "enroll") return undefined;
+
+        function updateActiveSection() {
+            const anchor = 168;
+            const nodes = sectionRefs.current.filter(Boolean);
+            if (!nodes.length) return;
+
+            let current = 0;
+            nodes.forEach((node, idx) => {
+                if (node.getBoundingClientRect().top <= anchor) current = idx;
+            });
+            setActiveSection(current);
+        }
+
+        updateActiveSection();
+        window.addEventListener("scroll", updateActiveSection, { passive: true });
+        window.addEventListener("resize", updateActiveSection);
+        return () => {
+            window.removeEventListener("scroll", updateActiveSection);
+            window.removeEventListener("resize", updateActiveSection);
+        };
+    }, [phase, isAdult]);
 
     function toggleGoal(goal) {
         setForm((f) => ({
@@ -241,6 +274,14 @@ export default function Enroll() {
     }
 
     const showMedicalDetails = !form.medical_none && form.medical_flags.length > 0;
+
+    function pickReferral(source) {
+        setForm((f) => ({
+            ...f,
+            referral_source: source,
+            referral_detail: source === "Referral" ? f.referral_detail : "",
+        }));
+    }
 
     function validateEnroll() {
         const minor = age === null || age < 18;
@@ -317,6 +358,8 @@ export default function Enroll() {
             medical_flags: form.medical_flags,
             medical_details: form.medical_details.trim() || null,
             referral_source: form.referral_source || null,
+            referral_detail:
+                form.referral_source === "Referral" ? form.referral_detail.trim() || null : null,
             additional_notes: form.additional_notes.trim() || null,
             photo_release: photoRelease === "yes",
             waiver_typed_signature: typedSig.trim(),
@@ -335,9 +378,22 @@ export default function Enroll() {
         }
     }
 
+    const sectionLabels = [
+        "Athlete",
+        "Tennis Background",
+        isAdult ? "Contact" : "Guardian",
+        "Emergency Contact",
+        "Medical",
+        "Additional",
+    ];
     const phaseLabel =
-        phase === "enroll" ? "Enrollment" : phase === "waiver" ? "Waiver" : "Complete";
-    const progFilled = phase === "enroll" ? 0 : phase === "waiver" ? WAIVER_PROG : TOTAL;
+        phase === "enroll"
+            ? sectionLabels[activeSection]
+            : phase === "waiver"
+              ? "Waiver"
+              : "Complete";
+    const progFilled =
+        phase === "enroll" ? activeSection : phase === "waiver" || phase === "thanks" ? SECTION_COUNT : 0;
 
     if (phase === "thanks" && submitted) {
         const email =
@@ -375,12 +431,13 @@ export default function Enroll() {
                 }
             >
                 <div className="ew-sub">Complete all required fields. We will confirm your program and start date.</div>
-                <ProgressBar filled={progFilled} />
+                <ProgressBar filled={progFilled} total={SECTION_COUNT} />
                 <div className="phase-lbl">{phaseLabel}</div>
             </EnrollHeader>
 
             {phase === "enroll" && (
                 <div className={`enroll-body${enrollShake ? " shake" : ""}`}>
+                    <section className="enroll-section" ref={setSectionRef(0)}>
                     <div className="sec-lbl">Athlete</div>
                     <div className="row col2">
                         <div className="field">
@@ -456,7 +513,9 @@ export default function Enroll() {
                             </button>
                         ))}
                     </div>
+                    </section>
 
+                    <section className="enroll-section" ref={setSectionRef(1)}>
                     <div className="sec-lbl">Tennis Background</div>
                     <div className="row col2">
                         <div className="field">
@@ -491,7 +550,9 @@ export default function Enroll() {
                             </button>
                         ))}
                     </div>
+                    </section>
 
+                    <section className="enroll-section" ref={setSectionRef(2)}>
                     <div className="sec-lbl">{isAdult ? "Contact" : "Guardian"}</div>
                     <div className="row col2">
                         <div className="field">
@@ -620,7 +681,9 @@ export default function Enroll() {
                             </div>
                         </>
                     )}
+                    </section>
 
+                    <section className="enroll-section" ref={setSectionRef(3)}>
                     <div className="sec-lbl">Emergency Contact</div>
                     <div className="row col2">
                         <div className="field">
@@ -671,7 +734,9 @@ export default function Enroll() {
                             />
                         </div>
                     </div>
+                    </section>
 
+                    <section className="enroll-section" ref={setSectionRef(4)}>
                     <div className="sec-lbl">Medical</div>
                     <span className="chip-lbl">
                         Flag any of the following <span className="req">*</span>
@@ -703,7 +768,9 @@ export default function Enroll() {
                             />
                         </div>
                     </div>
+                    </section>
 
+                    <section className="enroll-section" ref={setSectionRef(5)}>
                     <div className="sec-lbl">Additional</div>
                     <span className="chip-lbl">How did you hear about EAT?</span>
                     <div className="chips">
@@ -712,12 +779,25 @@ export default function Enroll() {
                                 key={r}
                                 type="button"
                                 className={`chip${form.referral_source === r ? " on" : ""}`}
-                                onClick={() => set("referral_source", r)}
+                                onClick={() => pickReferral(r)}
                             >
                                 {r}
                             </button>
                         ))}
                     </div>
+                    {form.referral_source === "Referral" && (
+                        <div className="row col1">
+                            <div className="field">
+                                <label>Who referred you?</label>
+                                <input
+                                    type="text"
+                                    value={form.referral_detail}
+                                    onChange={(e) => set("referral_detail", e.target.value)}
+                                    placeholder="Name of referrer"
+                                />
+                            </div>
+                        </div>
+                    )}
                     <div className="row col1">
                         <div className="field">
                             <label>Anything else?</label>
@@ -728,6 +808,7 @@ export default function Enroll() {
                             />
                         </div>
                     </div>
+                    </section>
 
                     <div className="actions">
                         <div />

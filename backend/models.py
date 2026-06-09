@@ -158,6 +158,7 @@ class AthleteBase(BaseModel):
     grade: Optional[str] = None
     enrollment_goals: Optional[str] = None
     referral_source: Optional[str] = None
+    referral_detail: Optional[str] = None
     enrollment_notes: Optional[str] = None
     medical_conditions: Optional[str] = None
     medical_flags: List[str] = Field(default_factory=list)
@@ -214,6 +215,7 @@ class AthleteUpdate(BaseModel):
     grade: Optional[str] = None
     enrollment_goals: Optional[str] = None
     referral_source: Optional[str] = None
+    referral_detail: Optional[str] = None
     enrollment_notes: Optional[str] = None
     medical_conditions: Optional[str] = None
     waiver_photo_release: Optional[bool] = None
@@ -273,6 +275,7 @@ class EnrollmentSubmit(BaseModel):
     medical_flags: List[str] = Field(default_factory=list)
     medical_details: Optional[str] = None
     referral_source: Optional[str] = None
+    referral_detail: Optional[str] = None
     additional_notes: Optional[str] = None
     photo_release: bool
     waiver_typed_signature: str

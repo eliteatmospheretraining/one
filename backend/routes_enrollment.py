@@ -188,6 +188,7 @@ async def submit_enrollment(payload: EnrollmentSubmit):
         grade=payload.grade or None,
         enrollment_goals=goals,
         referral_source=payload.referral_source or None,
+        referral_detail=(payload.referral_detail or "").strip() or None,
         enrollment_notes=payload.additional_notes or None,
         medical_conditions=_build_medical(medical_none, payload.medical_flags, payload.medical_details),
         medical_flags=list(payload.medical_flags),
