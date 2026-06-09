@@ -1,4 +1,4 @@
-"""Enrollment + waiver PDF — matches invoice PDF brand layout."""
+"""Enrollment + waiver PDF — filled form layout matching the public enroll page."""
 from __future__ import annotations
 
 import base64
@@ -7,27 +7,73 @@ import html
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
+from zoneinfo import ZoneInfo
 
-from pdf import BASE, _font_face, _svg_b64
+from pdf import BASE, _svg_b64
 
 logger = logging.getLogger(__name__)
 _SIG_CACHE = BASE / ".enrollment_sig_cache"
+_EASTERN = ZoneInfo("America/New_York")
 
-WAIVER_TEXT = """
-Assumption of Risk. I am aware that participating in tennis and athletics activities involves inherent risks including physical injury, accidents, and property damage. I voluntarily assume all risks and release Elite Atmosphere Training, its coaches, staff, and affiliates from any liability for injuries or damages during participation.
+PROGRAMS = [
+    ("full_time", "Eat w/ EAT — Full-Time"),
+    ("private", "Private Lesson"),
+    ("semi_private", "Semi-Private"),
+]
+GOALS = [
+    "Fitness",
+    "Skill Development",
+    "Tournament Prep",
+    "High School Prep",
+    "College Prep",
+    "High-Performance",
+]
+MEDICAL_FLAGS = [
+    "Allergies",
+    "Asthma",
+    "Diabetes",
+    "Heart Condition",
+    "Seizure Disorder",
+    "Physical Limitation",
+    "Inhaler / EpiPen",
+    "Medication",
+    "Other",
+]
+REFERRALS = ["Referral", "Google", "Instagram", "Tournament", "Other"]
 
-Medical Consent. I certify the participant is physically fit to participate. In an emergency, I authorize EAT staff to seek medical treatment and agree to be responsible for associated medical expenses.
-
-Code of Conduct. I agree to abide by all rules and instructions provided by EAT staff. Violation may result in dismissal without refund.
-
-Personal Property. EAT is not liable for loss, theft, or damage to personal property on premises.
-
-Photo Release. EAT may photograph or record the participant for promotional use including social media and marketing. First names may be used; full names will not be shared publicly without separate consent. I waive approval and compensation rights for these materials.
-""".strip()
+WAIVER_SECTIONS = [
+    (
+        "Assumption of Risk.",
+        "I am aware that participating in tennis and athletics activities involves inherent "
+        "risks including physical injury, accidents, and property damage. I voluntarily assume "
+        "all risks and release Elite Atmosphere Training, its coaches, staff, and affiliates from "
+        "any liability for injuries or damages during participation.",
+    ),
+    (
+        "Medical Consent.",
+        "I certify the participant is physically fit to participate. In an emergency, I authorize "
+        "EAT staff to seek medical treatment and agree to be responsible for associated medical expenses.",
+    ),
+    (
+        "Code of Conduct.",
+        "I agree to abide by all rules and instructions provided by EAT staff. Violation may result "
+        "in dismissal without refund.",
+    ),
+    (
+        "Personal Property.",
+        "EAT is not liable for loss, theft, or damage to personal property on premises.",
+    ),
+    (
+        "Photo Release.",
+        "EAT may photograph or record the participant for promotional use including social media and "
+        "marketing. First names may be used; full names will not be shared publicly without separate "
+        "consent. I waive approval and compensation rights for these materials.",
+    ),
+]
 
 
 def _esc(value: Any) -> str:
@@ -36,7 +82,7 @@ def _esc(value: Any) -> str:
 
 def _fmt_date(value: Any) -> str:
     if not value:
-        return "—"
+        return ""
     try:
         if isinstance(value, date):
             return value.strftime("%m-%d-%Y")
@@ -45,16 +91,33 @@ def _fmt_date(value: Any) -> str:
         return str(value)[:10]
 
 
+def _fmt_signed_at(value: Any) -> str:
+    if not value:
+        return ""
+    try:
+        if isinstance(value, datetime):
+            dt = value
+        elif hasattr(value, "isoformat"):
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        else:
+            dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        local = dt.astimezone(_EASTERN)
+        return local.strftime("%m-%d-%Y at %I:%M %p ET").replace(" 0", " ")
+    except (ValueError, TypeError):
+        return ""
+
+
 def _display(value: Any) -> str:
-    text = str(value or "").strip()
-    return text if text else "—"
+    return str(value or "").strip()
 
 
 def _signature_img_html(signature_data: str) -> str:
-    """Embed drawn signature as a cached file (WeasyPrint is unreliable with huge data: URIs)."""
+    """Embed drawn signature (cached file path for WeasyPrint)."""
     raw = (signature_data or "").strip()
     if not raw:
-        return '<div class="signature-empty">—</div>'
+        return '<div class="sig-empty">No signature on file</div>'
     try:
         b64 = raw.split(",", 1)[1] if raw.startswith("data:") else raw
         img_bytes = base64.b64decode(b64, validate=False)
@@ -65,28 +128,69 @@ def _signature_img_html(signature_data: str) -> str:
         path = _SIG_CACHE / name
         if not path.exists():
             path.write_bytes(img_bytes)
-        return f'<img class="signature-img" src="{_esc(name)}" alt="Signature" />'
+        rel = f".enrollment_sig_cache/{name}"
+        return f'<img class="sig-img" src="{_esc(rel)}" alt="Signature" />'
     except Exception as e:
         logger.warning("Enrollment PDF signature embed failed: %s", e)
-        return '<div class="signature-empty">Signature on file</div>'
+        return '<div class="sig-empty">Signature on file</div>'
 
 
-def _row(label: str, value: Any) -> str:
+def _field(label: str, value: Any, *, wide: bool = False) -> str:
+    val = _display(value)
+    cls = "field field-wide" if wide else "field"
     return f"""
-    <tr>
-      <td class="fld-lbl">{_esc(label)}</td>
-      <td class="fld-val">{_esc(_display(value))}</td>
-    </tr>"""
-
-
-def _section(title: str, rows: str) -> str:
-    if not rows.strip():
-        return ""
-    return f"""
-    <div class="section">
-      <div class="section-title">{_esc(title)}</div>
-      <table class="fields">{rows}</table>
+    <div class="{cls}">
+      <div class="fld-lbl">{_esc(label)}</div>
+      <div class="fld-val">{_esc(val) if val else "&nbsp;"}</div>
     </div>"""
+
+
+def _row(fields: str, cols: int = 2) -> str:
+    return f'<div class="row col{cols}">{fields}</div>'
+
+
+def _sec(title: str) -> str:
+    return f'<div class="sec-lbl">{_esc(title)}</div>'
+
+
+def _chip_lbl(text: str) -> str:
+    return f'<div class="chip-lbl">{_esc(text)}</div>'
+
+
+def _chips(options: Iterable[tuple[str, str]], selected: Any) -> str:
+    selected_set = set(selected) if isinstance(selected, (list, tuple, set)) else {selected}
+    items = []
+    for value, label in options:
+        on = " on" if value in selected_set else ""
+        items.append(f'<span class="chip{on}">{_esc(label)}</span>')
+    return f'<div class="chips">{"".join(items)}</div>'
+
+
+def _med_grid(medical_none: bool, medical_flags: list[str]) -> str:
+    flags = set(medical_flags or [])
+    items = [
+        f'<div class="mi{" on" if medical_none else ""}"><span class="ck"></span><span class="mt">None / No known issues</span></div>'
+    ]
+    for flag in MEDICAL_FLAGS:
+        on = " on" if flag in flags else ""
+        items.append(f'<div class="mi{on}"><span class="ck"></span><span class="mt">{_esc(flag)}</span></div>')
+    return f'<div class="med-grid">{"".join(items)}</div>'
+
+
+def _radio(label: str, detail: str, selected: bool) -> str:
+    on = " on" if selected else ""
+    return f"""
+    <div class="radio-row">
+      <span class="rb{on}"></span>
+      <span class="rt"><strong>{_esc(label)}</strong> — {_esc(detail)}</span>
+    </div>"""
+
+
+def _waiver_html() -> str:
+    parts = []
+    for title, body in WAIVER_SECTIONS:
+        parts.append(f"<strong>{_esc(title)}</strong> {_esc(body)}")
+    return "<br /><br />".join(parts)
 
 
 def _safe_filename(name: str) -> str:
@@ -95,198 +199,410 @@ def _safe_filename(name: str) -> str:
 
 
 def render_enrollment_pdf(ctx: dict) -> bytes:
-    business_name = os.environ.get("BUSINESS_NAME", "Elite Atmosphere Training")
-    font_faces = "".join(_font_face(w) for w in (800, 500, 300))
     logo = _svg_b64()
     logo_html = (
-        f'<img class="logo" src="data:image/svg+xml;base64,{logo}" />'
+        f'<img class="brand-logo" src="data:image/svg+xml;base64,{logo}" alt="EAT" />'
         if logo
-        else '<div class="logo-text">EAT.</div>'
+        else '<div class="brand-fallback">EAT.</div>'
     )
 
-    contact_label = ctx.get("contact_label") or "Contact"
-    athlete_rows = "".join([
-        _row("Full Name", ctx.get("athlete_name")),
-        _row("Date of Birth", _fmt_date(ctx.get("date_of_birth"))),
-        _row("School", ctx.get("school")),
-        _row("Grade", ctx.get("grade")),
-        _row("T-Shirt", ctx.get("shirt_size")),
-        _row("Program", ctx.get("program_label")),
-        _row("UTR", ctx.get("utr")),
-        _row("WTN", ctx.get("wtn")),
-        _row("Goals", ctx.get("goals")),
-    ])
-    contact_rows = "".join([
-        _row("Name", ctx.get("contact_name")),
-        _row("Relationship", ctx.get("contact_relationship")),
-        _row("Phone", ctx.get("contact_phone")),
-        _row("Email", ctx.get("contact_email")),
-        _row("Street Address", ctx.get("street_address")),
-        _row("City / State / Zip", ctx.get("city_state_zip")),
-    ])
-    emergency_rows = "".join([
-        _row("Name", ctx.get("emergency_contact_name")),
-        _row("Relationship", ctx.get("emergency_contact_relationship")),
-        _row("Phone", ctx.get("emergency_contact_phone")),
-        _row("Email", ctx.get("emergency_contact_email")),
-    ])
-    additional_rows = "".join([
-        _row("Referral", ctx.get("referral_source")),
-        _row("Notes", ctx.get("additional_notes")),
-    ])
-
+    athlete_name = _display(ctx.get("athlete_name"))
+    is_adult = bool(ctx.get("is_adult"))
+    contact_label = ctx.get("contact_label") or ("Contact" if is_adult else "Guardian")
+    goals = ctx.get("goals_list") or []
+    program_type = ctx.get("program_type") or ""
+    medical_none = bool(ctx.get("medical_none"))
+    medical_flags = list(ctx.get("medical_flags") or [])
+    medical_details = _display(ctx.get("medical_details"))
     photo_release = ctx.get("photo_release")
-    if photo_release is True:
-        photo_label = "Yes — authorized for promotional use"
-    elif photo_release is False:
-        photo_label = "No — not authorized"
-    else:
-        photo_label = "—"
-
-    sig_html = _signature_img_html(ctx.get("waiver_signature") or "")
-
+    signed_at = _fmt_signed_at(ctx.get("signed_at"))
     submitted = _fmt_date(ctx.get("submitted_date") or date.today())
+    sig_html = _signature_img_html(ctx.get("waiver_signature") or "")
+    typed_sig = _display(ctx.get("waiver_typed_signature"))
+
+    # Contact section rows mirror Enroll.jsx adult vs minor layouts.
+    if is_adult:
+        contact_block = "".join([
+            _row("".join([
+                _field("Name", ctx.get("contact_name")),
+                _field("Phone", ctx.get("contact_phone")),
+            ])),
+            _row("".join([
+                _field("Email", ctx.get("contact_email")),
+                _field("Street Address", ctx.get("street_address")),
+            ]), cols=2),
+            _row(_field("City / State / Zip", ctx.get("city_state_zip"), wide=True), cols=1),
+        ])
+    else:
+        contact_block = "".join([
+            _row("".join([
+                _field("Name", ctx.get("contact_name")),
+                _field("Relationship", ctx.get("contact_relationship")),
+            ])),
+            _row("".join([
+                _field("Phone", ctx.get("contact_phone")),
+                _field("Email", ctx.get("contact_email")),
+            ])),
+            _row("".join([
+                _field("Street Address", ctx.get("street_address")),
+                _field("City / State / Zip", ctx.get("city_state_zip")),
+            ])),
+        ])
+
+    medical_details_block = ""
+    if medical_details and not medical_none:
+        medical_details_block = f"""
+        <div class="cond show">
+          {_field("Please describe", medical_details, wide=True)}
+        </div>"""
 
     doc = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-{font_faces}
-@page {{ size: Letter; margin: 0; }}
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500&display=swap');
+
+@page {{
+  size: Letter;
+  margin: 0.65in 0.7in 0.75in 0.7in;
+}}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
-  background: #ffffff;
-  color: #0d0d0d;
-  font-family: 'Thunder', 'Helvetica Neue', sans-serif;
+  background: #fcfcfc;
+  color: #222;
+  font-family: 'Barlow', 'Helvetica Neue', Arial, sans-serif;
   font-weight: 300;
-  font-size: 9.5pt;
+  font-size: 10pt;
+  line-height: 1.4;
 }}
-.page {{ width: 8.5in; min-height: 11in; padding: 0 0 36pt 0; }}
-.header {{
-  padding: 36pt 48pt 24pt 48pt;
-  border-bottom: 1pt solid #e5e5e5;
+.doc {{
+  width: 100%;
+  max-width: 6.5in;
+  margin: 0 auto;
+}}
+.top {{
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: flex-end;
+  gap: 16pt;
+  padding-bottom: 14pt;
+  margin-bottom: 6pt;
+  border-bottom: 1pt solid #ebebeb;
 }}
-.logo {{ width: 88pt; height: auto; margin-left: -14pt; }}
-.logo-text {{
+.brand-logo {{ height: 52pt; width: auto; display: block; }}
+.brand-fallback {{
+  font-family: 'Barlow Condensed', sans-serif;
   font-weight: 800;
-  font-size: 32pt;
+  font-size: 28pt;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
 }}
-.meta-right {{ text-align: right; }}
-.meta-eyebrow {{
-  font-weight: 500;
-  font-size: 8pt;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #999999;
-  margin-bottom: 4pt;
-}}
-.doc-title {{
-  font-weight: 800;
-  font-size: 24pt;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  line-height: 1;
-}}
-.submitted-date {{
-  font-weight: 300;
-  font-size: 9pt;
-  color: #888888;
-  margin-top: 5pt;
-}}
-.body {{ padding: 24pt 48pt 0 48pt; }}
-.section {{ margin-bottom: 18pt; }}
-.section-title {{
-  font-weight: 500;
+.top-meta {{ text-align: right; }}
+.doc-eyebrow {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
   font-size: 8pt;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #999999;
-  border-bottom: 1pt solid #ebebeb;
-  padding-bottom: 6pt;
-  margin-bottom: 8pt;
+  color: #999;
 }}
-.fields {{ width: 100%; border-collapse: collapse; }}
+.doc-title {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 22pt;
+  text-transform: uppercase;
+  line-height: 0.95;
+  margin-top: 2pt;
+}}
+.doc-sub {{
+  font-size: 9pt;
+  color: #999;
+  margin-top: 4pt;
+}}
+.sec-lbl {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 8.5pt;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #999;
+  margin: 18pt 0 8pt;
+  padding-bottom: 4pt;
+  border-bottom: 1pt solid #e8e8e8;
+}}
+.row {{ display: grid; gap: 8pt; margin-bottom: 8pt; }}
+.col1 {{ grid-template-columns: 1fr; }}
+.col2 {{ grid-template-columns: 1fr 1fr; }}
+.col3 {{ grid-template-columns: 1fr 1fr 1fr; }}
+.field {{ display: flex; flex-direction: column; gap: 3pt; }}
+.field-wide {{ grid-column: 1 / -1; }}
 .fld-lbl {{
-  width: 34%;
-  padding: 5pt 10pt 5pt 0;
-  vertical-align: top;
-  font-weight: 500;
-  font-size: 8pt;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 7.5pt;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #888888;
+  color: #999;
 }}
 .fld-val {{
-  padding: 5pt 0;
-  vertical-align: top;
-  color: #0d0d0d;
-  line-height: 1.45;
+  background: #fff;
+  border: 1pt solid #e0e0e0;
+  border-radius: 1pt;
+  color: #222;
+  font-size: 10pt;
+  font-weight: 300;
+  padding: 7pt 9pt;
+  min-height: 28pt;
 }}
-.waiver-box {{
-  border: 1pt solid #e5e5e5;
-  padding: 12pt;
-  font-size: 8.5pt;
-  line-height: 1.55;
-  color: #444444;
-  white-space: pre-wrap;
-}}
-.signature-img {{
-  display: block;
-  max-width: 280pt;
-  max-height: 60pt;
-  border: 1pt solid #e5e5e5;
-  background: #fafafa;
-  padding: 6pt;
-}}
-.signature-empty {{ color: #bbbbbb; }}
-.footer {{
-  position: fixed;
-  bottom: 24pt;
-  left: 48pt;
-  right: 48pt;
-  border-top: 1pt solid #ebebeb;
-  padding-top: 8pt;
-  display: flex;
-  justify-content: space-between;
-  font-size: 8pt;
+.chip-lbl {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600;
+  font-size: 7.5pt;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #bbbbbb;
+  color: #999;
+  margin: 0 0 6pt;
+}}
+.chips {{ display: flex; flex-wrap: wrap; gap: 5pt; margin-bottom: 8pt; }}
+.chip {{
+  background: #fff;
+  border: 1pt solid #e0e0e0;
+  border-radius: 1pt;
+  color: #bbb;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 8.5pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 5pt 9pt;
+  text-transform: uppercase;
+}}
+.chip.on {{
+  background: #c8f000;
+  border-color: #c8f000;
+  color: #222;
+}}
+.med-grid {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1pt solid #e0e0e0;
+  border-radius: 1pt;
+  overflow: hidden;
+  margin-bottom: 8pt;
+}}
+.mi {{
+  display: flex;
+  align-items: center;
+  gap: 7pt;
+  padding: 7pt 9pt;
+  border-bottom: 1pt solid #f0f0f0;
+  border-right: 1pt solid #f0f0f0;
+  background: #fff;
+}}
+.mi:nth-child(2n) {{ border-right: none; }}
+.mi:nth-last-child(-n+2) {{ border-bottom: none; }}
+.mi.on {{ background: #fafef0; }}
+.ck {{
+  width: 11pt;
+  height: 11pt;
+  border: 1pt solid #ddd;
+  border-radius: 1pt;
+  flex-shrink: 0;
+  background: #fff;
+  position: relative;
+}}
+.mi.on .ck {{ background: #c8f000; border-color: #c8f000; }}
+.mi.on .ck::after {{
+  content: '';
+  position: absolute;
+  left: 2pt;
+  top: 1.5pt;
+  width: 6pt;
+  height: 3.5pt;
+  border-left: 1.2pt solid #222;
+  border-bottom: 1.2pt solid #222;
+  transform: rotate(-45deg);
+}}
+.mt {{ font-size: 9pt; color: #555; }}
+.cond {{
+  background: #fafafa;
+  border-left: 2pt solid #c8f000;
+  padding: 8pt 10pt;
+  margin: 0 0 8pt;
+}}
+.cond .fld-val {{ background: #fff; }}
+.waiver-page {{ page-break-before: always; padding-top: 4pt; }}
+.prefill-tag {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 16pt;
+  text-transform: uppercase;
+  margin-bottom: 2pt;
+}}
+.prefill-sub {{
+  font-size: 9pt;
+  color: #bbb;
+  margin-bottom: 12pt;
+}}
+.waiver-txt {{
+  font-size: 8.5pt;
+  color: #666;
+  line-height: 1.65;
+  border: 1pt solid #e8e8e8;
+  background: #fff;
+  padding: 11pt;
+  margin-bottom: 12pt;
+}}
+.waiver-txt strong {{ color: #444; font-weight: 500; }}
+.radio-row {{
+  display: flex;
+  align-items: flex-start;
+  gap: 8pt;
+  padding: 7pt 0;
+  border-bottom: 1pt solid #f0f0f0;
+}}
+.radio-row:last-child {{ border-bottom: none; }}
+.rb {{
+  width: 11pt;
+  height: 11pt;
+  border: 1pt solid #ddd;
+  border-radius: 1pt;
+  flex-shrink: 0;
+  margin-top: 1pt;
+  background: #fff;
+  position: relative;
+}}
+.rb.on {{ background: #c8f000; border-color: #c8f000; }}
+.rb.on::after {{
+  content: '';
+  position: absolute;
+  left: 2pt;
+  top: 1.5pt;
+  width: 6pt;
+  height: 3.5pt;
+  border-left: 1.2pt solid #222;
+  border-bottom: 1.2pt solid #222;
+  transform: rotate(-45deg);
+}}
+.rt {{ font-size: 9pt; color: #666; line-height: 1.45; }}
+.rt strong {{ color: #333; font-weight: 500; }}
+.sig-block {{
+  margin-top: 10pt;
+  padding-top: 10pt;
+  border-top: 1pt solid #ebebeb;
+}}
+.sig-wrap {{
+  border: 1pt solid #e0e0e0;
+  border-radius: 1pt;
+  background: #fafafa;
+  padding: 6pt;
+  margin: 6pt 0 8pt;
+  min-height: 72pt;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}}
+.sig-img {{
+  display: block;
+  max-width: 100%;
+  max-height: 64pt;
+}}
+.sig-empty {{ color: #bbb; font-size: 9pt; padding: 8pt; }}
+.sig-meta {{
+  font-size: 8.5pt;
+  color: #888;
+  margin-top: 4pt;
+}}
+.sig-name {{
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 14pt;
+  text-transform: uppercase;
+  margin-bottom: 2pt;
 }}
 </style>
 </head>
 <body>
-<div class="page">
-  <div class="header">
+<div class="doc">
+  <div class="top">
     {logo_html}
-    <div class="meta-right">
-      <div class="meta-eyebrow">Enrollment &amp; Waiver</div>
-      <div class="doc-title">{_esc(ctx.get("athlete_name"))}</div>
-      <div class="submitted-date">Submitted {submitted}</div>
+    <div class="top-meta">
+      <div class="doc-eyebrow">Enrollment</div>
+      <div class="doc-title">Enroll.</div>
+      <div class="doc-sub">Submitted {_esc(submitted)}</div>
     </div>
   </div>
-  <div class="body">
-    {_section("Athlete", athlete_rows)}
-    {_section(contact_label, contact_rows)}
-    {_section("Emergency Contact", emergency_rows)}
-    {_section("Medical", _row("Conditions", ctx.get("medical_conditions")))}
-    {_section("Additional", additional_rows)}
-    {_section("Waiver", f'<div class="waiver-box">{_esc(WAIVER_TEXT)}</div>')}
-    {_section("Photo Release", _row("Authorization", photo_label))}
-    {_section("Signature", "".join([
-        _row("Typed Name", ctx.get("waiver_typed_signature")),
-        f'<tr><td class="fld-lbl">Drawn Signature</td><td class="fld-val">{sig_html}</td></tr>',
-    ]))}
-  </div>
-  <div class="footer">
-    <span>{_esc(business_name)}.</span>
-    <span>{_esc(ctx.get("program_label"))}</span>
+
+  {_sec("Athlete")}
+  {_row("".join([
+      _field("Full Name", athlete_name),
+      _field("Date of Birth", _fmt_date(ctx.get("date_of_birth"))),
+  ]))}
+  {_row("".join([
+      _field("School", ctx.get("school")),
+      _field("Grade", ctx.get("grade")),
+      _field("T-Shirt", ctx.get("shirt_size")),
+  ]), cols=3)}
+  {_chip_lbl("Program of Interest")}
+  {_chips(PROGRAMS, program_type)}
+
+  {_sec("Tennis Background")}
+  {_row("".join([
+      _field("UTR Rating", ctx.get("utr")),
+      _field("WTN Rating", ctx.get("wtn")),
+  ]))}
+  {_chip_lbl("Primary Goal(s)")}
+  {_chips([(g, g) for g in GOALS], goals)}
+
+  {_sec(contact_label)}
+  {contact_block}
+
+  {_sec("Emergency Contact")}
+  {_row("".join([
+      _field("Name", ctx.get("emergency_contact_name")),
+      _field("Relationship", ctx.get("emergency_contact_relationship")),
+  ]))}
+  {_row("".join([
+      _field("Phone", ctx.get("emergency_contact_phone")),
+      _field("Email", ctx.get("emergency_contact_email")),
+  ]))}
+
+  {_sec("Medical")}
+  {_chip_lbl("Flag any of the following")}
+  {_med_grid(medical_none, medical_flags)}
+  {medical_details_block}
+
+  {_sec("Additional")}
+  {_chip_lbl("How did you hear about EAT?")}
+  {_chips([(r, r) for r in REFERRALS], ctx.get("referral_source") or "")}
+  {_row(_field("Anything else?", ctx.get("additional_notes"), wide=True), cols=1)}
+
+  <div class="waiver-page">
+    <div class="prefill-tag">{_esc(athlete_name.upper())}</div>
+    <div class="prefill-sub">Signed waiver for {_esc(athlete_name)}</div>
+
+    <div class="waiver-txt">{_waiver_html()}</div>
+
+    {_sec("Photo Release")}
+    {_radio(
+        "Yes",
+        "I authorize EAT to photograph or record my athlete for promotional purposes.",
+        photo_release is True,
+    )}
+    {_radio(
+        "No",
+        "I do not authorize photography or recording of my athlete.",
+        photo_release is False,
+    )}
+
+    {_sec("Confirm Your Name")}
+    {_row(_field("Typed Name", typed_sig, wide=True), cols=1)}
+
+    {_sec("Draw Your Signature")}
+    <div class="sig-block">
+      <div class="sig-name">{_esc(typed_sig)}</div>
+      <div class="sig-wrap">{sig_html}</div>
+      <div class="sig-meta">{"Signed " + _esc(signed_at) if signed_at else "Signed " + _esc(submitted)}</div>
+    </div>
   </div>
 </div>
 </body>
@@ -310,10 +626,12 @@ def sample_enrollment_context() -> dict:
         "school": "Sample High School",
         "grade": "9th",
         "shirt_size": "M",
+        "program_type": "full_time",
         "program_label": "Eat w/ EAT — Full-Time",
         "utr": "4.50",
         "wtn": "—",
-        "goals": "Tournament Prep, College Prep",
+        "goals_list": ["Tournament Prep", "College Prep"],
+        "is_adult": False,
         "contact_label": "Guardian",
         "contact_name": "Sample Parent",
         "contact_relationship": "Parent",
@@ -325,7 +643,9 @@ def sample_enrollment_context() -> dict:
         "emergency_contact_relationship": "Parent",
         "emergency_contact_phone": "(555) 987-6543",
         "emergency_contact_email": "emergency@example.com",
-        "medical_conditions": "None / No known issues",
+        "medical_none": True,
+        "medical_flags": [],
+        "medical_details": "",
         "referral_source": "Referral",
         "additional_notes": "Available after 3pm on weekdays.",
         "photo_release": True,
@@ -339,4 +659,5 @@ def sample_enrollment_context() -> dict:
             "BQwAAf8B/9sAAAAASUVORK5CYII="
         ),
         "submitted_date": date.today(),
+        "signed_at": datetime.now(_EASTERN),
     }

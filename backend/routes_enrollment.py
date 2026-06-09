@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from auth import get_current_coach
-from db import db, serialize
+from db import db, now, serialize
 from models import (
     Athlete,
     AthleteStatus,
@@ -190,9 +190,12 @@ async def submit_enrollment(payload: EnrollmentSubmit):
         referral_source=payload.referral_source or None,
         enrollment_notes=payload.additional_notes or None,
         medical_conditions=_build_medical(medical_none, payload.medical_flags, payload.medical_details),
+        medical_flags=list(payload.medical_flags),
+        medical_none=medical_none,
         waiver_photo_release=payload.photo_release,
         waiver_typed_signature=payload.waiver_typed_signature.strip(),
         waiver_signature=payload.waiver_signature.strip(),
+        waiver_signed_at=now(),
         emergency_contact_relationship=payload.emergency_contact_relationship or None,
         family_id=family_id,
     )

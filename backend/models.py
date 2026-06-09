@@ -160,9 +160,12 @@ class AthleteBase(BaseModel):
     referral_source: Optional[str] = None
     enrollment_notes: Optional[str] = None
     medical_conditions: Optional[str] = None
+    medical_flags: List[str] = Field(default_factory=list)
+    medical_none: bool = False
     waiver_photo_release: Optional[bool] = None
     waiver_typed_signature: Optional[str] = None
     waiver_signature: Optional[str] = None
+    waiver_signed_at: Optional[datetime] = None
     emergency_contact_relationship: Optional[str] = None
     rate_type: RateType = RateType.daily
     rate_override: Optional[float] = None  # null = use rate card default
