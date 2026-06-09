@@ -50,6 +50,79 @@ async def _invoiced_attendance_ids() -> set[str]:
     return {r["id"] for r in existing}
 
 
+async def _billed_session_athletes_sent_or_paid(family_id: str) -> set[tuple[str, str]]:
+    """(session_id, athlete_id) pairs on sent or paid invoices only (drafts still need billing)."""
+    pairs: set[tuple[str, str]] = set()
+    invs = await db.invoices.find(
+        {
+            "family_id": family_id,
+            "status": {"$in": [InvoiceStatus.sent.value, InvoiceStatus.paid.value]},
+        },
+        {"id": 1, "_id": 0},
+    ).to_list(500)
+    inv_ids = [i["id"] for i in invs]
+    if not inv_ids:
+        return pairs
+
+    items = await db.invoice_line_items.find(
+        {"invoice_id": {"$in": inv_ids}},
+        {"_id": 0},
+    ).to_list(5000)
+    if not items:
+        return pairs
+
+    athlete_ids = list({li["athlete_id"] for li in items})
+    athletes = await db.athletes.find(
+        {"id": {"$in": athlete_ids}, "family_id": family_id},
+        {"id": 1, "_id": 0},
+    ).to_list(500)
+    family_athlete_ids = {a["id"] for a in athletes}
+
+    for li in items:
+        aid = li["athlete_id"]
+        if aid not in family_athlete_ids:
+            continue
+        record_ids = _attendance_ids_from_line_item(li)
+        if record_ids:
+            recs = await db.attendance_records.find(
+                {"id": {"$in": record_ids}},
+                {"session_id": 1, "_id": 0},
+            ).to_list(len(record_ids))
+            for rec in recs:
+                pairs.add((rec["session_id"], aid))
+            if recs:
+                continue
+        sess_iso = session_date_from_line_description(li.get("description") or "")
+        if not sess_iso:
+            continue
+        sess = await db.sessions.find_one(
+            {"date": sess_iso, "athlete_ids": aid},
+            {"id": 1, "_id": 0},
+        )
+        if sess:
+            pairs.add((sess["id"], aid))
+    return pairs
+
+
+async def _invoiced_attendance_sent_or_paid() -> set[str]:
+    """Attendance on sent/paid invoices only."""
+    invs = await db.invoices.find(
+        {"status": {"$in": [InvoiceStatus.sent.value, InvoiceStatus.paid.value]}},
+        {"id": 1, "_id": 0},
+    ).to_list(500)
+    inv_ids = [i["id"] for i in invs]
+    if not inv_ids:
+        return set()
+    items = await db.invoice_line_items.find(
+        {"invoice_id": {"$in": inv_ids}},
+        {"attendance_record_id": 1, "attendance_record_ids": 1, "_id": 0},
+    ).to_list(20000)
+    locked: set[str] = set()
+    for item in items:
+        locked.update(_attendance_ids_from_line_item(item))
+    return locked
+
+
 async def _billed_session_athletes_for_family(family_id: str) -> set[tuple[str, str]]:
     """(session_id, athlete_id) pairs already on any invoice for this family."""
     pairs: set[tuple[str, str]] = set()
@@ -757,27 +830,11 @@ async def billing_status_for_session(session_id: str) -> list[dict]:
 
 
 async def ready_to_invoice_summary() -> dict:
-    """Families with uninvoiced billable attendance for the prior Mon–Fri week (Sundays only)."""
+    """Families with uninvoiced billable attendance for the last completed Mon–Fri week."""
     from invoice_auto import training_week_mon_fri
 
     today = datetime.now(SESSION_TIME_ZONE).date()
-    empty = {
-        "visible": False,
-        "billing_week": None,
-        "total_sessions": 0,
-        "total_families": 0,
-        "families": [],
-    }
-    if today.weekday() != 6:
-        empty["reason"] = "not_sunday"
-        return empty
-
-    period = training_week_mon_fri(today)
-    if not period:
-        empty["reason"] = "no_billing_week"
-        return empty
-
-    period_start, period_end = period
+    period_start, period_end = training_week_mon_fri(today)
     billing_week = {
         "start": period_start.isoformat(),
         "end": period_end.isoformat(),
@@ -796,9 +853,9 @@ async def ready_to_invoice_summary() -> dict:
 
     family_billed: dict[str, set[tuple[str, str]]] = {}
     for fam in families:
-        family_billed[fam["id"]] = await _billed_session_athletes_for_family(fam["id"])
+        family_billed[fam["id"]] = await _billed_session_athletes_sent_or_paid(fam["id"])
 
-    locked = await _invoiced_attendance_ids()
+    locked = await _invoiced_attendance_sent_or_paid()
 
     sessions = await db.sessions.find(
         {

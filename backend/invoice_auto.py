@@ -137,14 +137,17 @@ async def auto_sync_invoices_for_session(session_id: str) -> list[dict]:
     return results
 
 
-def training_week_mon_fri(as_of: date) -> Optional[tuple[date, date]]:
-    """Mon–Fri of the training week that ended on the most recent Friday."""
-    if as_of.weekday() == 5:  # Saturday — week ended yesterday
+def training_week_mon_fri(as_of: date) -> tuple[date, date]:
+    """Mon–Fri of the last completed training week (due for invoicing)."""
+    weekday = as_of.weekday()
+    if weekday == 4:  # Friday — current week still in session; bill the prior week
+        friday = as_of - timedelta(days=7)
+    elif weekday == 5:  # Saturday — week ended yesterday
         friday = as_of - timedelta(days=1)
-    elif as_of.weekday() == 6:  # Sunday — same billing week
+    elif weekday == 6:  # Sunday
         friday = as_of - timedelta(days=2)
-    else:
-        return None
+    else:  # Mon–Thu — last Friday was 3–6 days ago
+        friday = as_of - timedelta(days=weekday + 3)
     monday = friday - timedelta(days=4)
     return monday, friday
 

@@ -277,7 +277,7 @@ export default function Home() {
             detail: `${sentCount} invoice${sentCount === 1 ? "" : "s"} sent, not yet paid — ${fmtMoney(outstandingTotal)}`,
             onClick: () => nav("/invoices?status=sent"),
         },
-        ...(readyToInvoice.visible && readyToInvoiceCount > 0
+        ...(readyToInvoiceCount > 0
             ? [{
                 count: readyToInvoiceCount,
                 label: "Ready to Invoice",
@@ -523,8 +523,6 @@ export default function Home() {
             >
                 {readyToInvoiceLoading ? (
                     <div className="text-center py-8 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
-                ) : !readyToInvoice.visible ? (
-                    <div className="text-sm text-muted font-light py-4">Ready to Invoice appears on Sundays for the prior Mon–Fri training week.</div>
                 ) : readyToInvoiceCount === 0 ? (
                     <div className="text-sm text-muted font-light py-4">All billable sessions for this week are on invoices.</div>
                 ) : (
