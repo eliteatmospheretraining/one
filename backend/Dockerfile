@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir -r requirements-local.txt
 
 COPY . .
 
-CMD uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
