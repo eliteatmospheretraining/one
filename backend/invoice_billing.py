@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime
 
 from billing import (
+    SESSION_TIME_ZONE,
     _is_monthly_prepay,
     athlete_on_full_time,
     billing_program_type,
@@ -375,6 +376,13 @@ async def billing_skips_for_period(
             if key in billed_pairs:
                 skips.append({**base, "reason": "already_invoiced", "invoice_number": None})
                 continue
+            athlete = athletes_by_id.get(aid, {})
+            if (
+                sess.get("session_type") == ProgramType.full_time.value
+                and _is_monthly_prepay(athlete.get("rate_type"))
+            ):
+                skips.append({**base, "reason": "monthly_package"})
+                continue
             skips.append({**base, "reason": "excluded"})
     return skips
 
@@ -575,6 +583,42 @@ async def monthly_tuition_line_items(
     return items
 
 
+async def auto_complete_family_sessions_in_period(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+) -> int:
+    """Mark past sessions with attendance as completed so invoice generation can bill them."""
+    athletes = await db.athletes.find({"family_id": family_id}, {"id": 1, "_id": 0}).to_list(500)
+    athlete_ids = [a["id"] for a in athletes]
+    if not athlete_ids:
+        return 0
+
+    sessions = await db.sessions.find(
+        {
+            "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
+            "status": {"$nin": [SessionStatus.completed.value, SessionStatus.cancelled.value]},
+            "athlete_ids": {"$in": athlete_ids},
+        },
+        {"_id": 0},
+    ).to_list(5000)
+
+    now = datetime.now(SESSION_TIME_ZONE)
+    completed = 0
+    for sess in sessions:
+        has_attendance = await db.attendance_records.count_documents({"session_id": sess["id"]}) > 0
+        if not has_attendance:
+            continue
+        if not session_is_billable(sess, now):
+            continue
+        await db.sessions.update_one(
+            {"id": sess["id"]},
+            {"$set": {"status": SessionStatus.completed.value}},
+        )
+        completed += 1
+    return completed
+
+
 async def populate_draft_from_attendance(
     invoice_id: str,
     family_id: str,
@@ -585,6 +629,8 @@ async def populate_draft_from_attendance(
     replace_attendance_lines: bool = False,
 ) -> tuple[list, list, int]:
     """Add attendance + monthly tuition lines. Returns (all_new_items, skipped, session_count)."""
+    await auto_complete_family_sessions_in_period(family_id, period_start, period_end)
+
     if replace_attendance_lines:
         await db.invoice_line_items.delete_many({
             "invoice_id": invoice_id,

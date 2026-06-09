@@ -609,25 +609,18 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
     );
 }
 
-const BILLING_SKIP_LABEL = {
-    not_completed: "Session not finished yet",
-    no_attendance: "No attendance recorded",
-    absent: "Marked absent",
-    already_invoiced: "Already on another invoice",
-    excluded: "Not billable",
-};
-
 function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [payOpen, setPayOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const r = await api.get(`/invoices/${invoiceId}`);
+            const r = await api.get(`/invoices/${invoiceId}`, {
+                params: { sync: true },
+            });
             setData(r.data);
         } catch (e) {
             toast.error("Could not load invoice");
@@ -698,27 +691,6 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
         }
     }
 
-    async function refreshFromAttendance() {
-        setRefreshing(true);
-        try {
-            const r = await api.post(`/invoices/${invoiceId}/refresh`);
-            const count = r.data.line_items?.length ?? 0;
-            if (count > 0) {
-                toast.success(
-                    `Updated from attendance · ${count} line${count === 1 ? "" : "s"} · ${fmtMoney(r.data.total)}`
-                );
-            } else {
-                toast.message("No new lines added", { description: r.data.message });
-            }
-            await load();
-            onChanged?.();
-        } catch (e) {
-            toast.error(e.response?.data?.detail || "Refresh failed");
-        } finally {
-            setRefreshing(false);
-        }
-    }
-
     async function confirmDeleteDraft() {
         setDeleting(true);
         try {
@@ -761,26 +733,8 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                             <div className="col-span-3 text-right">Amount</div>
                         </div>
                         {data.line_items.length === 0 && (
-                            <div className="py-4 text-sm text-muted font-light space-y-2">
-                                <div>No line items yet.</div>
-                                {data.invoice.status === "draft" && (
-                                    <div className="text-xs">
-                                        Use <span className="text-paper">Refresh from attendance</span> to pull completed sessions and rate-card pricing for this period.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {data.billing_skips?.length > 0 && data.line_items.length === 0 && (
-                            <div className="pb-3 text-xs text-muted font-light space-y-1">
-                                {data.billing_skips.slice(0, 6).map((skip, i) => (
-                                    <div key={`${skip.date}-${skip.athlete_name}-${i}`}>
-                                        {skip.display_date || skip.date} · {skip.athlete_name} — {BILLING_SKIP_LABEL[skip.reason] || skip.reason}
-                                        {skip.invoice_number ? ` (${skip.invoice_number})` : ""}
-                                    </div>
-                                ))}
-                                {data.billing_skips.length > 6 && (
-                                    <div>+ {data.billing_skips.length - 6} more</div>
-                                )}
+                            <div className="py-4 text-sm text-muted font-light">
+                                No billable attendance in this period.
                             </div>
                         )}
                         {data.line_items.map((li) => (
@@ -852,17 +806,6 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
 
                     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-subtle">
                         <div className="flex flex-wrap gap-2">
-                            {data.invoice.status === "draft" && (
-                                <button
-                                    data-testid={INVOICES.refreshBtn}
-                                    type="button"
-                                    onClick={refreshFromAttendance}
-                                    disabled={refreshing}
-                                    className="eat-btn-secondary"
-                                >
-                                    {refreshing ? "Refreshing…" : "Refresh from attendance"}
-                                </button>
-                            )}
                             {data.invoice.status === "draft" && (
                                 <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-primary">
                                     <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send invoice email

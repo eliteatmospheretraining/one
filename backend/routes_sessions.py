@@ -296,8 +296,21 @@ async def save_attendance(session_id: str, payload: AttendanceSave):
             {"$unset": {"attendance_logged_at": ""}},
         )
 
+    became_completed = False
+    if all_records and session.get("status") != SessionStatus.completed.value:
+        from billing import session_is_billable
+
+        session = await db.sessions.find_one({"id": session_id}, {"_id": 0}) or session
+        if session_is_billable(session):
+            await db.sessions.update_one(
+                {"id": session_id},
+                {"$set": {"status": SessionStatus.completed.value}},
+            )
+            session = await db.sessions.find_one({"id": session_id}, {"_id": 0}) or session
+            became_completed = True
+
     invoices = []
-    if session.get("status") == SessionStatus.completed.value:
+    if became_completed or session.get("status") == SessionStatus.completed.value:
         try:
             invoices = await auto_sync_invoices_for_session(session_id)
         except Exception:

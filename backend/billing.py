@@ -190,8 +190,18 @@ def session_is_billable(session: dict, now: datetime | None = None) -> bool:
         return False
     if status == SessionStatus.completed.value:
         return True
-    if status == SessionStatus.scheduled.value:
-        return session_has_ended_in_est(session, now)
+    if status != SessionStatus.scheduled.value:
+        return False
+    now = now or datetime.now(SESSION_TIME_ZONE)
+    if session_has_ended_in_est(session, now):
+        return True
+    # Past session dates with attendance saved (even if end_time missing).
+    if session.get("attendance_logged_at") and session.get("date"):
+        try:
+            session_day = date.fromisoformat(str(session["date"])[:10])
+            return session_day < now.date()
+        except ValueError:
+            pass
     return False
 
 

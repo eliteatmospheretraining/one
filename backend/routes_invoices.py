@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from auth import get_current_coach
 from db import db, now, serialize
 from invoice_billing import (
+    auto_complete_family_sessions_in_period,
     billing_skips_for_period,
     populate_draft_from_attendance,
 )
@@ -261,10 +262,27 @@ async def delete_invoice_line_item(invoice_id: str, line_item_id: str):
 
 
 @router.get("/{invoice_id}")
-async def get_invoice(invoice_id: str):
+async def get_invoice(invoice_id: str, sync: bool = False):
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(404, "Invoice not found")
+
+    if sync and inv.get("status") == InvoiceStatus.draft.value:
+        period_start = await _parse_date(inv["period_start"])
+        period_end = await _parse_date(inv["period_end"])
+        await auto_complete_family_sessions_in_period(inv["family_id"], period_start, period_end)
+        existing = await db.invoice_line_items.count_documents({"invoice_id": invoice_id})
+        if existing == 0:
+            await populate_draft_from_attendance(
+                invoice_id,
+                inv["family_id"],
+                period_start,
+                period_end,
+                line_item_cls=InvoiceLineItem,
+            )
+            await _recalc_invoice_totals(invoice_id)
+            inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+
     items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(1000)
     family = await db.families.find_one({"id": inv["family_id"]}, {"_id": 0})
     athletes = await db.athletes.find({"family_id": inv["family_id"]}, {"_id": 0}).to_list(500)
