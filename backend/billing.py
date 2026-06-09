@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
-from models import AttendanceType, ProgramType, RateType
+from models import AttendanceType, ProgramType, RateType, SessionStatus
 from rate_card_store import get_rate_card
+
+SESSION_TIME_ZONE = ZoneInfo("America/New_York")
 
 
 def format_invoice_display_date(value: str) -> str:
@@ -169,8 +172,45 @@ def per_session_charge(
     return round(hourly * hours, 2), hours, hourly
 
 
+def session_has_ended_in_est(session: dict, now: datetime | None = None) -> bool:
+    """True when session date + end_time (Eastern wall clock) is at or before now."""
+    if not session.get("date") or not session.get("end_time"):
+        return False
+    now = now or datetime.now(SESSION_TIME_ZONE)
+    year, month, day = (int(x) for x in str(session["date"])[:10].split("-"))
+    hour, minute = (int(x) for x in str(session["end_time"])[:5].split(":"))
+    end = datetime(year, month, day, hour, minute, tzinfo=SESSION_TIME_ZONE)
+    return now >= end
+
+
+def session_is_billable(session: dict, now: datetime | None = None) -> bool:
+    """Sessions bill once marked completed or once their Eastern end time has passed."""
+    status = session.get("status") or SessionStatus.scheduled.value
+    if status == SessionStatus.cancelled.value:
+        return False
+    if status == SessionStatus.completed.value:
+        return True
+    if status == SessionStatus.scheduled.value:
+        return session_has_ended_in_est(session, now)
+    return False
+
+
+def athlete_on_full_time(athlete: dict) -> bool:
+    program_types = athlete.get("program_types") or []
+    if program_types:
+        return ProgramType.full_time.value in program_types
+    return athlete.get("program_type") == ProgramType.full_time.value
+
+
+def full_time_day_rate_type(block_count: int) -> AttendanceType:
+    """Eat w/ EAT: both AM + PM blocks present → full day; one block → half day."""
+    if block_count >= 2:
+        return AttendanceType.full
+    return AttendanceType.half
+
+
 def _full_time_present_billing_type(session: dict) -> AttendanceType:
-    """AM/PM blocks bill half-day; a full-day block bills full-day."""
+    """Each AM/PM block stores as half-day; invoice rolls up same-day blocks to full-day."""
     card = get_rate_card()
     full_hours = float(card.get("full_day_hours", 5.0))
     start = session.get("start_time")
@@ -184,7 +224,7 @@ def _full_time_present_billing_type(session: dict) -> AttendanceType:
         if duration >= full_hours - 0.25:
             return AttendanceType.full
         return AttendanceType.half
-    return AttendanceType.full
+    return AttendanceType.half
 
 
 def resolve_attendance_type(

@@ -7,12 +7,16 @@ from datetime import date, datetime
 
 from billing import (
     _is_monthly_prepay,
+    athlete_on_full_time,
     billing_program_type,
     describe_line,
     format_invoice_display_date,
+    full_time_day_rate_type,
+    full_time_flat_rate,
     monthly_tuition_amount,
     per_session_charge,
     session_date_from_line_description,
+    session_is_billable,
 )
 from db import db
 from models import AttendanceType, InvoiceStatus, ProgramType, SessionStatus
@@ -207,10 +211,16 @@ async def _billable_records_for_family(
                 "$gte": period_start.isoformat(),
                 "$lte": period_end.isoformat(),
             },
-            "status": SessionStatus.completed.value,
+            "status": {
+                "$in": [
+                    SessionStatus.completed.value,
+                    SessionStatus.scheduled.value,
+                ]
+            },
         },
         {"_id": 0},
     ).to_list(5000)
+    sessions = [s for s in sessions if session_is_billable(s)]
     sessions_by_id = {s["id"]: s for s in sessions}
     session_ids = list(sessions_by_id.keys())
 
@@ -342,7 +352,7 @@ async def billing_skips_for_period(
                 "display_date": display_date,
                 "athlete_name": athletes_by_id.get(aid, {}).get("full_name", ""),
             }
-            if sess.get("status") != SessionStatus.completed.value:
+            if not session_is_billable(sess):
                 skips.append({**base, "reason": "not_completed"})
                 continue
             rec = records_by_key.get(key)
@@ -369,6 +379,19 @@ async def billing_skips_for_period(
     return skips
 
 
+def _is_full_time_day_block(athlete: dict, sess: dict, record: dict) -> bool:
+    if sess.get("session_type") != ProgramType.full_time.value:
+        return False
+    if not athlete_on_full_time(athlete):
+        return False
+    at = record.get("attendance_type")
+    if at == AttendanceType.absent.value:
+        return False
+    if at in (AttendanceType.drop_in_full.value, AttendanceType.drop_in_half.value):
+        return False
+    return True
+
+
 def line_items_from_billable(
     invoice_id: str,
     billable: list[dict],
@@ -377,30 +400,62 @@ def line_items_from_billable(
     *,
     line_item_cls,
 ):
-    """Build line items; group same athlete + attendance type + per-session rate (qty = session count)."""
-    groups: dict[tuple[str, str, float], list[tuple[dict, dict, dict, float, float | None, float | None]]] = defaultdict(list)
+    """Build line items.
+
+    Eat w/ EAT enrolled athletes: same calendar day with both AM + PM blocks → one full-day
+    line; one block → half-day. Other programs bill per session as before.
+    """
+    day_blocks: dict[tuple[str, str], list[tuple[dict, dict, dict]]] = defaultdict(list)
+    per_session_rows: list[tuple[dict, dict, dict]] = []
 
     for r in billable:
         athlete = athletes_by_id[r["athlete_id"]]
         sess = sessions_by_id[r["session_id"]]
+        if _is_full_time_day_block(athlete, sess, r):
+            day_blocks[(r["athlete_id"], sess["date"])].append((r, athlete, sess))
+        else:
+            per_session_rows.append((r, athlete, sess))
+
+    items = []
+    for (athlete_id, session_date), rows in sorted(day_blocks.items(), key=lambda x: (x[0][1], x[0][0])):
+        athlete = rows[0][1]
+        day_at = full_time_day_rate_type(len(rows))
+        override = athlete.get("rate_override")
+        if override is not None:
+            override = float(override)
+        unit_price = full_time_flat_rate(day_at, override)
+        record_ids = [row[0]["id"] for row in rows]
+        desc = describe_line(day_at, ProgramType.full_time, session_date, session_count=1)
+        items.append(line_item_cls(
+            invoice_id=invoice_id,
+            athlete_id=athlete_id,
+            athlete_name=athlete["full_name"],
+            attendance_record_id=record_ids[0],
+            attendance_record_ids=record_ids,
+            description=desc,
+            quantity=1.0,
+            unit_price=unit_price,
+            amount=round(unit_price, 2),
+        ))
+
+    groups: dict[tuple[str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
+    for r, athlete, sess in per_session_rows:
         at = AttendanceType(r["attendance_type"])
         pt = billing_program_type(athlete, sess)
         override = athlete.get("rate_override")
         if override is not None:
             override = float(override)
-        per_session, hours, hourly = per_session_charge(
+        per_session, _, _ = per_session_charge(
             at,
             pt,
             override,
             session=sess,
             rate_type=athlete.get("rate_type"),
         )
-        key = (r["athlete_id"], at.value, per_session)
-        groups[key].append((r, athlete, sess, per_session, hours, hourly))
+        groups[(r["athlete_id"], at.value, per_session)].append((r, athlete, sess, per_session))
 
-    items = []
     for rows in groups.values():
-        r0, athlete, sess0, unit_price, _, _ = rows[0]
+        r0, athlete, sess0, unit_price = rows[0]
         at = AttendanceType(r0["attendance_type"])
         pt = billing_program_type(athlete, sess0)
         count = len(rows)
@@ -462,11 +517,17 @@ async def _monthly_athletes_with_attendance(
     sessions = await db.sessions.find(
         {
             "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
-            "status": SessionStatus.completed.value,
+            "status": {
+                "$in": [
+                    SessionStatus.completed.value,
+                    SessionStatus.scheduled.value,
+                ]
+            },
             "session_type": ProgramType.full_time.value,
         },
         {"_id": 0},
     ).to_list(5000)
+    sessions = [s for s in sessions if session_is_billable(s)]
     if not sessions:
         return []
 

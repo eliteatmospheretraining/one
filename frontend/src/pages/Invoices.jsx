@@ -610,7 +610,7 @@ function GenerateInvoiceModal({ open, onOpenChange, families, onCreated }) {
 }
 
 const BILLING_SKIP_LABEL = {
-    not_completed: "Session not marked completed",
+    not_completed: "Session not finished yet",
     no_attendance: "No attendance recorded",
     absent: "Marked absent",
     already_invoiced: "Already on another invoice",

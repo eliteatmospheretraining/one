@@ -195,6 +195,67 @@ class TestRateCard:
         finally:
             reset_rate_card_to_default()
 
+    def test_session_is_billable_after_end_time(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from billing import session_is_billable
+
+        est = ZoneInfo("America/New_York")
+        session = {
+            "date": "2026-06-01",
+            "start_time": "08:00",
+            "end_time": "11:00",
+            "status": "scheduled",
+        }
+        before = datetime(2026, 6, 1, 10, 59, tzinfo=est)
+        after = datetime(2026, 6, 1, 11, 0, tzinfo=est)
+        assert session_is_billable(session, now=before) is False
+        assert session_is_billable(session, now=after) is True
+        assert session_is_billable({**session, "status": "completed"}, now=before) is True
+
+    def test_full_time_day_blocks_roll_up_to_full_or_half(self):
+        from billing import full_time_day_rate_type
+        from invoice_billing import line_items_from_billable
+        from models import AttendanceType, InvoiceLineItem, ProgramType
+
+        athlete = {
+            "id": "a1",
+            "full_name": "Daniel Carcamo",
+            "program_types": ["full_time"],
+            "rate_type": "daily",
+        }
+        am = {"id": "s1", "date": "2026-06-01", "session_type": "full_time", "start_time": "08:00", "end_time": "11:00"}
+        pm = {"id": "s2", "date": "2026-06-01", "session_type": "full_time", "start_time": "13:30", "end_time": "15:30"}
+        billable = [
+            {"id": "r1", "athlete_id": "a1", "session_id": "s1", "attendance_type": AttendanceType.half.value},
+            {"id": "r2", "athlete_id": "a1", "session_id": "s2", "attendance_type": AttendanceType.half.value},
+        ]
+        items = line_items_from_billable(
+            "inv1",
+            billable,
+            {"a1": athlete},
+            {"s1": am, "s2": pm},
+            line_item_cls=InvoiceLineItem,
+        )
+        assert len(items) == 1
+        assert items[0].amount == 60
+        assert "Daily Rate" in items[0].description
+        assert set(items[0].attendance_record_ids) == {"r1", "r2"}
+        assert full_time_day_rate_type(2) == AttendanceType.full
+        assert full_time_day_rate_type(1) == AttendanceType.half
+
+        half_only = line_items_from_billable(
+            "inv2",
+            [billable[0]],
+            {"a1": athlete},
+            {"s1": am},
+            line_item_cls=InvoiceLineItem,
+        )
+        assert len(half_only) == 1
+        assert half_only[0].amount == 30
+        assert "Half-Day Rate" in half_only[0].description
+
 
 # ---------------- Families ----------------
 
