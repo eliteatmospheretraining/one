@@ -34,8 +34,24 @@ api.interceptors.response.use(
 /** Open enrollment + waiver PDF for a coach-authenticated athlete record. */
 export async function openEnrollmentPdf(athleteId) {
     const res = await api.get(`/athletes/${athleteId}/enrollment-pdf`, { responseType: "blob" });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-    window.open(url, "_blank", "noopener,noreferrer");
+    const blob = res.data;
+    if (blob?.type?.includes("json")) {
+        const text = await blob.text();
+        let detail = "Could not open enrollment forms";
+        try {
+            const parsed = JSON.parse(text);
+            if (typeof parsed.detail === "string") detail = parsed.detail;
+        } catch {
+            /* ignore */
+        }
+        throw new Error(detail);
+    }
+    const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+        URL.revokeObjectURL(url);
+        throw new Error("Pop-up blocked — allow pop-ups to view the forms.");
+    }
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 

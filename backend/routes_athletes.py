@@ -1,9 +1,13 @@
 """Athletes CRUD."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+
+logger = logging.getLogger(__name__)
 
 from auth import get_current_coach
 from db import db, serialize
@@ -68,8 +72,13 @@ async def download_enrollment_pdf(athlete_id: str):
     if not family:
         raise HTTPException(404, "Family not found")
 
-    ctx = build_enrollment_context_from_records(athlete, family)
-    pdf_bytes = render_enrollment_pdf(ctx)
+    try:
+        ctx = build_enrollment_context_from_records(athlete, family)
+        pdf_bytes = await asyncio.to_thread(render_enrollment_pdf, ctx)
+    except Exception as e:
+        logger.exception("Enrollment PDF failed for athlete %s", athlete_id)
+        raise HTTPException(500, f"Enrollment PDF failed: {e}") from e
+
     filename = enrollment_pdf_filename(ctx["athlete_name"])
     return Response(
         content=pdf_bytes,

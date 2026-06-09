@@ -1,7 +1,10 @@
 """Enrollment + waiver PDF — matches invoice PDF brand layout."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import html
+import logging
 import os
 import re
 from datetime import date
@@ -10,6 +13,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from pdf import BASE, _font_face, _svg_b64
+
+logger = logging.getLogger(__name__)
+_SIG_CACHE = BASE / ".enrollment_sig_cache"
 
 WAIVER_TEXT = """
 Assumption of Risk. I am aware that participating in tennis and athletics activities involves inherent risks including physical injury, accidents, and property damage. I voluntarily assume all risks and release Elite Atmosphere Training, its coaches, staff, and affiliates from any liability for injuries or damages during participation.
@@ -44,13 +50,25 @@ def _display(value: Any) -> str:
     return text if text else "—"
 
 
-def _sig_src(signature_data: str) -> str:
+def _signature_img_html(signature_data: str) -> str:
+    """Embed drawn signature as a cached file (WeasyPrint is unreliable with huge data: URIs)."""
     raw = (signature_data or "").strip()
     if not raw:
-        return ""
-    if raw.startswith("data:"):
-        return raw
-    return f"data:image/png;base64,{raw}"
+        return '<div class="signature-empty">—</div>'
+    try:
+        b64 = raw.split(",", 1)[1] if raw.startswith("data:") else raw
+        img_bytes = base64.b64decode(b64, validate=False)
+        if not img_bytes:
+            raise ValueError("empty signature image")
+        _SIG_CACHE.mkdir(exist_ok=True)
+        name = hashlib.sha256(img_bytes).hexdigest()[:20] + ".png"
+        path = _SIG_CACHE / name
+        if not path.exists():
+            path.write_bytes(img_bytes)
+        return f'<img class="signature-img" src="{_esc(name)}" alt="Signature" />'
+    except Exception as e:
+        logger.warning("Enrollment PDF signature embed failed: %s", e)
+        return '<div class="signature-empty">Signature on file</div>'
 
 
 def _row(label: str, value: Any) -> str:
@@ -125,12 +143,7 @@ def render_enrollment_pdf(ctx: dict) -> bytes:
     else:
         photo_label = "—"
 
-    sig_src = _sig_src(ctx.get("waiver_signature") or "")
-    sig_html = (
-        f'<img class="signature-img" src="{sig_src}" alt="Signature" />'
-        if sig_src
-        else '<div class="signature-empty">—</div>'
-    )
+    sig_html = _signature_img_html(ctx.get("waiver_signature") or "")
 
     submitted = _fmt_date(ctx.get("submitted_date") or date.today())
 
