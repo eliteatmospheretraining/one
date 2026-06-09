@@ -55,6 +55,36 @@ export async function openEnrollmentPdf(athleteId) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+/** Fetch invoice/receipt PDF bytes for in-app preview. */
+export async function fetchInvoicePdfBlob(invoiceId) {
+    const res = await api.get(`/invoices/${invoiceId}/pdf`, { responseType: "blob" });
+    const blob = res.data;
+    if (blob?.type?.includes("json")) {
+        const text = await blob.text();
+        let detail = "Could not load invoice PDF";
+        try {
+            const parsed = JSON.parse(text);
+            if (typeof parsed.detail === "string") detail = parsed.detail;
+        } catch {
+            /* ignore */
+        }
+        throw new Error(detail);
+    }
+    return blob;
+}
+
+/** Open invoice PDF in a new browser tab. */
+export async function openInvoicePdf(invoiceId) {
+    const blob = await fetchInvoicePdfBlob(invoiceId);
+    const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+        URL.revokeObjectURL(url);
+        throw new Error("Pop-up blocked — allow pop-ups to view the PDF.");
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /** Human-readable message from a FastAPI / axios error. */
 export function formatApiError(err) {
     const detail = err?.response?.data?.detail;

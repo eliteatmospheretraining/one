@@ -97,6 +97,8 @@ export const INVOICES = {
     lineAthleteSelect: "invoice-line-athlete-select",
     sendBtn: "invoice-send-btn",
     sendReceiptBtn: "invoice-send-receipt-btn",
+    previewReceiptBtn: "invoice-preview-receipt-btn",
+    previewReceiptSendBtn: "invoice-preview-receipt-send-btn",
     deleteBtn: "invoice-delete-btn",
     deleteConfirmBtn: "invoice-delete-confirm-btn",
     markPaidBtn: "invoice-mark-paid-btn",

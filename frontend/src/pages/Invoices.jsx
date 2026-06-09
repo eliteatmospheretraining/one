@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, formatApiError } from "../lib/api";
+import { api, formatApiError, fetchInvoicePdfBlob } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
 import { Modal } from "../components/Modal";
@@ -27,7 +27,7 @@ import {
     parseMoneyInput,
     todayISO,
 } from "../lib/format";
-import { Plus, Send, Trash2, DollarSign, ChevronLeft, ChevronRight, Mail, RefreshCw } from "lucide-react";
+import { Plus, Send, Trash2, DollarSign, ChevronLeft, ChevronRight, Mail, RefreshCw, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 /** First calendar year with billing data — revenue view won't go earlier than this. */
@@ -633,6 +633,8 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+    const [sendingReceipt, setSendingReceipt] = useState(false);
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -665,23 +667,27 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
         }
     }
 
-    async function sendReceipt() {
+    async function sendReceiptFromPreview() {
         const isResend = Boolean(data?.invoice?.receipt_sent_at);
-        const prompt = isResend
-            ? "Resend the paid receipt email with a magic link?"
-            : "Email the guardian their paid invoice receipt (PDF attached)?";
-        if (!window.confirm(prompt)) return;
+        setSendingReceipt(true);
         try {
             const r = await api.post(`/invoices/${invoiceId}/send-receipt`);
             toast.success(isResend ? "Receipt re-sent" : "Receipt emailed");
             if (r.data?.dev_magic_url) {
                 toast.message("Dev link", { description: r.data.dev_magic_url, duration: 12000 });
             }
+            setReceiptPreviewOpen(false);
             await load();
             onChanged?.();
         } catch (e) {
             toast.error(e.response?.data?.detail || "Send failed");
+        } finally {
+            setSendingReceipt(false);
         }
+    }
+
+    async function sendReceipt() {
+        setReceiptPreviewOpen(true);
     }
 
     async function refreshFromAttendance() {
@@ -833,10 +839,20 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                                 </button>
                             )}
                             {data.invoice.status === "paid" && (
-                                <button data-testid={INVOICES.sendReceiptBtn} type="button" onClick={sendReceipt} className="eat-btn-primary">
-                                    <Mail size={13} className="mr-1.5" strokeWidth={1.75} />
-                                    {data.invoice.receipt_sent_at ? "Resend receipt" : "Send receipt"}
-                                </button>
+                                <>
+                                    <button
+                                        data-testid={INVOICES.previewReceiptBtn}
+                                        type="button"
+                                        onClick={() => setReceiptPreviewOpen(true)}
+                                        className="eat-btn-secondary"
+                                    >
+                                        <Eye size={13} className="mr-1.5" strokeWidth={1.75} /> Preview receipt
+                                    </button>
+                                    <button data-testid={INVOICES.sendReceiptBtn} type="button" onClick={sendReceipt} className="eat-btn-primary">
+                                        <Mail size={13} className="mr-1.5" strokeWidth={1.75} />
+                                        {data.invoice.receipt_sent_at ? "Resend receipt" : "Send receipt"}
+                                    </button>
+                                </>
                             )}
                             {data.invoice.status === "draft" && (
                                 <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-secondary">
@@ -863,6 +879,19 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                     invoiceId={invoiceId}
                     amountSuggest={data.invoice.total}
                     onPaid={() => { setPayOpen(false); load(); onChanged?.(); }}
+                />
+            )}
+
+            {data && (
+                <ReceiptPreviewModal
+                    open={receiptPreviewOpen}
+                    onOpenChange={setReceiptPreviewOpen}
+                    invoiceId={invoiceId}
+                    invoiceNumber={data.invoice.invoice_number}
+                    guardianEmail={data.family?.guardian_email}
+                    receiptSent={Boolean(data.invoice.receipt_sent_at)}
+                    sending={sendingReceipt}
+                    onSend={sendReceiptFromPreview}
                 />
             )}
         </Modal>
@@ -903,6 +932,97 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
             </div>
         </Modal>
         </>
+    );
+}
+
+function ReceiptPreviewModal({
+    open,
+    onOpenChange,
+    invoiceId,
+    invoiceNumber,
+    guardianEmail,
+    receiptSent,
+    sending,
+    onSend,
+}) {
+    const [pdfUrl, setPdfUrl] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (!open || !invoiceId) return undefined;
+        let objectUrl = null;
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        setPdfUrl(null);
+        fetchInvoicePdfBlob(invoiceId)
+            .then((blob) => {
+                if (cancelled) return;
+                objectUrl = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
+                setPdfUrl(objectUrl);
+            })
+            .catch((e) => {
+                if (!cancelled) setError(formatApiError(e) || "Could not load receipt PDF");
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [open, invoiceId]);
+
+    const sendLabel = receiptSent ? "Resend to guardian" : "Send to guardian";
+
+    return (
+        <Modal
+            open={open}
+            onOpenChange={(next) => !sending && onOpenChange(next)}
+            title={`Receipt · ${invoiceNumber || "Invoice"}`}
+            maxW="max-w-4xl"
+        >
+            <div className="flex flex-col gap-4">
+                <p className="text-sm text-muted font-light">
+                    {guardianEmail
+                        ? `This PDF will be emailed to ${guardianEmail}.`
+                        : "No guardian email on file — add one to the family before sending."}
+                </p>
+                {loading && (
+                    <div className="text-center py-16 text-muted uppercase tracking-wider2 text-sm">Loading PDF…</div>
+                )}
+                {error && (
+                    <div className="text-center py-10 text-danger text-sm">{error}</div>
+                )}
+                {pdfUrl && !loading && (
+                    <iframe
+                        title="Receipt preview"
+                        src={pdfUrl}
+                        className="w-full h-[min(70vh,640px)] border border-subtle bg-ink"
+                    />
+                )}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-subtle">
+                    <button
+                        type="button"
+                        onClick={() => onOpenChange(false)}
+                        disabled={sending}
+                        className="eat-btn-secondary flex-1 min-w-[7rem]"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        data-testid={INVOICES.previewReceiptSendBtn}
+                        onClick={onSend}
+                        disabled={sending || loading || Boolean(error) || !guardianEmail}
+                        className="eat-btn-primary flex-1 min-w-[7rem] disabled:opacity-50"
+                    >
+                        {sending ? "Sending…" : sendLabel}
+                    </button>
+                </div>
+            </div>
+        </Modal>
     );
 }
 
