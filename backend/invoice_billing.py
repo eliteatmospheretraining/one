@@ -182,7 +182,7 @@ async def ensure_rostered_lesson_attendance(session: dict) -> int:
     if not athlete_ids:
         return 0
 
-    from billing import billing_program_type, compute_billed_rate, resolve_attendance_type
+    from billing import billing_program_type, compute_billed_rate, resolve_attendance_type, semi_private_lesson_charge
 
     existing = await db.attendance_records.find(
         {"session_id": session["id"]},
@@ -191,6 +191,8 @@ async def ensure_rostered_lesson_attendance(session: dict) -> int:
     by_athlete = {r["athlete_id"]: r for r in existing}
 
     new_records: list[dict] = []
+    is_semi_private = session.get("session_type") == ProgramType.semi_private.value
+    semi_private_charged = False
     for aid in athlete_ids:
         if aid in by_athlete:
             continue
@@ -206,13 +208,20 @@ async def ensure_rostered_lesson_attendance(session: dict) -> int:
         override = athlete.get("rate_override")
         if override is not None:
             override = float(override)
-        rate = compute_billed_rate(
-            billing_type,
-            program_type,
-            override,
-            session=session,
-            rate_type=athlete.get("rate_type"),
-        )
+        if is_semi_private:
+            if not semi_private_charged:
+                rate = semi_private_lesson_charge(session, override)
+                semi_private_charged = True
+            else:
+                rate = 0.0
+        else:
+            rate = compute_billed_rate(
+                billing_type,
+                program_type,
+                override,
+                session=session,
+                rate_type=athlete.get("rate_type"),
+            )
         rec = AttendanceRecord(
             session_id=session["id"],
             athlete_id=aid,
@@ -608,27 +617,20 @@ def _semi_private_line_items(
         )
         names = " + ".join(a["full_name"] for a in athletes)
         record_ids: list[str] = []
-        total = 0.0
         for athlete in athletes:
             r = session_records.get(athlete["id"])
-            if not r:
-                continue
-            at = stored_attendance_type(r["attendance_type"], athlete=athlete, session=sess)
-            override = athlete.get("rate_override")
-            if override is not None:
-                override = float(override)
-            per_session, _, _ = per_session_charge(
-                at,
-                ProgramType.semi_private,
-                override,
-                session=sess,
-                rate_type=athlete.get("rate_type"),
-            )
-            total += per_session
-            record_ids.append(r["id"])
+            if r:
+                record_ids.append(r["id"])
         if not record_ids:
             continue
-        total = round(total, 2)
+        override = None
+        for athlete in athletes:
+            if athlete.get("rate_override") is not None:
+                override = float(athlete["rate_override"])
+                break
+        from billing import semi_private_lesson_charge
+
+        total = round(semi_private_lesson_charge(sess, override), 2)
         items.append(line_item_cls(
             invoice_id=invoice_id,
             athlete_id=athletes[0]["id"],
@@ -964,7 +966,9 @@ async def populate_draft_from_attendance(
 
 async def sync_attendance_billed_rates(billable: list[dict], athletes_by_id: dict, sessions_by_id: dict) -> None:
     """Keep attendance billed_rate in sync with current billing rules."""
-    from billing import billing_program_type, compute_billed_rate
+    from billing import billing_program_type, compute_billed_rate, semi_private_lesson_charge
+
+    semi_private_charged: set[str] = set()
 
     for r in billable:
         athlete = athletes_by_id[r["athlete_id"]]
@@ -974,13 +978,20 @@ async def sync_attendance_billed_rates(billable: list[dict], athletes_by_id: dic
         override = athlete.get("rate_override")
         if override is not None:
             override = float(override)
-        amount = compute_billed_rate(
-            at,
-            pt,
-            override,
-            session=sess,
-            rate_type=athlete.get("rate_type"),
-        )
+        if sess.get("session_type") == ProgramType.semi_private.value:
+            if r["session_id"] in semi_private_charged:
+                amount = 0.0
+            else:
+                amount = semi_private_lesson_charge(sess, override)
+                semi_private_charged.add(r["session_id"])
+        else:
+            amount = compute_billed_rate(
+                at,
+                pt,
+                override,
+                session=sess,
+                rate_type=athlete.get("rate_type"),
+            )
         await db.attendance_records.update_one(
             {"id": r["id"]},
             {"$set": {"billed_rate": amount}},

@@ -353,7 +353,7 @@ class TestRateCard:
         assert items[0].athlete_name == "Rafael Carcamo + Daniel Carcamo"
         assert items[0].description == "Semi-Private Lesson"
         assert items[0].quantity == 1
-        assert items[0].amount == 130
+        assert items[0].amount == 65
         assert set(items[0].attendance_record_ids) == {"r1", "r2"}
 
 

@@ -172,6 +172,20 @@ def per_session_charge(
     return round(hourly * hours, 2), hours, hourly
 
 
+def semi_private_lesson_charge(
+    session: dict,
+    rate_override: float | None = None,
+) -> float:
+    """Single semi-private lesson charge (shared by all athletes on the session)."""
+    amount, _, _ = per_session_charge(
+        AttendanceType.full,
+        ProgramType.semi_private,
+        rate_override,
+        session=session,
+    )
+    return amount
+
+
 def session_has_ended_in_est(session: dict, now: datetime | None = None) -> bool:
     """True when session date + end_time (Eastern wall clock) is at or before now."""
     if not session.get("date") or not session.get("end_time"):
