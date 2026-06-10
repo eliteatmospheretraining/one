@@ -43,9 +43,29 @@ function buildEmergencyContacts(form, emergencyContacts) {
     return contacts;
 }
 
-function buildFamilyPayload(form, emergencyContacts) {
+function familyContactFields(family) {
+    return {
+        guardian_name: family?.guardian_name || "",
+        guardian_email: family?.guardian_email || "",
+        guardian_phone: family?.guardian_phone || "",
+        guardian_name_secondary: family?.guardian_name_secondary || "",
+        guardian_email_secondary: family?.guardian_email_secondary || "",
+        guardian_phone_secondary: family?.guardian_phone_secondary || "",
+    };
+}
+
+function emergencyContactsFromFamily(family) {
+    const next = new Set();
+    const ec = family?.emergency_contacts || [];
+    if (ec.some((c) => c.name === family?.guardian_name)) next.add("one");
+    if (ec.some((c) => c.name === family?.guardian_name_secondary)) next.add("two");
+    if (next.size === 0) next.add("one");
+    return next;
+}
+
+function buildFamilyPayload(form, emergencyContacts, existingFamily = null) {
     const payload = {
-        family_name: deriveFamilyName(form.full_name),
+        family_name: existingFamily?.family_name || deriveFamilyName(form.full_name),
         guardian_name: form.guardian_name,
         guardian_email: form.guardian_email,
         guardian_phone: form.guardian_phone,
@@ -75,6 +95,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
 
     function blank() {
         return {
+            family_id: "__new__",
             full_name: "",
             date_of_birth: "",
             program_types: ["full_time"],
@@ -98,15 +119,9 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             if (athlete) {
                 const family = families.find((f) => f.id === athlete.family_id);
                 setSelectedContact("one");
-                setEmergencyContacts(() => {
-                    const next = new Set();
-                    const ec = family?.emergency_contacts || [];
-                    if (ec.some((c) => c.name === family?.guardian_name)) next.add("one");
-                    if (ec.some((c) => c.name === family?.guardian_name_secondary)) next.add("two");
-                    if (next.size === 0) next.add("one");
-                    return next;
-                });
+                setEmergencyContacts(emergencyContactsFromFamily(family));
                 setForm({
+                    family_id: athlete.family_id || "",
                     full_name: athlete.full_name || "",
                     date_of_birth: athlete.date_of_birth || "",
                     program_types: athleteProgramTypes(athlete),
@@ -116,12 +131,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                     wtn: athlete.wtn ?? "",
                     shirt_size: athlete.shirt_size || "",
                     medical_conditions: athlete.medical_conditions || "",
-                    guardian_name: family?.guardian_name || "",
-                    guardian_email: family?.guardian_email || "",
-                    guardian_phone: family?.guardian_phone || "",
-                    guardian_name_secondary: family?.guardian_name_secondary || "",
-                    guardian_email_secondary: family?.guardian_email_secondary || "",
-                    guardian_phone_secondary: family?.guardian_phone_secondary || "",
+                    ...familyContactFields(family),
                 });
             } else {
                 setSelectedContact("one");
@@ -133,6 +143,36 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
     }, [open, athlete, families]);
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+    const sortedFamilies = [...families].sort((a, b) =>
+        (a.family_name || "").localeCompare(b.family_name || "", undefined, { sensitivity: "base" }),
+    );
+
+    function selectFamily(familyId) {
+        if (!familyId || familyId === "__new__") {
+            setForm((f) => ({
+                ...f,
+                family_id: "__new__",
+                guardian_name: "",
+                guardian_email: "",
+                guardian_phone: "",
+                guardian_name_secondary: "",
+                guardian_email_secondary: "",
+                guardian_phone_secondary: "",
+            }));
+            setSelectedContact("one");
+            setEmergencyContacts(new Set(["one"]));
+            return;
+        }
+        const family = families.find((f) => f.id === familyId);
+        setForm((f) => ({
+            ...f,
+            family_id: familyId,
+            ...familyContactFields(family),
+        }));
+        setSelectedContact("one");
+        setEmergencyContacts(emergencyContactsFromFamily(family));
+    }
 
     function toggleEmergency(contact) {
         setEmergencyContacts((prev) => {
@@ -180,14 +220,25 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
 
         try {
             if (isEdit) {
-                const familyPayload = buildFamilyPayload(form, emergencyContacts);
+                const family = families.find((f) => f.id === athlete.family_id);
+                const familyPayload = buildFamilyPayload(form, emergencyContacts, family);
                 await api.patch(`/families/${athlete.family_id}`, familyPayload);
                 await api.patch(`/athletes/${athlete.id}`, athletePayload);
                 toast.success("Athlete updated");
             } else {
-                const familyPayload = buildFamilyPayload(form, emergencyContacts);
-                const famRes = await api.post("/families", familyPayload);
-                await api.post("/athletes", { ...athletePayload, family_id: famRes.data.id });
+                const usingExisting = form.family_id && form.family_id !== "__new__";
+                const existingFamily = usingExisting
+                    ? families.find((f) => f.id === form.family_id)
+                    : null;
+                const familyPayload = buildFamilyPayload(form, emergencyContacts, existingFamily);
+                let familyId = form.family_id;
+                if (usingExisting) {
+                    await api.patch(`/families/${familyId}`, familyPayload);
+                } else {
+                    const famRes = await api.post("/families", familyPayload);
+                    familyId = famRes.data.id;
+                }
+                await api.post("/athletes", { ...athletePayload, family_id: familyId });
                 toast.success("Athlete created");
             }
             onSaved?.();
@@ -275,6 +326,26 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                         </SelectContent>
                     </Select>
                 </div>
+
+                {!isEdit && (
+                    <div>
+                        <label className="eat-label">Family</label>
+                        <Select value={form.family_id} onValueChange={selectFamily}>
+                            <SelectTrigger data-testid={ATHLETE_FORM.family} className="mt-1.5 h-11">
+                                <SelectValue placeholder="Select family" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="__new__">New family</SelectItem>
+                                {sortedFamilies.map((f) => (
+                                    <SelectItem key={f.id} value={f.id}>
+                                        {f.family_name}
+                                        {f.guardian_name ? ` · ${f.guardian_name}` : ""}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
 
                 <div>
                     <label className="eat-label">Full Name</label>
