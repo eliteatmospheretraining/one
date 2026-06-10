@@ -147,6 +147,34 @@ body {
     }
     .eat-input:focus { outline: none; }
 
+    /* Invisible native date/time input over the styled field on touch devices. */
+    .eat-native-picker-overlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: transparent;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .eat-native-picker-overlay::-webkit-calendar-picker-indicator {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .eat-native-picker-overlay:disabled {
+        cursor: not-allowed;
+    }
+
     /* Buttons */
     .eat-btn {
         @apply h-11 px-5 inline-flex items-center justify-center font-medium uppercase tracking-wider2 text-sm transition-colors;

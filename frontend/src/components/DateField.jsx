@@ -45,15 +45,22 @@ export function DateField({
 
     if (nativePicker) {
         return (
-            <input
-                type="date"
-                value={value || ""}
-                onChange={(e) => onChange(e.target.value)}
-                required={required}
-                disabled={disabled}
-                data-testid={testId}
-                className={`eat-input ${className}`}
-            />
+            <div className={`eat-input relative flex items-center justify-between text-left pr-3 ${className}`}>
+                <span className={value ? "text-paper" : "text-muted"}>
+                    {value ? fmtDate(value, { month: "short", day: "numeric", year: "numeric" }) : placeholder}
+                </span>
+                <CalendarIcon size={15} strokeWidth={1.5} className="text-muted ml-2 shrink-0" />
+                <input
+                    type="date"
+                    value={value || ""}
+                    onChange={(e) => onChange(e.target.value)}
+                    required={required}
+                    disabled={disabled}
+                    data-testid={testId}
+                    aria-label={placeholder}
+                    className="eat-native-picker-overlay"
+                />
+            </div>
         );
     }
 

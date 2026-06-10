@@ -23,15 +23,22 @@ export function TimeField({
 
     if (nativePicker) {
         return (
-            <input
-                type="time"
-                value={value || ""}
-                onChange={(e) => onChange(e.target.value)}
-                required={required}
-                disabled={disabled}
-                data-testid={testId}
-                className={`eat-input ${className}`}
-            />
+            <div className={`eat-input relative flex items-center justify-between text-left pr-3 ${className}`}>
+                <span className={value ? "text-paper" : "text-muted"}>
+                    {value ? fmtTime(value) : placeholder}
+                </span>
+                <Clock size={15} strokeWidth={1.5} className="text-muted ml-2 shrink-0" />
+                <input
+                    type="time"
+                    value={value || ""}
+                    onChange={(e) => onChange(e.target.value)}
+                    required={required}
+                    disabled={disabled}
+                    data-testid={testId}
+                    aria-label={placeholder}
+                    className="eat-native-picker-overlay"
+                />
+            </div>
         );
     }
 
