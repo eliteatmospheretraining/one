@@ -3,6 +3,7 @@ import { EatTimePicker } from "./EatTimePicker";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Clock } from "lucide-react";
 import { fmtTime } from "../lib/format";
+import { useNativePicker } from "../lib/useNativePicker";
 
 /**
  * Dark-themed time field replacing native `<input type="time">`.
@@ -17,10 +18,25 @@ export function TimeField({
     disabled = false,
     className = "",
 }) {
+    const nativePicker = useNativePicker();
     const [open, setOpen] = useState(false);
 
+    if (nativePicker) {
+        return (
+            <input
+                type="time"
+                value={value || ""}
+                onChange={(e) => onChange(e.target.value)}
+                required={required}
+                disabled={disabled}
+                data-testid={testId}
+                className={`eat-input ${className}`}
+            />
+        );
+    }
+
     return (
-        <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+        <Popover modal={false} open={open} onOpenChange={disabled ? undefined : setOpen}>
             <PopoverTrigger asChild>
                 <button
                     type="button"
@@ -37,7 +53,7 @@ export function TimeField({
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="z-[110] w-[max(15.75rem,var(--radix-popover-trigger-width))] min-w-[15.75rem] max-w-[calc(100vw-1.5rem)] p-0 bg-mid border border-subtle rounded-[2px] text-paper overflow-hidden"
+                className="z-[200] w-[max(15.75rem,var(--radix-popover-trigger-width))] min-w-[15.75rem] max-w-[calc(100vw-1.5rem)] p-0 bg-mid border border-subtle rounded-[2px] text-paper overflow-hidden"
             >
                 <EatTimePicker key={open ? "open" : "closed"} value={value} onChange={onChange} />
             </PopoverContent>

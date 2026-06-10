@@ -3,6 +3,7 @@ import { EatDatePicker } from "./EatDatePicker";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { fmtDate } from "../lib/format";
+import { useNativePicker } from "../lib/useNativePicker";
 
 /**
  * Dark-themed date field replacing the native `<input type="date"`.
@@ -17,6 +18,7 @@ export function DateField({
     disabled = false,
     className = "",
 }) {
+    const nativePicker = useNativePicker();
     const [open, setOpen] = useState(false);
     const [panel, setPanel] = useState("days");
     const selected = value ? new Date(value + "T00:00:00") : undefined;
@@ -41,8 +43,22 @@ export function DateField({
         setOpen(false);
     }
 
+    if (nativePicker) {
+        return (
+            <input
+                type="date"
+                value={value || ""}
+                onChange={(e) => onChange(e.target.value)}
+                required={required}
+                disabled={disabled}
+                data-testid={testId}
+                className={`eat-input ${className}`}
+            />
+        );
+    }
+
     return (
-        <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+        <Popover modal={false} open={open} onOpenChange={disabled ? undefined : setOpen}>
             <PopoverTrigger asChild>
                 <button
                     type="button"
@@ -59,7 +75,7 @@ export function DateField({
             <PopoverContent
                 align="start"
                 sideOffset={6}
-                className="z-[110] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle rounded"
+                className="z-[200] w-[var(--radix-popover-trigger-width)] min-w-[var(--radix-popover-trigger-width)] max-w-[var(--radix-popover-trigger-width)] p-0 bg-mid border border-subtle rounded"
             >
                 <EatDatePicker
                     selected={selected}
