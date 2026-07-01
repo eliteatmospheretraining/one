@@ -508,9 +508,9 @@ class Coach(BaseModel):
 # ---------- Rate Card ----------
 
 RATE_CARD = {
-    "full_day": 69.00,  # per training day (daily cadence); synced from Notion
+    "full_day": 69.00,  # derived from weekly / 5 for per-session attendance math
     "full_day_hours": 5.0,  # optional schedule block (hr); not multiplied into full-time billing
-    "half_day": 34.50,  # per half-day (daily cadence)
+    "half_day": 34.50,  # derived from weekly_half / 5
     "half_day_hours": 2.5,  # optional schedule block (hr)
     "drop_in": 50.00,
     "weekly": 345.00,

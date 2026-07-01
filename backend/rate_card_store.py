@@ -34,6 +34,14 @@ def get_rate_card_status() -> dict[str, Any]:
     }
 
 
+def _derive_per_session_rates(rates: dict[str, float]) -> None:
+    """Internal per-session keys (not Notion services) derived from weekly package rates."""
+    if rates.get("weekly"):
+        rates["full_day"] = round(float(rates["weekly"]) / 5, 2)
+    if rates.get("weekly_half"):
+        rates["half_day"] = round(float(rates["weekly_half"]) / 5, 2)
+
+
 def apply_rate_card(
     updates: dict[str, float],
     *,
@@ -48,6 +56,7 @@ def apply_rate_card(
     for key, value in updates.items():
         if key in merged and value is not None:
             merged[key] = float(value)
+    _derive_per_session_rates(merged)
     _rates = merged
     _meta = {
         "source": source,

@@ -29,8 +29,6 @@ SERVICE_CATALOG: tuple[ServiceDef, ...] = (
     # Eat w/ EAT — full-time (Square variations)
     ServiceDef("eat_monthly", f"{EAT_BRAND} — Monthly Rate", "monthly", EAT_BRAND),
     ServiceDef("eat_weekly", f"{EAT_BRAND} — Weekly Rate", "weekly", EAT_BRAND, needs_week_range=True),
-    ServiceDef("eat_daily", f"{EAT_BRAND} — Daily Rate", "full_day", EAT_BRAND, needs_service_date=True),
-    ServiceDef("eat_half_day", f"{EAT_BRAND} — Half-Day Rate", "half_day", EAT_BRAND, needs_service_date=True),
     ServiceDef(
         "eat_drop_in_full",
         f"{EAT_BRAND} — Drop-In Rate (Full-Day)",
