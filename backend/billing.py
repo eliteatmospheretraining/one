@@ -445,6 +445,25 @@ def is_monthly_invoice_period(period_start: date, period_end: date) -> bool:
     )
 
 
+def rostered_lesson_bills_on_invoice(
+    athlete: dict,
+    session: dict,
+    period_start: date,
+    period_end: date,
+) -> bool:
+    """Private/semi-private lines belong on the athlete's package cadence invoice."""
+    st = session.get("session_type")
+    if st not in (ProgramType.private.value, ProgramType.semi_private.value):
+        return True
+
+    rate_type = athlete.get("rate_type")
+    if _is_monthly_prepay(rate_type):
+        return is_monthly_invoice_period(period_start, period_end)
+    if _is_weekly_prepay(rate_type):
+        return is_weekly_invoice_period(period_start, period_end)
+    return True
+
+
 def describe_monthly_line(athlete_name: str, period_start: date) -> str:
     month_label = period_start.strftime("%B %Y")
     return f"Full-Time Training — Monthly tuition ({month_label}) · {athlete_name}"

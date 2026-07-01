@@ -237,6 +237,21 @@ class TestRateCard:
         assert monthly_tuition_amount({"enrollment_tier": "full_day"}) == 1380.0
         assert monthly_tuition_amount({"enrollment_tier": "half_day"}) == 690.0
 
+    def test_rostered_lesson_invoice_period_routing(self):
+        from billing import rostered_lesson_bills_on_invoice
+        from datetime import date
+
+        athlete = {"rate_type": "monthly"}
+        private = {"session_type": "private"}
+        june = (date(2026, 6, 1), date(2026, 6, 30))
+        week = (date(2026, 6, 1), date(2026, 6, 5))
+        assert rostered_lesson_bills_on_invoice(athlete, private, *june) is True
+        assert rostered_lesson_bills_on_invoice(athlete, private, *week) is False
+
+        weekly_athlete = {"rate_type": "weekly"}
+        assert rostered_lesson_bills_on_invoice(weekly_athlete, private, *week) is True
+        assert rostered_lesson_bills_on_invoice(weekly_athlete, private, *june) is False
+
     def test_invoice_discount_math(self):
         from invoice_discounts import compute_discount_amount, invoice_totals
 

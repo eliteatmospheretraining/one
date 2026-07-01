@@ -21,6 +21,7 @@ from billing import (
     is_weekly_invoice_period,
     monthly_tuition_amount,
     per_session_charge,
+    rostered_lesson_bills_on_invoice,
     session_date_from_line_description,
     session_is_billable,
     stored_attendance_type,
@@ -443,6 +444,8 @@ async def _billable_records_for_family(
         athlete = athletes_by_id.get(r["athlete_id"])
         sess = sessions_by_id.get(r["session_id"])
         if athlete and sess:
+            if not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end):
+                continue
             pt = billing_program_type(athlete, sess)
             if (
                 pt == ProgramType.full_time
@@ -575,6 +578,14 @@ async def billing_skips_for_period(
             ):
                 reason = "weekly_package" if _is_weekly_prepay(athlete.get("rate_type")) else "monthly_package"
                 skips.append({**base, "reason": reason})
+                continue
+            if not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end):
+                if _is_monthly_prepay(athlete.get("rate_type")):
+                    skips.append({**base, "reason": "monthly_invoice_only"})
+                elif _is_weekly_prepay(athlete.get("rate_type")):
+                    skips.append({**base, "reason": "weekly_invoice_only"})
+                else:
+                    skips.append({**base, "reason": "wrong_invoice_period"})
                 continue
             skips.append({**base, "reason": "excluded"})
     return skips
