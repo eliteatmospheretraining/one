@@ -597,13 +597,7 @@ function InvoiceDiscountEditor({ invoiceId, invoice, onChanged }) {
         setDiscountType(invoice.discount_type || "percent");
         setValue(invoice.discount_value != null ? String(invoice.discount_value) : "");
         setSavePreset(false);
-    }, [
-        invoice?.id,
-        invoice?.discount_preset_id,
-        invoice?.discount_label,
-        invoice?.discount_type,
-        invoice?.discount_value,
-    ]);
+    }, [invoice]);
 
     function onPresetChange(id) {
         if (id === "__custom__") {
