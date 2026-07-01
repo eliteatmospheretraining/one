@@ -160,12 +160,15 @@ class TestRateCard:
         r = requests.get(f"{API}/rate-card", timeout=30)
         assert r.status_code == 200
         rc = r.json()
-        assert rc["full_day"] == 60
+        assert rc["full_day"] == 69
         assert rc["full_day_hours"] == 5
         assert rc["half_day_hours"] == 2.5
-        assert rc["half_day"] == 30
-        assert rc["drop_in_full"] == 85
-        assert rc["drop_in_half"] == 50
+        assert rc["half_day"] == 34.5
+        assert rc["drop_in"] == 50
+        assert rc["weekly"] == 345
+        assert rc["weekly_half"] == 172.5
+        assert rc["monthly"] == 1380
+        assert rc["monthly_half"] == 690
         assert rc["private"] == 85
         assert rc["semi_private"] == 65
 
@@ -194,6 +197,62 @@ class TestRateCard:
             assert full_time_flat_rate(AttendanceType.half, None) == 27.5
         finally:
             reset_rate_card_to_default()
+
+    def test_weekly_prepay_billing(self):
+        from billing import (
+            is_monthly_invoice_period,
+            is_weekly_invoice_period,
+            per_session_charge,
+            weekly_tuition_amount,
+        )
+        from datetime import date
+        from models import AttendanceType, ProgramType
+
+        amount, _, _ = per_session_charge(
+            AttendanceType.full,
+            ProgramType.full_time,
+            None,
+            session={"session_type": "full_time"},
+            rate_type="weekly",
+        )
+        assert amount == 0.0
+
+        drop_in, _, _ = per_session_charge(
+            AttendanceType.drop_in_half,
+            ProgramType.full_time,
+            None,
+            session={"session_type": "full_time"},
+            rate_type="weekly",
+        )
+        assert drop_in == 50.0
+
+        assert weekly_tuition_amount({"enrollment_tier": "full_day"}) == 345.0
+        assert weekly_tuition_amount({"enrollment_tier": "half_day"}) == 172.5
+
+        assert is_weekly_invoice_period(date(2026, 6, 1), date(2026, 6, 5))
+        assert not is_weekly_invoice_period(date(2026, 6, 1), date(2026, 6, 30))
+        assert is_monthly_invoice_period(date(2026, 6, 1), date(2026, 6, 30))
+        from billing import monthly_tuition_amount
+
+        assert monthly_tuition_amount({"enrollment_tier": "full_day"}) == 1380.0
+        assert monthly_tuition_amount({"enrollment_tier": "half_day"}) == 690.0
+
+    def test_invoice_discount_math(self):
+        from invoice_discounts import compute_discount_amount, invoice_totals
+
+        assert compute_discount_amount(1000, "percent", 10) == 100.0
+        assert compute_discount_amount(1000, "fixed", 75) == 75.0
+        assert compute_discount_amount(50, "fixed", 75) == 50.0
+        assert compute_discount_amount(1000, "percent", 150) == 1000.0
+
+        subtotal, discount_amount, total = invoice_totals(
+            [{"amount": 345}, {"amount": 50}],
+            discount_type="percent",
+            discount_value=10,
+        )
+        assert subtotal == 395.0
+        assert discount_amount == 39.5
+        assert total == 355.5
 
     def test_session_is_billable_after_end_time(self):
         from datetime import datetime
@@ -239,7 +298,7 @@ class TestRateCard:
             line_item_cls=InvoiceLineItem,
         )
         assert len(items) == 1
-        assert items[0].amount == 60
+        assert items[0].amount == 69
         assert items[0].quantity == 1
         assert "Daily Rate" in items[0].description
         assert set(items[0].attendance_record_ids) == {"r1", "r2"}
@@ -254,7 +313,7 @@ class TestRateCard:
             line_item_cls=InvoiceLineItem,
         )
         assert len(half_only) == 1
-        assert half_only[0].amount == 30
+        assert half_only[0].amount == 34.5
         assert half_only[0].quantity == 1
         assert "Half-Day Rate" in half_only[0].description
 
@@ -273,7 +332,7 @@ class TestRateCard:
         )
         assert len(multi_half) == 1
         assert multi_half[0].quantity == 3
-        assert multi_half[0].amount == 90
+        assert multi_half[0].amount == 103.5
         assert set(multi_half[0].attendance_record_ids) == {"r1", "r3", "r4"}
 
     def test_billing_program_type_uses_session_service(self):

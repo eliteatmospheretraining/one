@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, formatApiError, openEnrollmentPdf } from "../lib/api";
+import { api, formatApiError, openEnrollmentPdf, sendWaiverLink } from "../lib/api";
 import { Modal } from "../components/Modal";
 import { DateField } from "../components/DateField";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
@@ -16,6 +16,15 @@ const STATUSES = [
     { value: "pending", label: "Pending" },
     { value: "active", label: "Active" },
     { value: "archived", label: "Archived" },
+];
+const BILLING_CADENCES = [
+    { value: "weekly", label: "Weekly" },
+    { value: "monthly", label: "Monthly" },
+    { value: "daily", label: "Per session" },
+];
+const ENROLLMENT_TIERS = [
+    { value: "full_day", label: "Full day" },
+    { value: "half_day", label: "Half day" },
 ];
 
 function deriveFamilyName(fullName) {
@@ -92,6 +101,7 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
     const [selectedContact, setSelectedContact] = useState("one");
     const [emergencyContacts, setEmergencyContacts] = useState(() => new Set(["one"]));
     const [form, setForm] = useState(blank());
+    const [sendingWaiver, setSendingWaiver] = useState(false);
 
     function blank() {
         return {
@@ -111,6 +121,8 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             guardian_name_secondary: "",
             guardian_email_secondary: "",
             guardian_phone_secondary: "",
+            rate_type: "weekly",
+            enrollment_tier: "full_day",
         };
     }
 
@@ -131,6 +143,8 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                     wtn: athlete.wtn ?? "",
                     shirt_size: athlete.shirt_size || "",
                     medical_conditions: athlete.medical_conditions || "",
+                    rate_type: athlete.rate_type || "daily",
+                    enrollment_tier: athlete.enrollment_tier || "full_day",
                     ...familyContactFields(family),
                 });
             } else {
@@ -217,6 +231,10 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             shirt_size: form.shirt_size || null,
             medical_conditions: form.medical_conditions || null,
         };
+        if (form.program_types?.includes("full_time")) {
+            athletePayload.rate_type = form.rate_type || "weekly";
+            athletePayload.enrollment_tier = form.enrollment_tier || "full_day";
+        }
 
         try {
             if (isEdit) {
@@ -326,6 +344,37 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                         </SelectContent>
                     </Select>
                 </div>
+
+                {form.program_types?.includes("full_time") && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="eat-label">Billing cadence</label>
+                            <Select value={form.rate_type} onValueChange={(v) => set("rate_type", v)}>
+                                <SelectTrigger data-testid={ATHLETE_FORM.rateType} className="mt-1.5 h-11">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {BILLING_CADENCES.map((p) => (
+                                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <label className="eat-label">Enrollment tier</label>
+                            <Select value={form.enrollment_tier} onValueChange={(v) => set("enrollment_tier", v)}>
+                                <SelectTrigger data-testid={ATHLETE_FORM.enrollmentTier} className="mt-1.5 h-11">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {ENROLLMENT_TIERS.map((p) => (
+                                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                )}
 
                 {!isEdit && (
                     <div>

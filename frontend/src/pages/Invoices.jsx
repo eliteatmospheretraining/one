@@ -541,6 +541,230 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     );
 }
 
+function InvoiceTotalsBreakdown({ invoice }) {
+    const subtotal = invoice?.subtotal ?? invoice?.total ?? 0;
+    const discountAmount = invoice?.discount_amount || 0;
+    const hasDiscount = discountAmount > 0;
+
+    return (
+        <div className="pt-4 mt-2 border-t border-subtle space-y-2">
+            {hasDiscount && (
+                <>
+                    <div className="grid grid-cols-12 items-baseline text-sm">
+                        <div className="col-span-9 text-right eat-label">Subtotal</div>
+                        <div className="col-span-3 text-right text-paper font-light">{fmtMoney(subtotal)}</div>
+                    </div>
+                    <div className="grid grid-cols-12 items-baseline text-sm">
+                        <div className="col-span-9 text-right eat-label text-accent">
+                            {invoice.discount_label || "Discount"}
+                            {invoice.discount_type === "percent" && invoice.discount_value
+                                ? ` (${invoice.discount_value}%)`
+                                : ""}
+                        </div>
+                        <div className="col-span-3 text-right text-accent font-light">−{fmtMoney(discountAmount)}</div>
+                    </div>
+                </>
+            )}
+            <div className="grid grid-cols-12 items-baseline">
+                <div className="col-span-9 text-right eat-label">Total</div>
+                <div className="col-span-3 text-right eat-numeral text-3xl" data-testid={`invoice-total-${invoice.id}`}>
+                    {fmtMoney(invoice.total)}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function InvoiceDiscountEditor({ invoiceId, invoice, onChanged }) {
+    const [presets, setPresets] = useState([]);
+    const [presetId, setPresetId] = useState("");
+    const [label, setLabel] = useState("");
+    const [discountType, setDiscountType] = useState("percent");
+    const [value, setValue] = useState("");
+    const [savePreset, setSavePreset] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        api.get("/invoices/discount-presets")
+            .then((r) => setPresets(r.data || []))
+            .catch(() => setPresets([]));
+    }, []);
+
+    useEffect(() => {
+        if (!invoice) return;
+        setPresetId(invoice.discount_preset_id || "");
+        setLabel(invoice.discount_label || "");
+        setDiscountType(invoice.discount_type || "percent");
+        setValue(invoice.discount_value != null ? String(invoice.discount_value) : "");
+        setSavePreset(false);
+    }, [
+        invoice?.id,
+        invoice?.discount_preset_id,
+        invoice?.discount_label,
+        invoice?.discount_type,
+        invoice?.discount_value,
+    ]);
+
+    function onPresetChange(id) {
+        if (id === "__custom__") {
+            setPresetId("");
+            return;
+        }
+        setPresetId(id);
+        const preset = presets.find((p) => p.id === id);
+        if (preset) {
+            setLabel(preset.label);
+            setDiscountType(preset.discount_type);
+            setValue(String(preset.default_value));
+        }
+    }
+
+    async function applyDiscount(e) {
+        e.preventDefault();
+        const num = parseFloat(value);
+        if (!label.trim() || !num || num <= 0) {
+            toast.error("Enter a discount label and amount");
+            return;
+        }
+        if (discountType === "percent" && num > 100) {
+            toast.error("Percent discount cannot exceed 100%");
+            return;
+        }
+        setBusy(true);
+        try {
+            await api.patch(`/invoices/${invoiceId}/discount`, {
+                preset_id: presetId || undefined,
+                label: label.trim(),
+                discount_type: discountType,
+                value: num,
+                save_preset: savePreset,
+            });
+            toast.success("Discount applied");
+            onChanged?.();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Could not apply discount");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function clearDiscount() {
+        setBusy(true);
+        try {
+            await api.patch(`/invoices/${invoiceId}/discount`, { clear: true });
+            setPresetId("");
+            setLabel("");
+            setValue("");
+            setSavePreset(false);
+            toast.success("Discount removed");
+            onChanged?.();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Could not clear discount");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    const hasDiscount = (invoice?.discount_amount || 0) > 0;
+
+    return (
+        <form onSubmit={applyDiscount} className="mt-4 p-4 border border-subtle bg-ink flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+                <div className="eat-label">Discount</div>
+                {hasDiscount && (
+                    <button
+                        type="button"
+                        data-testid={INVOICES.discountClearBtn}
+                        onClick={clearDiscount}
+                        disabled={busy}
+                        className="text-[10px] uppercase tracking-wider2 text-muted hover:text-danger"
+                    >
+                        Remove
+                    </button>
+                )}
+            </div>
+            <div>
+                <label className="text-[10px] uppercase tracking-wider2 text-muted">Saved discount</label>
+                <Select value={presetId || "__custom__"} onValueChange={onPresetChange}>
+                    <SelectTrigger data-testid={INVOICES.discountPresetSelect} className="mt-1 h-10">
+                        <SelectValue placeholder="Choose a saved discount" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__custom__">Custom discount</SelectItem>
+                        {presets.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                                {p.label}
+                                {" · "}
+                                {p.discount_type === "percent" ? `${p.default_value}%` : fmtMoney(p.default_value)}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-wider2 text-muted">Label</label>
+                    <input
+                        data-testid={INVOICES.discountLabel}
+                        type="text"
+                        value={label}
+                        onChange={(e) => setLabel(e.target.value)}
+                        placeholder="e.g. Sibling Discount"
+                        className="eat-input mt-1 w-full"
+                    />
+                </div>
+                <div>
+                    <label className="text-[10px] uppercase tracking-wider2 text-muted">Type</label>
+                    <Select value={discountType} onValueChange={setDiscountType}>
+                        <SelectTrigger data-testid={INVOICES.discountType} className="mt-1 h-10">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="percent">Percent (%)</SelectItem>
+                            <SelectItem value="fixed">Fixed ($)</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <label className="text-[10px] uppercase tracking-wider2 text-muted">
+                        {discountType === "percent" ? "Percent" : "Amount"}
+                    </label>
+                    <input
+                        data-testid={INVOICES.discountValue}
+                        type="number"
+                        min="0"
+                        step={discountType === "percent" ? "0.1" : "0.01"}
+                        max={discountType === "percent" ? "100" : undefined}
+                        value={value}
+                        onChange={(e) => setValue(e.target.value)}
+                        placeholder={discountType === "percent" ? "10" : "50.00"}
+                        className="eat-input mt-1 w-full"
+                    />
+                </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-muted font-light cursor-pointer">
+                <input
+                    type="checkbox"
+                    data-testid={INVOICES.discountSavePreset}
+                    checked={savePreset}
+                    onChange={(e) => setSavePreset(e.target.checked)}
+                    className="accent-accent"
+                />
+                Save for future invoices
+                {presetId ? " (updates this preset)" : ""}
+            </label>
+            <button
+                type="submit"
+                data-testid={INVOICES.discountApplyBtn}
+                disabled={busy}
+                className="eat-btn-secondary w-full sm:w-auto"
+            >
+                {busy ? "Applying…" : hasDiscount ? "Update discount" : "Apply discount"}
+            </button>
+        </form>
+    );
+}
+
 function GenerateInvoiceModal({ open, onOpenChange, families, presets, onCreated }) {
     const [familyId, setFamilyId] = useState("");
     const [start, setStart] = useState("");
@@ -813,10 +1037,14 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                                 onAdded={() => { load(); onChanged?.(); }}
                             />
                         )}
-                        <div className="grid grid-cols-12 pt-4 mt-2 border-t border-subtle items-baseline">
-                            <div className="col-span-9 text-right eat-label">Total</div>
-                            <div className="col-span-3 text-right eat-numeral text-3xl" data-testid={`invoice-total-${invoiceId}`}>{fmtMoney(data.invoice.total)}</div>
-                        </div>
+                        {data.invoice.status === "draft" && (
+                            <InvoiceDiscountEditor
+                                invoiceId={invoiceId}
+                                invoice={data.invoice}
+                                onChanged={() => { load(); onChanged?.(); }}
+                            />
+                        )}
+                        <InvoiceTotalsBreakdown invoice={data.invoice} />
                     </div>
 
                     {data.payments?.length > 0 && (

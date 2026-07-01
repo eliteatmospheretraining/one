@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import SessionDetail from "./pages/SessionDetail";
 import InvoiceView from "./pages/InvoiceView";
 import Enroll from "./pages/Enroll";
+import WaiverSign from "./pages/WaiverSign";
 
 export default function App() {
     return (
@@ -28,6 +29,7 @@ export default function App() {
                         <Route path="/login" element={<Login />} />
                         <Route path="/verify" element={<Login />} />
                         <Route path="/enroll" element={<Enroll />} />
+                        <Route path="/waiver" element={<WaiverSign />} />
                         <Route path="/invoice" element={<InvoiceView />} />
                         <Route
                             path="/home"

@@ -25,6 +25,7 @@ from routes_invoice_access import router as invoice_access_router  # noqa: E402
 from routes_invoices import router as invoices_router  # noqa: E402
 from routes_sessions import router as sessions_router  # noqa: E402
 from routes_enrollment import router as enrollment_router  # noqa: E402
+from routes_waiver_access import router as waiver_access_router  # noqa: E402
 from weather import router as weather_router  # noqa: E402
 from invoice_auto import start_weekly_invoice_scheduler  # noqa: E402
 
@@ -86,6 +87,7 @@ api_router.include_router(invoices_router)
 api_router.include_router(invoice_access_router)
 api_router.include_router(roster_router)
 api_router.include_router(enrollment_router)
+api_router.include_router(waiver_access_router)
 api_router.include_router(weather_router)
 
 app.include_router(api_router)
@@ -102,6 +104,9 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     await ensure_admin_seeded()
+    from invoice_discounts import ensure_discount_presets_seeded
+
+    await ensure_discount_presets_seeded()
     if notion_configured():
         await refresh_rate_card_from_notion()
     else:

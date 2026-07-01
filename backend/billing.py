@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from models import AttendanceType, ProgramType, RateType, SessionStatus
@@ -84,6 +84,31 @@ def _is_monthly_prepay(rate_type: str | None) -> bool:
     return rate_type == RateType.monthly.value
 
 
+def _is_weekly_prepay(rate_type: str | None) -> bool:
+    return rate_type == RateType.weekly.value
+
+
+def _is_package_prepay(rate_type: str | None) -> bool:
+    return _is_monthly_prepay(rate_type) or _is_weekly_prepay(rate_type)
+
+
+def _is_half_day_tier(athlete: dict) -> bool:
+    return athlete.get("enrollment_tier") == "half_day"
+
+
+def _package_rate_key(athlete: dict, cadence: str) -> str:
+    if _is_half_day_tier(athlete):
+        return f"{cadence}_half"
+    return cadence
+
+
+def attendance_is_drop_in(attendance_type: str | None) -> bool:
+    return attendance_type in (
+        AttendanceType.drop_in_full.value,
+        AttendanceType.drop_in_half.value,
+    )
+
+
 def full_time_flat_rate(
     attendance_type: AttendanceType,
     rate_override: float | None,
@@ -122,10 +147,8 @@ def session_rate_for(
 ) -> float:
     """Flat per-session rate (drop-ins and full-time)."""
     card = get_rate_card()
-    if attendance_type == AttendanceType.drop_in_full:
-        return float(card["drop_in_full"])
-    if attendance_type == AttendanceType.drop_in_half:
-        return float(card["drop_in_half"])
+    if attendance_type in (AttendanceType.drop_in_full, AttendanceType.drop_in_half):
+        return float(card["drop_in"])
     if program_type == ProgramType.full_time:
         return full_time_flat_rate(attendance_type, rate_override)
     if program_type == ProgramType.private:
@@ -161,8 +184,10 @@ def per_session_charge(
     at = attendance_type
     if at == AttendanceType.absent:
         return 0.0, None, None
-    if program_type == ProgramType.full_time and _is_monthly_prepay(rate_type):
-        return 0.0, None, None
+    if program_type == ProgramType.full_time and _is_package_prepay(rate_type):
+        at_value = at.value if isinstance(at, AttendanceType) else at
+        if not attendance_is_drop_in(at_value):
+            return 0.0, None, None
 
     hours = billable_hours(session, at, program_type)
     if hours is None:
@@ -370,8 +395,54 @@ def pricing_for_attendance(
 def monthly_tuition_amount(athlete: dict) -> float:
     """Flat monthly prepay from rate card or athlete override."""
     if athlete.get("rate_override") is not None:
-        return round(float(athlete["rate_override"]), 2)
-    return round(float(get_rate_card()["monthly"]), 2)
+        override = float(athlete["rate_override"])
+        if _is_half_day_tier(athlete):
+            return round(override / 2, 2)
+        return round(override, 2)
+    return round(float(get_rate_card()[_package_rate_key(athlete, "monthly")]), 2)
+
+
+def weekly_tuition_amount(athlete: dict) -> float:
+    """Flat weekly prepay from rate card or athlete override."""
+    if athlete.get("rate_override") is not None:
+        override = float(athlete["rate_override"])
+        if _is_half_day_tier(athlete):
+            return round(override / 2, 2)
+        return round(override, 2)
+    return round(float(get_rate_card()[_package_rate_key(athlete, "weekly")]), 2)
+
+
+def week_period_mon_fri(containing: date) -> tuple[date, date]:
+    """Mon–Fri containing the given date (weekends map to the preceding week)."""
+    weekday = containing.weekday()
+    if weekday == 5:
+        friday = containing - timedelta(days=1)
+    elif weekday == 6:
+        friday = containing - timedelta(days=2)
+    else:
+        friday = containing + timedelta(days=4 - weekday)
+    monday = friday - timedelta(days=4)
+    return monday, friday
+
+
+def is_weekly_invoice_period(period_start: date, period_end: date) -> bool:
+    """True when the invoice period is a Mon–Fri training week."""
+    return (
+        period_start.weekday() == 0
+        and period_end.weekday() == 4
+        and (period_end - period_start).days == 4
+    )
+
+
+def is_monthly_invoice_period(period_start: date, period_end: date) -> bool:
+    """True when the invoice period is a full calendar month."""
+    last = calendar.monthrange(period_start.year, period_start.month)[1]
+    return (
+        period_start.day == 1
+        and period_end.day == last
+        and period_start.month == period_end.month
+        and period_start.year == period_end.year
+    )
 
 
 def describe_monthly_line(athlete_name: str, period_start: date) -> str:

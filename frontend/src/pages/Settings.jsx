@@ -23,12 +23,13 @@ function fmtRateValue(key, value) {
 const HIDDEN_RATE_CARD_KEYS = new Set(["full_day_hours", "half_day_hours"]);
 
 const RATE_GRID_SERVICES = [
-    { key: "monthly", label: "Eat w/ EAT · Monthly" },
-    { key: "weekly", label: "Eat w/ EAT · Weekly" },
-    { key: "full_day", label: "Eat w/ EAT · Daily" },
-    { key: "half_day", label: "Eat w/ EAT · Half-Day" },
-    { key: "drop_in_full", label: "Eat w/ EAT · Drop-In Full" },
-    { key: "drop_in_half", label: "Eat w/ EAT · Drop-In Half" },
+    { key: "monthly", label: "Eat w/ EAT · Monthly (full day)" },
+    { key: "monthly_half", label: "Eat w/ EAT · Monthly (half day)" },
+    { key: "weekly", label: "Eat w/ EAT · Weekly (full day)" },
+    { key: "weekly_half", label: "Eat w/ EAT · Weekly (half day)" },
+    { key: "full_day", label: "Eat w/ EAT · Daily (full day)" },
+    { key: "half_day", label: "Eat w/ EAT · Daily (half day)" },
+    { key: "drop_in", label: "Eat w/ EAT · Drop-in" },
     { key: "private", label: "Private Lesson" },
     { key: "semi_private", label: "Semi-Private Lesson" },
     { key: "travel", label: "Athlete Travel" },
@@ -158,6 +159,7 @@ export default function Settings() {
     const [rateStatus, setRateStatus] = useState(null);
     const [rosterStatus, setRosterStatus] = useState(null);
     const [syncingNotion, setSyncingNotion] = useState(false);
+    const [syncingRatesOnly, setSyncingRatesOnly] = useState(false);
     const [rateModalOpen, setRateModalOpen] = useState(false);
     const [passwordModalOpen, setPasswordModalOpen] = useState(false);
     const [currentPassword, setCurrentPassword] = useState("");
@@ -167,11 +169,10 @@ export default function Settings() {
     const [google, setGoogle] = useState({ connected: false, email: null });
     const [connecting, setConnecting] = useState(false);
 
-    const notionConnected =
-        rateStatus?.source === "notion"
-        && !rateStatus?.error
-        && rosterStatus?.configured
-        && !rosterStatus?.error;
+    const ratesConnected = rateStatus?.source === "notion" && !rateStatus?.error;
+    const rosterConnected = rosterStatus?.configured && !rosterStatus?.error;
+    const notionConnected = ratesConnected && rosterConnected;
+    const notionSyncing = syncingNotion || syncingRatesOnly;
     const serviceCount = card
         ? Object.keys(card).filter((k) => !HIDDEN_RATE_CARD_KEYS.has(k)).length
         : 0;
@@ -214,24 +215,54 @@ export default function Settings() {
         if (rateModalOpen && !card) loadRates();
     }, [rateModalOpen, card]);
 
+    async function syncRatesOnly() {
+        setSyncingRatesOnly(true);
+        try {
+            const ratesRes = await api.post("/rate-card/refresh", null, { timeout: 60000 });
+            setCard(ratesRes.data.rates);
+            setRateStatus(ratesRes.data);
+            if (ratesRes.data.error) {
+                toast.error(ratesRes.data.error);
+            } else if ((ratesRes.data.warnings || []).length) {
+                toast.warning("Rates synced with warnings", {
+                    description: ratesRes.data.warnings[0],
+                    duration: 8000,
+                });
+            } else {
+                toast.success("Rates synced from Notion");
+            }
+        } catch (e) {
+            toast.error(e.response?.data?.detail || e.message || "Could not sync rates");
+        } finally {
+            setSyncingRatesOnly(false);
+        }
+    }
+
     async function syncNotion() {
         setSyncingNotion(true);
         try {
-            const [ratesRes, rosterRes] = await Promise.all([
-                api.post("/rate-card/refresh"),
-                api.post("/roster/sync/refresh"),
-            ]);
+            const ratesRes = await api.post("/rate-card/refresh", null, { timeout: 60000 });
             setCard(ratesRes.data.rates);
             setRateStatus(ratesRes.data);
-            setRosterStatus(rosterRes.data);
 
             const rateErr = ratesRes.data.error;
-            const rosterErr = rosterRes.data.error;
-            if (rateErr && rosterErr) {
-                toast.error("Notion sync failed for rates and roster");
-            } else if (rateErr) {
+            const rateWarnings = ratesRes.data.warnings || [];
+            if (rateErr) {
                 toast.error(rateErr);
-            } else if (rosterErr) {
+            } else if (rateWarnings.length) {
+                toast.message("Rates synced", {
+                    description: `${rateWarnings.length} row(s) skipped — see Integrations`,
+                    duration: 6000,
+                });
+            } else {
+                toast.message("Rates synced");
+            }
+
+            const rosterRes = await api.post("/roster/sync/refresh", null, { timeout: 120000 });
+            setRosterStatus(rosterRes.data);
+
+            const rosterErr = rosterRes.data.error;
+            if (rosterErr) {
                 toast.error(rosterErr);
             } else {
                 const stats = rosterRes.data.stats;
@@ -241,7 +272,9 @@ export default function Settings() {
                 toast.success(`Synced from Notion · rates + ${rosterNote}`);
             }
         } catch (e) {
-            toast.error(e.response?.data?.detail || "Could not sync from Notion");
+            const detail = e.response?.data?.detail || e.message || "Could not sync from Notion";
+            const timedOut = e.code === "ECONNABORTED";
+            toast.error(timedOut ? "Sync timed out — try again or sync rates only" : detail);
             try {
                 const [status, roster] = await Promise.all([
                     api.get("/rate-card/status"),
@@ -249,6 +282,7 @@ export default function Settings() {
                 ]);
                 setRateStatus(status.data);
                 setRosterStatus(roster.data);
+                if (status.data.rates) setCard(status.data.rates);
             } catch {
                 /* ignore */
             }
@@ -417,18 +451,26 @@ export default function Settings() {
                                         subtitle={formatNotionSync(latestNotionSync(rateStatus, rosterStatus))}
                                     />
                                     <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
-                                        <StatusPill connected={notionConnected} />
+                                        <StatusPill connected={ratesConnected} />
+                                        <TextAction
+                                            testId={SETTINGS.notionRatesSyncBtn}
+                                            onClick={syncRatesOnly}
+                                            disabled={notionSyncing}
+                                        >
+                                            {syncingRatesOnly && <Loader2 size={12} className="animate-spin" />}
+                                            {syncingRatesOnly ? "Rates…" : "Rates"}
+                                        </TextAction>
                                         <TextAction
                                             testId={SETTINGS.notionSyncBtn}
                                             onClick={syncNotion}
-                                            disabled={syncingNotion}
+                                            disabled={notionSyncing}
                                         >
                                             {syncingNotion && <Loader2 size={12} className="animate-spin" />}
-                                            {syncingNotion ? "Syncing…" : "Sync"}
+                                            {syncingNotion ? "All…" : "Sync all"}
                                         </TextAction>
                                     </div>
                                 </DividerRow>
-                                {(rateStatus?.error || rosterStatus?.error) && (
+                                {(rateStatus?.error || rosterStatus?.error || rateStatus?.warnings?.length > 0) && (
                                     <div className="border-t border-[0.5px] border-subtle px-4 py-3 space-y-1">
                                         {rateStatus?.error && (
                                             <p className="text-[11px] text-danger font-light">{rateStatus.error}</p>
@@ -436,6 +478,11 @@ export default function Settings() {
                                         {rosterStatus?.error && (
                                             <p className="text-[11px] text-danger font-light">{rosterStatus.error}</p>
                                         )}
+                                        {rateStatus?.warnings?.map((warning) => (
+                                            <p key={warning} className="text-[11px] text-amber-400/90 font-light">
+                                                {warning}
+                                            </p>
+                                        ))}
                                     </div>
                                 )}
                             </Panel>
@@ -491,6 +538,15 @@ export default function Settings() {
                                 <p className="text-[11px] text-danger px-4 py-2 font-light border-t border-[0.5px] border-subtle">
                                     {rateStatus.error}
                                 </p>
+                            )}
+                            {rateStatus?.warnings?.length > 0 && (
+                                <div className="px-4 py-2 border-t border-[0.5px] border-subtle space-y-1">
+                                    {rateStatus.warnings.map((warning) => (
+                                        <p key={warning} className="text-[11px] text-amber-400/90 font-light">
+                                            {warning}
+                                        </p>
+                                    ))}
+                                </div>
                             )}
                         </Panel>
                     </section>
@@ -575,6 +631,13 @@ export default function Settings() {
                 </div>
                 {rateStatus?.error && (
                     <p className="text-xs text-danger mb-3 font-light">{rateStatus.error}</p>
+                )}
+                {rateStatus?.warnings?.length > 0 && (
+                    <div className="mb-3 space-y-1">
+                        {rateStatus.warnings.map((warning) => (
+                            <p key={warning} className="text-xs text-amber-400/90 font-light">{warning}</p>
+                        ))}
+                    </div>
                 )}
                 {!card ? (
                     <div className="text-muted text-sm py-6 text-center">Loading…</div>

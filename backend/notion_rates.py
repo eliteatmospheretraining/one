@@ -2,8 +2,10 @@
 Sync services + rates from a Notion database.
 
 Expected database columns (names configurable via env):
-  - Key (rich_text or select): billing key, e.g. full_day, half_day, private
+  - Key (rich_text or select): billing key, e.g. full_day, half_day, weekly, monthly
   - Rate (number): dollar amount ($/day for full_day, $/month for monthly, etc.)
+
+Package keys (June 2026): weekly, weekly_half, monthly, monthly_half
 
 Optional:
   - Active (checkbox): if false, row is ignored
@@ -49,14 +51,37 @@ KEY_ALIASES = {
     "half day duration": "half_day_hours",
     "full time half day": "half_day_hours",
     "full time half day hours": "half_day_hours",
-    "drop in full": "drop_in_full",
-    "drop-in full": "drop_in_full",
-    "drop in half": "drop_in_half",
-    "drop-in half": "drop_in_half",
+    "weekly": "weekly",
+    "weekly rate": "weekly",
+    "eat weekly": "weekly",
+    "weekly full": "weekly",
+    "weekly full day": "weekly",
+    "weekly_full": "weekly",
+    "weekly half": "weekly_half",
+    "weekly half day": "weekly_half",
+    "weekly half-day": "weekly_half",
+    "monthly": "monthly",
+    "monthly rate": "monthly",
+    "eat monthly": "monthly",
+    "monthly full": "monthly",
+    "monthly full day": "monthly",
+    "monthly half": "monthly_half",
+    "monthly half day": "monthly_half",
+    "monthly half-day": "monthly_half",
+    "drop in": "drop_in",
+    "drop-in": "drop_in",
+    "drop in full": "drop_in",
+    "drop-in full": "drop_in",
+    "drop in half": "drop_in",
+    "drop-in half": "drop_in",
+    "drop_in_full": "drop_in",
+    "drop_in_half": "drop_in",
     "semi private": "semi_private",
     "semi-private": "semi_private",
     "semiprivate": "semi_private",
 }
+
+KNOWN_KEY_HINT = ", ".join(sorted(k for k in KNOWN_KEYS if not k.endswith("_hours")))
 
 
 def _slug_key(raw: str) -> str | None:
@@ -116,6 +141,51 @@ _DURATION_KEYS = frozenset({"full_day_hours", "half_day_hours"})
 _DURATION_FROM_SERVICE_KEY = {
     "full_day": "full_day_hours",
 }
+
+
+def _row_label(properties: dict, key_prop: str) -> str:
+    key_field = _find_prop(properties, key_prop, "Key", "Service Key", "Code", "Slug")
+    key_raw = _plain_text(key_field)
+    if key_raw:
+        return key_raw
+    title_field = _find_prop(properties, "Name", "Service", "Title")
+    return _plain_text(title_field) or "(untitled row)"
+
+
+def _row_skip_reason(
+    properties: dict,
+    key_prop: str,
+    rate_prop: str,
+    hours_prop_names: tuple[str, ...],
+) -> dict | None:
+    """Return skip metadata when a Notion row is visible but not applied."""
+    active_prop = _find_prop(properties, "Active", "active", "Enabled")
+    if active_prop is not None and not _checkbox(active_prop):
+        return None
+
+    label = _row_label(properties, key_prop)
+    key_field = _find_prop(properties, key_prop, "Key", "Service Key", "Code", "Slug")
+    rate_field = _find_prop(properties, rate_prop, "Rate", "Price", "Amount", "Cost")
+    hours_field = _find_prop(properties, *hours_prop_names)
+
+    key_raw = _plain_text(key_field)
+    if not key_raw:
+        title_field = _find_prop(properties, "Name", "Service", "Title")
+        key_raw = _plain_text(title_field)
+
+    key = _slug_key(key_raw)
+    if key:
+        return None
+
+    amount = _number(rate_field)
+    block_hours = _number(hours_field)
+    if amount is None and block_hours is None:
+        return {"label": label, "reason": "Missing Rate (or Hours for duration rows)"}
+
+    return {
+        "label": label,
+        "reason": f"Unknown Key — set Key to one of: {KNOWN_KEY_HINT}",
+    }
 
 
 def _parse_row(
@@ -241,8 +311,9 @@ def _query_database(
     key_prop: str,
     rate_prop: str,
     hours_prop_names: tuple[str, ...],
-) -> dict[str, float]:
+) -> tuple[dict[str, float], list[dict]]:
     rates: dict[str, float] = {}
+    skipped: list[dict] = []
     cursor = None
     while True:
         body: dict[str, Any] = {"page_size": 100}
@@ -259,14 +330,19 @@ def _query_database(
 
         payload = resp.json()
         for row in payload.get("results", []):
+            props = row.get("properties", {})
             parsed = _parse_row(
-                row.get("properties", {}),
+                props,
                 key_prop,
                 rate_prop,
                 hours_prop_names,
             )
             if parsed:
                 rates.update(parsed)
+                continue
+            skip = _row_skip_reason(props, key_prop, rate_prop, hours_prop_names)
+            if skip:
+                skipped.append(skip)
 
         if not payload.get("has_more"):
             break
@@ -275,10 +351,10 @@ def _query_database(
     if not rates:
         raise ValueError("No rate rows found in Notion database (check Key + Rate columns)")
 
-    return rates
+    return rates, skipped
 
 
-def fetch_rates_from_notion() -> dict[str, float]:
+def fetch_rates_from_notion() -> tuple[dict[str, float], list[dict]]:
     token = os.environ.get("NOTION_API_KEY", "").strip()
     page_or_db = os.environ.get("NOTION_RATES_DATABASE_ID", "").strip()
     if not token or not page_or_db:
@@ -298,11 +374,24 @@ def fetch_rates_from_notion() -> dict[str, float]:
 
 
 async def refresh_rate_card_from_notion() -> dict[str, Any]:
+    import asyncio
+
     notion_url = os.environ.get("NOTION_RATES_URL", "").strip() or None
     try:
-        rates = fetch_rates_from_notion()
-        apply_rate_card(rates, source="notion", notion_url=notion_url, error=None)
-        logger.info("Rate card synced from Notion (%d keys)", len(rates))
+        rates, skipped = await asyncio.to_thread(fetch_rates_from_notion)
+        warnings = [
+            f"{row['label']}: {row['reason']}"
+            for row in skipped
+        ]
+        apply_rate_card(
+            rates,
+            source="notion",
+            notion_url=notion_url,
+            error=None,
+            warnings=warnings,
+            skipped_rows=skipped,
+        )
+        logger.info("Rate card synced from Notion (%d keys, %d skipped)", len(rates), len(skipped))
         return get_rate_card_status()
     except Exception as exc:
         logger.warning("Notion rate sync failed: %s", exc)

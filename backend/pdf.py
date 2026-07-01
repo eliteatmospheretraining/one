@@ -100,6 +100,8 @@ def render_invoice_pdf(
     line_items: list[dict],
     subtotal: float,
     total: float,
+    discount_label: Optional[str] = None,
+    discount_amount: float = 0.0,
     payment_date: Optional[date] = None,
     payment_method: Optional[str] = None,
     paid: bool = False,
@@ -151,6 +153,13 @@ def render_invoice_pdf(
         </div>"""
 
     total_label = "TOTAL PAID" if paid else "TOTAL DUE"
+    discount_row = ""
+    if discount_amount and float(discount_amount) > 0:
+        lbl = (discount_label or "Discount").strip()
+        discount_row = f"""<tr>
+        <td class="tot-lbl">{lbl}</td>
+        <td class="tot-val">-{_fmt(discount_amount)}</td>
+      </tr>"""
     document_title = (
         invoice_receipt_pdf_title(period_start=period_start, period_end=period_end)
         if paid
@@ -517,6 +526,7 @@ body {{
         <td class="tot-lbl">Subtotal</td>
         <td class="tot-val">{_fmt(subtotal)}</td>
       </tr>
+      {discount_row}
       <tr>
         <td class="tot-total-lbl">{total_label}</td>
         <td class="tot-total-val">{_fmt(total)}</td>

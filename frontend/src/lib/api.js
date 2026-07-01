@@ -23,13 +23,24 @@ api.interceptors.response.use(
         if (err.response?.status === 401) {
             clearToken();
             const path = window.location.pathname;
-            if (!path.startsWith("/login") && !path.startsWith("/enroll") && !path.startsWith("/invoice")) {
+            if (
+                !path.startsWith("/login") &&
+                !path.startsWith("/enroll") &&
+                !path.startsWith("/waiver") &&
+                !path.startsWith("/invoice")
+            ) {
                 window.location.href = "/login";
             }
         }
         return Promise.reject(err);
     }
 );
+
+/** Email parent a magic link to sign the liability waiver. */
+export async function sendWaiverLink(athleteId) {
+    const res = await api.post(`/athletes/${athleteId}/send-waiver`);
+    return res.data;
+}
 
 /** Open enrollment + waiver PDF for a coach-authenticated athlete record. */
 export async function openEnrollmentPdf(athleteId) {

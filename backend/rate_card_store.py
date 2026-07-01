@@ -13,6 +13,8 @@ _meta: dict[str, Any] = {
     "synced_at": None,
     "notion_url": None,
     "error": None,
+    "warnings": [],
+    "skipped_rows": [],
 }
 
 
@@ -27,6 +29,8 @@ def get_rate_card_status() -> dict[str, Any]:
         "synced_at": _meta["synced_at"],
         "notion_url": _meta["notion_url"],
         "error": _meta["error"],
+        "warnings": list(_meta.get("warnings") or []),
+        "skipped_rows": list(_meta.get("skipped_rows") or []),
     }
 
 
@@ -36,6 +40,8 @@ def apply_rate_card(
     source: str,
     notion_url: str | None = None,
     error: str | None = None,
+    warnings: list[str] | None = None,
+    skipped_rows: list[dict] | None = None,
 ) -> dict[str, float]:
     global _rates, _meta
     merged = deepcopy(DEFAULT_RATE_CARD)
@@ -48,6 +54,8 @@ def apply_rate_card(
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "notion_url": notion_url,
         "error": error,
+        "warnings": warnings or [],
+        "skipped_rows": skipped_rows or [],
     }
     return get_rate_card()
 

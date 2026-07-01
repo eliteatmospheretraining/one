@@ -248,13 +248,8 @@ def fetch_client_rows_from_notion() -> list[dict[str, Any]]:
     return rows
 
 
-async def _find_family_by_lookup(lookup_key: str) -> dict | None:
-    return await db.families.find_one({"notion_lookup_key": lookup_key}, {"_id": 0})
-
-
-async def _upsert_family(row: dict[str, Any]) -> str:
+def _family_payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
     lookup = row["family_lookup_key"]
-    existing = await _find_family_by_lookup(lookup)
     emergency = []
     if row.get("guardian_name"):
         emergency.append({
@@ -262,8 +257,7 @@ async def _upsert_family(row: dict[str, Any]) -> str:
             "email": row.get("guardian_email"),
             "phone": row.get("guardian_phone"),
         })
-
-    payload = {
+    return {
         "family_name": row["family_name"],
         "guardian_name": row.get("guardian_name"),
         "guardian_email": row.get("guardian_email"),
@@ -278,22 +272,9 @@ async def _upsert_family(row: dict[str, Any]) -> str:
         "notion_lookup_key": lookup,
     }
 
-    if existing:
-        await db.families.update_one({"id": existing["id"]}, {"$set": serialize(payload)})
-        return existing["id"]
 
-    doc = serialize(payload)
-    doc["id"] = str(uuid.uuid4())
-    doc["created_at"] = datetime.now(timezone.utc).isoformat()
-    await db.families.insert_one(doc)
-    return doc["id"]
-
-
-async def _upsert_athlete(row: dict[str, Any], family_id: str) -> str:
-    notion_id = row["notion_page_id"]
-    existing = await db.athletes.find_one({"notion_page_id": notion_id}, {"_id": 0})
-
-    athlete_data = {
+def _athlete_payload_from_row(row: dict[str, Any], family_id: str) -> dict[str, Any]:
+    return {
         "full_name": row["full_name"],
         "date_of_birth": row["date_of_birth"],
         "training_start_date": row["training_start_date"],
@@ -304,8 +285,35 @@ async def _upsert_athlete(row: dict[str, Any], family_id: str) -> str:
         "program_types": row["program_types"],
         "status": row["status"],
         "family_id": family_id,
-        "notion_page_id": notion_id,
+        "notion_page_id": row["notion_page_id"],
     }
+
+
+async def _upsert_family(row: dict[str, Any], families_by_lookup: dict[str, dict]) -> str:
+    lookup = row["family_lookup_key"]
+    payload = _family_payload_from_row(row)
+    existing = families_by_lookup.get(lookup)
+
+    if existing:
+        await db.families.update_one({"id": existing["id"]}, {"$set": serialize(payload)})
+        return existing["id"]
+
+    doc = serialize(payload)
+    doc["id"] = str(uuid.uuid4())
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    await db.families.insert_one(doc)
+    families_by_lookup[lookup] = doc
+    return doc["id"]
+
+
+async def _upsert_athlete(
+    row: dict[str, Any],
+    family_id: str,
+    athletes_by_notion: dict[str, dict],
+) -> str:
+    notion_id = row["notion_page_id"]
+    athlete_data = _athlete_payload_from_row(row, family_id)
+    existing = athletes_by_notion.get(notion_id)
 
     if existing:
         await db.athletes.update_one({"id": existing["id"]}, {"$set": serialize(athlete_data)})
@@ -315,19 +323,45 @@ async def _upsert_athlete(row: dict[str, Any], family_id: str) -> str:
     doc = serialize(athlete.model_dump())
     doc["notion_page_id"] = notion_id
     await db.athletes.insert_one(doc)
+    athletes_by_notion[notion_id] = doc
     return "created"
 
 
 async def refresh_roster_from_notion() -> dict[str, Any]:
+    import asyncio
+
     notion_url = os.environ.get("NOTION_CLIENTS_URL", "").strip() or None
     stats = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
 
     try:
-        rows = fetch_client_rows_from_notion()
+        rows = await asyncio.to_thread(fetch_client_rows_from_notion)
+        lookup_keys = list({row["family_lookup_key"] for row in rows})
+        notion_ids = [row["notion_page_id"] for row in rows]
+
+        existing_families = await db.families.find(
+            {"notion_lookup_key": {"$in": lookup_keys}},
+            {"_id": 0},
+        ).to_list(5000)
+        families_by_lookup = {
+            fam["notion_lookup_key"]: fam
+            for fam in existing_families
+            if fam.get("notion_lookup_key")
+        }
+
+        existing_athletes = await db.athletes.find(
+            {"notion_page_id": {"$in": notion_ids}},
+            {"_id": 0},
+        ).to_list(5000)
+        athletes_by_notion = {
+            ath["notion_page_id"]: ath
+            for ath in existing_athletes
+            if ath.get("notion_page_id")
+        }
+
         for row in rows:
             try:
-                family_id = await _upsert_family(row)
-                result = await _upsert_athlete(row, family_id)
+                family_id = await _upsert_family(row, families_by_lookup)
+                result = await _upsert_athlete(row, family_id, athletes_by_notion)
                 stats[result] += 1
             except Exception as exc:
                 stats["skipped"] += 1

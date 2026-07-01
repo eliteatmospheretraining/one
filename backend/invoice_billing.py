@@ -8,20 +8,26 @@ from datetime import date, datetime, timedelta
 from billing import (
     SESSION_TIME_ZONE,
     _is_monthly_prepay,
+    _is_package_prepay,
+    _is_weekly_prepay,
     athlete_on_full_time,
+    attendance_is_drop_in,
     billing_program_type,
     describe_line,
     format_invoice_display_date,
     full_time_day_rate_type,
     full_time_flat_rate,
+    is_monthly_invoice_period,
+    is_weekly_invoice_period,
     monthly_tuition_amount,
     per_session_charge,
     session_date_from_line_description,
     session_is_billable,
     stored_attendance_type,
+    weekly_tuition_amount,
 )
 from db import db, now, serialize
-from models import AttendanceRecord, AttendanceType, InvoiceStatus, ProgramType, SessionStatus
+from models import AttendanceRecord, AttendanceType, AthleteStatus, InvoiceStatus, ProgramType, SessionStatus
 
 
 def _attendance_ids_from_line_item(item: dict) -> list[str]:
@@ -438,7 +444,11 @@ async def _billable_records_for_family(
         sess = sessions_by_id.get(r["session_id"])
         if athlete and sess:
             pt = billing_program_type(athlete, sess)
-            if pt == ProgramType.full_time and _is_monthly_prepay(athlete.get("rate_type")):
+            if (
+                pt == ProgramType.full_time
+                and _is_package_prepay(athlete.get("rate_type"))
+                and not attendance_is_drop_in(r.get("attendance_type"))
+            ):
                 continue
         billable.append(r)
     billable.sort(key=lambda r: (r["athlete_id"], sessions_by_id[r["session_id"]]["date"]))
@@ -560,9 +570,11 @@ async def billing_skips_for_period(
             athlete = athletes_by_id.get(aid, {})
             if (
                 sess.get("session_type") == ProgramType.full_time.value
-                and _is_monthly_prepay(athlete.get("rate_type"))
+                and _is_package_prepay(athlete.get("rate_type"))
+                and not attendance_is_drop_in(rec.get("attendance_type"))
             ):
-                skips.append({**base, "reason": "monthly_package"})
+                reason = "weekly_package" if _is_weekly_prepay(athlete.get("rate_type")) else "monthly_package"
+                skips.append({**base, "reason": reason})
                 continue
             skips.append({**base, "reason": "excluded"})
     return skips
@@ -752,8 +764,8 @@ def line_items_from_billable(
     return [item for item in items if float(item.amount) > 0]
 
 
-async def _athletes_with_monthly_line(invoice_id: str) -> set[str]:
-    """Athlete IDs that already have a monthly tuition line on this invoice."""
+async def _athletes_with_package_line(invoice_id: str, label: str) -> set[str]:
+    """Athlete IDs that already have a package tuition line on this invoice."""
     items = await db.invoice_line_items.find(
         {"invoice_id": invoice_id},
         {"athlete_id": 1, "description": 1, "attendance_record_id": 1, "attendance_record_ids": 1, "_id": 0},
@@ -762,21 +774,37 @@ async def _athletes_with_monthly_line(invoice_id: str) -> set[str]:
     for li in items:
         if _attendance_ids_from_line_item(li):
             continue
-        if "Monthly" in (li.get("description") or ""):
+        if label in (li.get("description") or ""):
             out.add(li["athlete_id"])
     return out
 
 
-async def _monthly_athletes_with_attendance(
+async def _athletes_with_monthly_line(invoice_id: str) -> set[str]:
+    return await _athletes_with_package_line(invoice_id, "Monthly Rate")
+
+
+async def _athletes_with_weekly_line(invoice_id: str) -> set[str]:
+    return await _athletes_with_package_line(invoice_id, "Weekly Rate")
+
+
+async def _athletes_with_attendance_in_period(
     family_id: str,
     period_start: date,
     period_end: date,
+    *,
+    rate_check,
+    require_attendance: bool = True,
 ) -> list[dict]:
-    """Monthly-prepay athletes with billable attendance on completed sessions in period."""
+    """Package-prepay athletes in a family, optionally requiring attendance in period."""
     athletes = await db.athletes.find({"family_id": family_id}, {"_id": 0}).to_list(500)
-    monthly = []
+    package_athletes = []
     for a in athletes:
-        if not _is_monthly_prepay(a.get("rate_type")):
+        if not rate_check(a.get("rate_type")):
+            continue
+        if not require_attendance and a.get("status") not in (
+            AthleteStatus.active.value,
+            AthleteStatus.pending.value,
+        ):
             continue
         program_types = a.get("program_types") or []
         if program_types:
@@ -784,11 +812,13 @@ async def _monthly_athletes_with_attendance(
                 continue
         elif a.get("program_type") != ProgramType.full_time.value:
             continue
-        monthly.append(a)
-    if not monthly:
+        package_athletes.append(a)
+    if not package_athletes:
         return []
+    if not require_attendance:
+        return package_athletes
 
-    athlete_ids = {a["id"] for a in monthly}
+    athlete_ids = {a["id"] for a in package_athletes}
     sessions = await db.sessions.find(
         {
             "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
@@ -815,7 +845,39 @@ async def _monthly_athletes_with_attendance(
         {"_id": 0},
     ).to_list(5000)
     attended = {r["athlete_id"] for r in records}
-    return [a for a in monthly if a["id"] in attended]
+    return [a for a in package_athletes if a["id"] in attended]
+
+
+async def _monthly_athletes_with_attendance(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    require_attendance: bool = True,
+) -> list[dict]:
+    """Monthly-prepay athletes for billing in a calendar-month period."""
+    if not is_monthly_invoice_period(period_start, period_end):
+        return []
+    return await _athletes_with_attendance_in_period(
+        family_id,
+        period_start,
+        period_end,
+        rate_check=_is_monthly_prepay,
+        require_attendance=require_attendance,
+    )
+
+
+async def _weekly_athletes_with_attendance(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+) -> list[dict]:
+    """Weekly-prepay athletes with billable attendance on completed sessions in period."""
+    if not is_weekly_invoice_period(period_start, period_end):
+        return []
+    return await _athletes_with_attendance_in_period(
+        family_id, period_start, period_end, rate_check=_is_weekly_prepay
+    )
 
 
 async def monthly_tuition_line_items(
@@ -825,12 +887,18 @@ async def monthly_tuition_line_items(
     period_end: date,
     *,
     line_item_cls,
+    require_attendance: bool = True,
 ) -> list:
     """Auto-add monthly package lines for prepay athletes who trained in the period."""
     from invoice_services import build_manual_line_item
 
     already = await _athletes_with_monthly_line(invoice_id)
-    candidates = await _monthly_athletes_with_attendance(family_id, period_start, period_end)
+    candidates = await _monthly_athletes_with_attendance(
+        family_id,
+        period_start,
+        period_end,
+        require_attendance=require_attendance,
+    )
     items = []
     for athlete in candidates:
         if athlete["id"] in already:
@@ -848,6 +916,64 @@ async def monthly_tuition_line_items(
         )
         already.add(athlete["id"])
     return items
+
+
+async def weekly_tuition_line_items(
+    invoice_id: str,
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    line_item_cls,
+) -> list:
+    """Auto-add weekly package lines for prepay athletes who trained in the period."""
+    from invoice_services import build_manual_line_item
+
+    already = await _athletes_with_weekly_line(invoice_id)
+    candidates = await _weekly_athletes_with_attendance(family_id, period_start, period_end)
+    items = []
+    for athlete in candidates:
+        if athlete["id"] in already:
+            continue
+        price = weekly_tuition_amount(athlete)
+        items.append(
+            build_manual_line_item(
+                invoice_id=invoice_id,
+                athlete=athlete,
+                service_id="eat_weekly",
+                period_start=period_start,
+                period_end=period_end,
+                week_start=period_start,
+                week_end=period_end,
+                unit_price=price,
+            )
+        )
+        already.add(athlete["id"])
+    return items
+
+
+async def package_tuition_line_items(
+    invoice_id: str,
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    line_item_cls,
+    require_monthly_attendance: bool = True,
+) -> list:
+    """Monthly and/or weekly package lines for the invoice period."""
+    monthly_items = await monthly_tuition_line_items(
+        invoice_id,
+        family_id,
+        period_start,
+        period_end,
+        line_item_cls=line_item_cls,
+        require_attendance=require_monthly_attendance,
+    )
+    weekly_items = await weekly_tuition_line_items(
+        invoice_id, family_id, period_start, period_end, line_item_cls=line_item_cls
+    )
+    return monthly_items + weekly_items
 
 
 async def auto_complete_family_sessions_in_period(
@@ -907,8 +1033,9 @@ async def populate_draft_from_attendance(
     *,
     line_item_cls,
     replace_attendance_lines: bool = False,
+    require_monthly_attendance: bool = True,
 ) -> tuple[list, list, int]:
-    """Add attendance + monthly tuition lines. Returns (all_new_items, skipped, session_count)."""
+    """Add attendance + package tuition lines. Returns (all_new_items, skipped, session_count)."""
     await auto_complete_family_sessions_in_period(family_id, period_start, period_end)
     await ensure_rostered_lessons_for_family(family_id, period_start, period_end)
 
@@ -940,12 +1067,13 @@ async def populate_draft_from_attendance(
             line_item_cls=line_item_cls,
         )
 
-    monthly_items = await monthly_tuition_line_items(
+    monthly_items = await package_tuition_line_items(
         invoice_id,
         family_id,
         period_start,
         period_end,
         line_item_cls=line_item_cls,
+        require_monthly_attendance=require_monthly_attendance,
     )
 
     new_items = attendance_items + monthly_items
@@ -1140,6 +1268,7 @@ async def ready_to_invoice_summary() -> dict:
             family_session_ids.update(data["session_ids"])
             dates = sorted(data["dates"])
             monthly = _is_monthly_prepay(athlete.get("rate_type"))
+            weekly = _is_weekly_prepay(athlete.get("rate_type"))
             full_time = athlete_on_full_time(athlete)
             day_count = len(dates)
             session_count = len(data["session_ids"])
@@ -1147,6 +1276,9 @@ async def ready_to_invoice_summary() -> dict:
             if monthly:
                 unit_label = "training day" if day_count == 1 else "training days"
                 detail = f"{day_count} {unit_label} · monthly rate"
+            elif weekly:
+                unit_label = "training day" if day_count == 1 else "training days"
+                detail = f"{day_count} {unit_label} · weekly rate"
             elif full_time:
                 unit_label = "training day" if day_count == 1 else "training days"
                 detail = f"{day_count} {unit_label}"

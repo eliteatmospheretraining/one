@@ -93,6 +93,23 @@ export default function InvoiceView() {
                                     <div className="text-paper shrink-0" style={{ fontWeight: 500 }}>{fmtMoney(li.amount)}</div>
                                 </div>
                             ))}
+                            {(data.invoice.discount_amount || 0) > 0 && (
+                                <>
+                                    <div className="flex justify-between text-sm pt-2">
+                                        <span className="eat-label">Subtotal</span>
+                                        <span className="text-paper font-light">{fmtMoney(data.invoice.subtotal)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="eat-label text-accent">
+                                            {data.invoice.discount_label || "Discount"}
+                                            {data.invoice.discount_type === "percent" && data.invoice.discount_value
+                                                ? ` (${data.invoice.discount_value}%)`
+                                                : ""}
+                                        </span>
+                                        <span className="text-accent font-light">−{fmtMoney(data.invoice.discount_amount)}</span>
+                                    </div>
+                                </>
+                            )}
                             <div className="flex justify-between pt-3 border-t border-subtle">
                                 <span className="eat-label">Total</span>
                                 <span className="eat-numeral text-2xl">{fmtMoney(data.invoice.total)}</span>

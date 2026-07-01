@@ -34,8 +34,14 @@ class AthleteStatus(str, Enum):
 class RateType(str, Enum):
     daily = "daily"
     half_day = "half_day"
+    weekly = "weekly"
     monthly = "monthly"
     per_session = "per_session"
+
+
+class EnrollmentTier(str, Enum):
+    full_day = "full_day"
+    half_day = "half_day"
 
 
 class SessionStatus(str, Enum):
@@ -58,6 +64,11 @@ class InvoiceStatus(str, Enum):
     draft = "draft"
     sent = "sent"
     paid = "paid"
+
+
+class DiscountType(str, Enum):
+    fixed = "fixed"
+    percent = "percent"
 
 
 # ---------- Families ----------
@@ -169,6 +180,7 @@ class AthleteBase(BaseModel):
     waiver_signed_at: Optional[datetime] = None
     emergency_contact_relationship: Optional[str] = None
     rate_type: RateType = RateType.daily
+    enrollment_tier: EnrollmentTier = EnrollmentTier.full_day
     rate_override: Optional[float] = None  # null = use rate card default
     family_id: str
     notion_page_id: Optional[str] = None
@@ -222,6 +234,7 @@ class AthleteUpdate(BaseModel):
     waiver_typed_signature: Optional[str] = None
     waiver_signature: Optional[str] = None
     rate_type: Optional[RateType] = None
+    enrollment_tier: Optional[EnrollmentTier] = None
     rate_override: Optional[float] = None
     family_id: Optional[str] = None
     notion_page_id: Optional[str] = None
@@ -288,6 +301,13 @@ class EnrollmentResponse(BaseModel):
     athlete_name: str
     guardian_email: EmailStr
     program_label: str
+
+
+class WaiverAccessSubmit(BaseModel):
+    token: str
+    photo_release: bool
+    waiver_typed_signature: str
+    waiver_signature: str
 
 
 # ---------- Sessions ----------
@@ -372,6 +392,11 @@ class Invoice(BaseModel):
     period_end: date
     issue_date: date = Field(default_factory=lambda: date.today())
     subtotal: float = 0.0
+    discount_preset_id: Optional[str] = None
+    discount_label: Optional[str] = None
+    discount_type: Optional[DiscountType] = None
+    discount_value: Optional[float] = None
+    discount_amount: float = 0.0
     total: float = 0.0
     status: InvoiceStatus = InvoiceStatus.draft
     pdf_url: Optional[str] = None
@@ -395,6 +420,37 @@ class InvoiceLineItemCreate(BaseModel):
     service_date: Optional[date] = None
     quantity: float = 1.0
     unit_price: Optional[float] = None
+
+
+class DiscountPreset(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=_uuid)
+    label: str
+    discount_type: DiscountType
+    default_value: float = Field(gt=0)
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: Optional[datetime] = None
+
+
+class DiscountPresetCreate(BaseModel):
+    label: str = Field(min_length=1)
+    discount_type: DiscountType
+    default_value: float = Field(gt=0)
+
+
+class DiscountPresetUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=1)
+    discount_type: Optional[DiscountType] = None
+    default_value: Optional[float] = Field(default=None, gt=0)
+
+
+class InvoiceDiscountUpdate(BaseModel):
+    preset_id: Optional[str] = None
+    label: Optional[str] = None
+    discount_type: Optional[DiscountType] = None
+    value: Optional[float] = Field(default=None, gt=0)
+    save_preset: bool = False
+    clear: bool = False
 
 
 # ---------- Payments ----------
@@ -452,14 +508,15 @@ class Coach(BaseModel):
 # ---------- Rate Card ----------
 
 RATE_CARD = {
-    "full_day": 60.00,  # full-time full day ($/session); synced from Notion
+    "full_day": 69.00,  # per training day (daily cadence); synced from Notion
     "full_day_hours": 5.0,  # optional schedule block (hr); not multiplied into full-time billing
-    "half_day": 30.00,  # full-time half day ($/session)
+    "half_day": 34.50,  # per half-day (daily cadence)
     "half_day_hours": 2.5,  # optional schedule block (hr)
-    "drop_in_full": 85.00,
-    "drop_in_half": 50.00,
-    "weekly": 300.00,
-    "monthly": 1100.00,
+    "drop_in": 50.00,
+    "weekly": 345.00,
+    "weekly_half": 172.50,
+    "monthly": 1380.00,
+    "monthly_half": 690.00,
     "private": 85.00,
     "semi_private": 65.00,
     "travel": 150.00,

@@ -124,6 +124,14 @@ export default function Home() {
 
     const [todaySessions, setTodaySessions] = useState([]);
     const [attendanceMap, setAttendanceMap] = useState({});
+    const [draftSummary, setDraftSummary] = useState({
+        draft_count: 0,
+        weekly_draft_count: 0,
+        monthly_draft_count: 0,
+        other_draft_count: 0,
+        monthly_period_label: "",
+        weekly_period: null,
+    });
     const [draftCount, setDraftCount] = useState(0);
     const [sentCount, setSentCount] = useState(0);
     const [outstandingTotal, setOutstandingTotal] = useState(0);
@@ -154,19 +162,28 @@ export default function Home() {
             setLoading(true);
             setError(null);
             try {
-                const [todayResp, invoicesResp, monthlySessionsResp, pendingResp, familiesResp] = await Promise.all([
+                const [todayResp, invoicesResp, monthlySessionsResp, pendingResp, familiesResp, draftSummaryResp] = await Promise.all([
                     api.get("/sessions", { params: { start_date: today, end_date: today } }),
                     api.get("/invoices"),
                     api.get("/sessions", { params: { start_date: monthStart, end_date: monthEnd } }),
                     api.get("/athletes", { params: { status: "pending" } }),
                     api.get("/families"),
+                    api.get("/invoices/draft-summary"),
                 ]);
 
                 const sessions = (todayResp.data || [])
                     .slice()
                     .sort((a, b) => (a.start_time || "").localeCompare(b.start_time || ""));
                 setTodaySessions(sessions);
-                setDraftCount((invoicesResp.data || []).filter((inv) => inv.status === "draft").length);
+                setDraftSummary(draftSummaryResp.data || {
+                    draft_count: 0,
+                    weekly_draft_count: 0,
+                    monthly_draft_count: 0,
+                    other_draft_count: 0,
+                    monthly_period_label: "",
+                    weekly_period: null,
+                });
+                setDraftCount(draftSummaryResp.data?.draft_count ?? (invoicesResp.data || []).filter((inv) => inv.status === "draft").length);
                 const sentInvoices = (invoicesResp.data || []).filter((inv) => inv.status === "sent");
                 setSentCount(sentInvoices.length);
                 setOutstandingTotal(sentInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0));
@@ -264,13 +281,36 @@ export default function Home() {
         ? `Week ${fmtInvoiceDate(billingWeek.start)} – ${fmtInvoiceDate(billingWeek.end)} · ${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`
         : `${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`;
     const sessionCards = todaySessions.slice(0, 4);
+    const weeklyPeriod = draftSummary.weekly_period;
     const invoiceActions = [
-        {
-            count: draftCount,
-            label: "Drafts Pending",
-            detail: `${draftCount} invoice${draftCount === 1 ? "" : "s"} not yet sent`,
-            onClick: () => nav("/invoices?status=draft"),
-        },
+        ...(draftSummary.weekly_draft_count > 0
+            ? [{
+                count: draftSummary.weekly_draft_count,
+                label: "Weekly Drafts",
+                detail: weeklyPeriod
+                    ? `Week ${fmtInvoiceDate(weeklyPeriod.start)} – ${fmtInvoiceDate(weeklyPeriod.end)} · ${draftSummary.weekly_draft_count} not yet sent`
+                    : `${draftSummary.weekly_draft_count} invoice${draftSummary.weekly_draft_count === 1 ? "" : "s"} not yet sent`,
+                onClick: () => nav("/invoices?status=draft"),
+            }]
+            : []),
+        ...(draftSummary.monthly_draft_count > 0
+            ? [{
+                count: draftSummary.monthly_draft_count,
+                label: "Monthly Drafts",
+                detail: draftSummary.monthly_period_label
+                    ? `${draftSummary.monthly_period_label} · ${draftSummary.monthly_draft_count} not yet sent`
+                    : `${draftSummary.monthly_draft_count} invoice${draftSummary.monthly_draft_count === 1 ? "" : "s"} not yet sent`,
+                onClick: () => nav("/invoices?status=draft"),
+            }]
+            : []),
+        ...(draftSummary.other_draft_count > 0
+            ? [{
+                count: draftSummary.other_draft_count,
+                label: "Drafts Pending",
+                detail: `${draftSummary.other_draft_count} invoice${draftSummary.other_draft_count === 1 ? "" : "s"} not yet sent`,
+                onClick: () => nav("/invoices?status=draft"),
+            }]
+            : []),
         {
             count: sentCount,
             label: "Awaiting Payment",

@@ -635,9 +635,141 @@ body {{
     return out.getvalue()
 
 
+def waiver_form_title(athlete_name: str) -> str:
+    """e.g. Tai Faustin → T.Faustin – Waiver"""
+    parts = (athlete_name or "Athlete").strip().split()
+    if len(parts) >= 2:
+        stem = f"{parts[0][0].upper()}.{parts[-1]}"
+    elif parts:
+        stem = parts[0]
+    else:
+        stem = "Athlete"
+    return f"{stem} – Waiver"
+
+
+def _waiver_pdf_styles() -> str:
+    return """
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500&display=swap');
+@page { size: Letter; margin: 0.65in 0.7in 0.75in 0.7in; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Barlow', sans-serif; font-weight: 300; color: #222; background: #fff; }
+.doc { max-width: 100%; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18pt; }
+.brand-logo { height: 28pt; width: auto; }
+.brand-fallback { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 22pt; }
+.doc-eyebrow { font-size: 8pt; letter-spacing: 0.12em; text-transform: uppercase; color: #aaa; }
+.doc-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 28pt; text-transform: uppercase; line-height: 1; }
+.doc-sub { font-size: 9pt; color: #bbb; margin-top: 2pt; }
+.sec { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 10pt; text-transform: uppercase; letter-spacing: 0.06em; margin: 14pt 0 6pt; color: #333; }
+.form-row { width: 100%; border-collapse: collapse; margin-bottom: 6pt; }
+.f-lbl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.05em; color: #aaa; padding-bottom: 2pt; }
+.f-val { font-size: 9.5pt; color: #333; padding-bottom: 6pt; border-bottom: 1pt solid #eee; }
+.rb { display: inline-block; width: 12pt; height: 12pt; border: 1pt solid #ddd; border-radius: 1pt; background: #fff; text-align: center; font-size: 8pt; line-height: 12pt; color: #222; vertical-align: middle; }
+.rb.on { background: #c8f000; border-color: #c8f000; }
+.prefill-tag { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 16pt; text-transform: uppercase; margin-bottom: 2pt; }
+.prefill-sub { font-size: 9pt; color: #bbb; margin-bottom: 12pt; }
+.waiver-txt { font-size: 8.5pt; color: #666; line-height: 1.65; border: 1pt solid #e8e8e8; background: #fff; padding: 11pt; margin-bottom: 12pt; }
+.waiver-txt strong { color: #444; font-weight: 500; }
+.radio-table { width: 100%; border-collapse: collapse; margin-bottom: 0; border-bottom: 1pt solid #f0f0f0; }
+.radio-table:last-child { border-bottom: none; }
+.rt { font-size: 9pt; color: #666; line-height: 1.45; vertical-align: middle; padding: 8pt 0; }
+.rt strong { color: #333; font-weight: 500; }
+.sig-block { margin-top: 10pt; padding-top: 10pt; border-top: 1pt solid #ebebeb; }
+.sig-wrap { border: 1pt solid #e0e0e0; border-radius: 1pt; background: #fafafa; padding: 6pt; margin: 6pt 0 8pt; min-height: 72pt; display: flex; align-items: center; justify-content: flex-start; }
+.sig-img { display: block; max-width: 100%; max-height: 64pt; }
+.sig-meta { font-size: 8.5pt; color: #888; margin-top: 4pt; }
+.sig-name { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 14pt; text-transform: uppercase; margin-bottom: 2pt; }
+"""
+
+
+def _waiver_body_html(ctx: dict) -> str:
+    athlete_name = _display(ctx.get("athlete_name"))
+    photo_release = ctx.get("photo_release")
+    signed_at = _fmt_signed_at(ctx.get("signed_at"))
+    submitted = _fmt_date(ctx.get("submitted_date") or date.today())
+    sig_html = _signature_img_html(ctx.get("waiver_signature") or "")
+    typed_sig = _display(ctx.get("waiver_typed_signature"))
+    return f"""
+    <div class="prefill-tag">{_esc(athlete_name.upper())}</div>
+    <div class="prefill-sub">Signed waiver for {_esc(athlete_name)}</div>
+    <div class="waiver-txt">{_waiver_html()}</div>
+    {_sec("Photo Release")}
+    {_radio("Yes", "I authorize EAT to photograph or record my athlete for promotional purposes.", photo_release is True)}
+    {_radio("No", "I do not authorize photography or recording of my athlete.", photo_release is False)}
+    {_sec("Confirm Your Name")}
+    {_row(_field("Typed Name", typed_sig, colspan=2))}
+    {_sec("Draw Your Signature")}
+    <div class="sig-block">
+      <div class="sig-name">{_esc(typed_sig)}</div>
+      <div class="sig-wrap">{sig_html}</div>
+      <div class="sig-meta">{"Signed " + _esc(signed_at) if signed_at else "Signed " + _esc(submitted)}</div>
+    </div>"""
+
+
+def render_waiver_html(ctx: dict) -> str:
+    """Waiver-only HTML (browser preview + WeasyPrint source)."""
+    logo = _svg_b64()
+    logo_html = (
+        f'<img class="brand-logo" src="data:image/svg+xml;base64,{logo}" alt="EAT" />'
+        if logo
+        else '<div class="brand-fallback">EAT.</div>'
+    )
+    athlete_name = _display(ctx.get("athlete_name"))
+    submitted = _fmt_date(ctx.get("submitted_date") or date.today())
+    title = waiver_form_title(athlete_name)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{_esc(title)}</title>
+<style>{_waiver_pdf_styles()}</style>
+</head>
+<body>
+<div class="doc">
+  <div class="top">
+    {logo_html}
+    <div class="top-meta">
+      <div class="doc-eyebrow">Waiver</div>
+      <div class="doc-title">Sign.</div>
+      <div class="doc-sub">Submitted {_esc(submitted)}</div>
+    </div>
+  </div>
+  {_waiver_body_html(ctx)}
+</div>
+</body>
+</html>"""
+
+
+def render_waiver_pdf(ctx: dict) -> bytes:
+    """Waiver-only PDF (no enrollment form pages)."""
+    from weasyprint import HTML
+
+    out = BytesIO()
+    HTML(string=render_waiver_html(ctx), base_url=str(BASE)).write_pdf(out)
+    return out.getvalue()
+
+
+def write_waiver_sample() -> None:
+    """Write static HTML preview to backend/samples (run: python -m enrollment_pdf)."""
+    out_dir = BASE / "samples"
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / "EAT_Waiver_Sample.html"
+    html = render_waiver_html(sample_enrollment_context())
+    path.write_text(html, encoding="utf-8")
+    print(f"Wrote {path}")
+
+
 def enrollment_pdf_filename(athlete_name: str) -> str:
     """ASCII-safe filename for HTTP headers and email attachments."""
     title = enrollment_form_title(athlete_name)
+    safe = re.sub(r'[<>:"/\\|?*\n\r]', "", title)
+    safe = safe.replace("\u2013", "-").replace("\u2014", "-")
+    return f"{safe}.pdf"
+
+
+def waiver_pdf_filename(athlete_name: str) -> str:
+    title = waiver_form_title(athlete_name)
     safe = re.sub(r'[<>:"/\\|?*\n\r]', "", title)
     safe = safe.replace("\u2013", "-").replace("\u2014", "-")
     return f"{safe}.pdf"
@@ -685,3 +817,7 @@ def sample_enrollment_context() -> dict:
         "submitted_date": date.today(),
         "signed_at": datetime.now(_EASTERN),
     }
+
+
+if __name__ == "__main__":
+    write_waiver_sample()

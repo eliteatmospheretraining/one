@@ -17,7 +17,11 @@ from invoice_billing import (
 )
 from invoice_services import build_manual_line_item, list_service_options
 from models import (
+    DiscountPreset,
+    DiscountPresetCreate,
+    DiscountPresetUpdate,
     Invoice,
+    InvoiceDiscountUpdate,
     InvoiceGenerateRequest,
     InvoiceLineItem,
     InvoiceLineItemCreate,
@@ -69,7 +73,12 @@ async def _find_family_draft(family_id: str, period_start: date, period_end: dat
     return None
 
 
-async def _sync_draft_invoice(invoice_id: str, *, replace: bool = False) -> dict:
+async def _sync_draft_invoice(
+    invoice_id: str,
+    *,
+    replace: bool = False,
+    require_monthly_attendance: bool = True,
+) -> dict:
     """Rebuild draft lines from attendance + rate card."""
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not inv:
@@ -83,7 +92,7 @@ async def _sync_draft_invoice(invoice_id: str, *, replace: bool = False) -> dict
     if replace:
         await db.invoice_line_items.delete_many({
             "invoice_id": invoice_id,
-            "description": {"$regex": r"Monthly Rate"},
+            "description": {"$regex": r"(Monthly|Weekly) Rate"},
         })
 
     new_items, skipped, session_count = await populate_draft_from_attendance(
@@ -93,6 +102,7 @@ async def _sync_draft_invoice(invoice_id: str, *, replace: bool = False) -> dict
         period_end,
         line_item_cls=InvoiceLineItem,
         replace_attendance_lines=replace,
+        require_monthly_attendance=require_monthly_attendance,
     )
     total = await _recalc_invoice_totals(invoice_id)
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -110,11 +120,22 @@ async def _sync_draft_invoice(invoice_id: str, *, replace: bool = False) -> dict
 
 
 async def _recalc_invoice_totals(invoice_id: str) -> float:
+    from invoice_discounts import invoice_totals
+
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        return 0.0
     items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(5000)
-    total = round(sum(float(li.get("amount") or 0) for li in items), 2)
+    discount_type = inv.get("discount_type")
+    discount_value = inv.get("discount_value")
+    subtotal, discount_amount, total = invoice_totals(
+        items,
+        discount_type=discount_type,
+        discount_value=discount_value,
+    )
     await db.invoices.update_one(
         {"id": invoice_id},
-        {"$set": {"subtotal": total, "total": total}},
+        {"$set": {"subtotal": subtotal, "discount_amount": discount_amount, "total": total}},
     )
     return total
 
@@ -140,6 +161,8 @@ async def generate_family_period_invoice(
     family_id: str,
     period_start: date,
     period_end: date,
+    *,
+    require_monthly_attendance: bool = True,
 ) -> dict:
     """Create or refresh a draft invoice for a family and period from attendance + rate card."""
     family = await db.families.find_one({"id": family_id}, {"_id": 0})
@@ -150,7 +173,11 @@ async def generate_family_period_invoice(
 
     existing = await _find_family_draft(family_id, period_start, period_end)
     if existing:
-        out = await _sync_draft_invoice(existing["id"], replace=True)
+        out = await _sync_draft_invoice(
+            existing["id"],
+            replace=True,
+            require_monthly_attendance=require_monthly_attendance,
+        )
         out["reused_draft"] = True
         return out
 
@@ -164,7 +191,11 @@ async def generate_family_period_invoice(
     )
     await db.invoices.insert_one(serialize(invoice.model_dump()))
 
-    out = await _sync_draft_invoice(invoice.id, replace=False)
+    out = await _sync_draft_invoice(
+        invoice.id,
+        replace=False,
+        require_monthly_attendance=require_monthly_attendance,
+    )
     out["reused_draft"] = False
     return out
 
@@ -189,6 +220,166 @@ async def run_weekly_invoice_batch(force: bool = True):
     from invoice_auto import run_saturday_weekly_batch
 
     return await run_saturday_weekly_batch(force=force)
+
+
+@router.post("/run-monthly-batch")
+async def run_monthly_invoice_batch(force: bool = True):
+    """Create calendar-month draft invoices for monthly families (1st-of-month auto-batch)."""
+    from invoice_auto import run_monthly_batch
+
+    return await run_monthly_batch(force=force)
+
+
+@router.get("/draft-summary")
+async def invoice_draft_summary():
+    """Draft counts split by weekly vs monthly billing period."""
+    from billing import is_monthly_invoice_period, is_weekly_invoice_period, month_period_for
+
+    drafts = await db.invoices.find(
+        {"status": InvoiceStatus.draft.value},
+        {"_id": 0, "period_start": 1, "period_end": 1},
+    ).to_list(500)
+
+    weekly_count = 0
+    monthly_count = 0
+    other_count = 0
+    for inv in drafts:
+        ps = await _parse_date(inv["period_start"])
+        pe = await _parse_date(inv["period_end"])
+        if is_weekly_invoice_period(ps, pe):
+            weekly_count += 1
+        elif is_monthly_invoice_period(ps, pe):
+            monthly_count += 1
+        else:
+            other_count += 1
+
+    today = date.today()
+    month_start, month_end = month_period_for(today)
+    from invoice_auto import training_week_mon_fri
+
+    week_start, week_end = training_week_mon_fri(today)
+    month_label = month_start.strftime("%B %Y")
+
+    return {
+        "draft_count": len(drafts),
+        "weekly_draft_count": weekly_count,
+        "monthly_draft_count": monthly_count,
+        "other_draft_count": other_count,
+        "monthly_period_label": month_label,
+        "monthly_period": {
+            "start": month_start.isoformat(),
+            "end": month_end.isoformat(),
+        },
+        "weekly_period": {
+            "start": week_start.isoformat(),
+            "end": week_end.isoformat(),
+        },
+    }
+
+
+@router.get("/discount-presets", response_model=list[DiscountPreset])
+async def list_discount_presets():
+    from invoice_discounts import list_discount_presets as _list
+
+    return await _list()
+
+
+@router.post("/discount-presets", response_model=DiscountPreset)
+async def create_discount_preset(body: DiscountPresetCreate):
+    from invoice_discounts import upsert_discount_preset
+
+    try:
+        return await upsert_discount_preset(
+            label=body.label,
+            discount_type=body.discount_type.value,
+            default_value=body.default_value,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/discount-presets/{preset_id}", response_model=DiscountPreset)
+async def update_discount_preset(preset_id: str, body: DiscountPresetUpdate):
+    from invoice_discounts import upsert_discount_preset
+
+    existing = await db.discount_presets.find_one({"id": preset_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Discount preset not found")
+    try:
+        dt = body.discount_type.value if body.discount_type else existing["discount_type"]
+        return await upsert_discount_preset(
+            preset_id=preset_id,
+            label=body.label or existing["label"],
+            discount_type=dt,
+            default_value=body.default_value if body.default_value is not None else existing["default_value"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/{invoice_id}/discount", response_model=Invoice)
+async def update_invoice_discount(invoice_id: str, body: InvoiceDiscountUpdate):
+    from invoice_discounts import upsert_discount_preset
+
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.get("status") != InvoiceStatus.draft.value:
+        raise HTTPException(status_code=400, detail="Discount can only be edited on draft invoices")
+
+    if body.clear:
+        await db.invoices.update_one(
+            {"id": invoice_id},
+            {"$set": {
+                "discount_preset_id": None,
+                "discount_label": None,
+                "discount_type": None,
+                "discount_value": None,
+            }},
+        )
+        await _recalc_invoice_totals(invoice_id)
+        return await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+
+    preset_id = body.preset_id
+    label = (body.label or "").strip() or None
+    discount_type = body.discount_type.value if body.discount_type else None
+    discount_value = body.value
+
+    if preset_id:
+        preset = await db.discount_presets.find_one({"id": preset_id}, {"_id": 0})
+        if not preset:
+            raise HTTPException(status_code=404, detail="Discount preset not found")
+        label = label or preset["label"]
+        discount_type = discount_type or preset["discount_type"]
+        if discount_value is None:
+            discount_value = preset["default_value"]
+
+    if not label or not discount_type or discount_value is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide a preset, or label + type + value for a custom discount",
+        )
+
+    if body.save_preset:
+        saved = await upsert_discount_preset(
+            preset_id=preset_id,
+            label=label,
+            discount_type=discount_type,
+            default_value=discount_value,
+        )
+        preset_id = saved["id"]
+
+    await db.invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {
+            "discount_preset_id": preset_id,
+            "discount_label": label,
+            "discount_type": discount_type,
+            "discount_value": round(float(discount_value), 2),
+        }},
+    )
+    await _recalc_invoice_totals(invoice_id)
+    return await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
 
 
 @router.get("/ready-to-invoice")
@@ -408,6 +599,8 @@ async def _build_pdf(invoice_id: str) -> tuple[bytes, str, dict]:
         line_items=pdf_items,
         subtotal=float(inv["subtotal"]),
         total=float(inv["total"]),
+        discount_label=inv.get("discount_label"),
+        discount_amount=float(inv.get("discount_amount") or 0),
         payment_date=payment_date,
         payment_method=payment_method,
         paid=paid,

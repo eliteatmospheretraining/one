@@ -26,6 +26,7 @@ export const SETTINGS = {
     rateCardOpenBtn: "settings-rate-card-open-btn",
     rateCardNotionLink: "settings-rate-card-notion-link",
     notionSyncBtn: "settings-notion-sync-btn",
+    notionRatesSyncBtn: "settings-notion-rates-sync-btn",
 };
 
 export const CALENDAR = {
@@ -61,6 +62,7 @@ export const ATHLETE_FORM = {
     program: "athlete-program-select",
     status: "athlete-status-select",
     rateType: "athlete-ratetype-select",
+    enrollmentTier: "athlete-enrollment-tier-select",
     rateOverride: "athlete-rate-override-input",
     utr: "athlete-utr-input",
     wtn: "athlete-wtn-input",
@@ -70,6 +72,7 @@ export const ATHLETE_FORM = {
     family: "athlete-family-select",
     submit: "athlete-form-submit-btn",
     archive: "athlete-archive-btn",
+    sendWaiver: "athlete-send-waiver-btn",
 };
 
 export const FAMILY_FORM = {
@@ -105,6 +108,13 @@ export const INVOICES = {
     deleteBtn: "invoice-delete-btn",
     deleteConfirmBtn: "invoice-delete-confirm-btn",
     markPaidBtn: "invoice-mark-paid-btn",
+    discountPresetSelect: "invoice-discount-preset-select",
+    discountLabel: "invoice-discount-label",
+    discountType: "invoice-discount-type",
+    discountValue: "invoice-discount-value",
+    discountApplyBtn: "invoice-discount-apply-btn",
+    discountClearBtn: "invoice-discount-clear-btn",
+    discountSavePreset: "invoice-discount-save-preset",
     paymentAmount: "payment-amount-input",
     paymentMethod: "payment-method-input",
     paymentDate: "payment-date-input",
