@@ -813,7 +813,7 @@ function InvoiceDiscountEditor({ invoiceId, invoice, onChanged }) {
                         value={label}
                         onChange={(e) => setLabel(e.target.value)}
                         placeholder="e.g. Sibling Discount"
-                        className="eat-input mt-1 w-full"
+                        className="eat-input mt-1 w-full h-10"
                     />
                 </div>
                 <div>
@@ -841,7 +841,7 @@ function InvoiceDiscountEditor({ invoiceId, invoice, onChanged }) {
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
                         placeholder={discountType === "percent" ? "10" : "50.00"}
-                        className="eat-input mt-1 w-full"
+                        className="eat-input mt-1 w-full h-10"
                     />
                 </div>
             </div>
