@@ -541,6 +541,64 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     );
 }
 
+function InvoiceLineQuantity({ invoiceId, lineItem, editable, onSaved }) {
+    const [value, setValue] = useState(String(lineItem.quantity ?? 1));
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setValue(String(lineItem.quantity ?? 1));
+    }, [lineItem.id, lineItem.quantity]);
+
+    async function save() {
+        const num = parseFloat(value);
+        if (!Number.isFinite(num) || num <= 0) {
+            toast.error("Enter a quantity greater than zero");
+            setValue(String(lineItem.quantity ?? 1));
+            return;
+        }
+        if (Math.abs(num - Number(lineItem.quantity)) < 0.001) return;
+
+        setSaving(true);
+        try {
+            await api.patch(`/invoices/${invoiceId}/line-items/${lineItem.id}`, { quantity: num });
+            await onSaved?.();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Could not update quantity");
+            setValue(String(lineItem.quantity ?? 1));
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    if (!editable) {
+        return (
+            <div className="col-span-2 text-right text-paper font-light">{lineItem.quantity}</div>
+        );
+    }
+
+    return (
+        <div className="col-span-2 flex justify-end">
+            <input
+                type="number"
+                min="0.01"
+                step="any"
+                value={value}
+                disabled={saving}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        save();
+                    }
+                }}
+                data-testid={INVOICES.lineQuantity(lineItem.id)}
+                className="eat-input w-16 h-8 text-right text-sm px-2"
+                aria-label="Line quantity"
+            />
+        </div>
+    );
+}
+
 function InvoiceTotalsBreakdown({ invoice }) {
     const subtotal = invoice?.subtotal ?? invoice?.total ?? 0;
     const discountAmount = invoice?.discount_amount || 0;
@@ -1007,7 +1065,12 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                                     <div className="text-paper" style={{ fontWeight: 500 }}>{li.athlete_name}</div>
                                     <div className="text-xs text-muted font-light mt-0.5">{li.description}</div>
                                 </div>
-                                <div className="col-span-2 text-right text-paper font-light">{li.quantity}</div>
+                                <InvoiceLineQuantity
+                                    invoiceId={invoiceId}
+                                    lineItem={li}
+                                    editable={data.invoice.status === "draft"}
+                                    onSaved={() => { load(); onChanged?.(); }}
+                                />
                                 <div className="col-span-3 text-right flex flex-col items-end gap-1">
                                     <span className="text-paper" style={{ fontWeight: 500 }}>{fmtMoney(li.amount)}</span>
                                     {data.invoice.status === "draft" && (

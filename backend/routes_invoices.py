@@ -25,6 +25,7 @@ from models import (
     InvoiceGenerateRequest,
     InvoiceLineItem,
     InvoiceLineItemCreate,
+    InvoiceLineItemUpdate,
     InvoiceStatus,
     Payment,
     PaymentCreate,
@@ -467,6 +468,38 @@ async def add_invoice_line_item(invoice_id: str, req: InvoiceLineItemCreate):
         "line_item": line.model_dump(),
         "total": total,
     }
+
+
+@router.patch("/{invoice_id}/line-items/{line_item_id}", response_model=InvoiceLineItem)
+async def update_invoice_line_item(
+    invoice_id: str,
+    line_item_id: str,
+    body: InvoiceLineItemUpdate,
+):
+    """Update quantity on a draft invoice line; amount recalculates from unit price."""
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["status"] != InvoiceStatus.draft.value:
+        raise HTTPException(400, "Only draft invoices can be edited")
+
+    li = await db.invoice_line_items.find_one(
+        {"id": line_item_id, "invoice_id": invoice_id},
+        {"_id": 0},
+    )
+    if not li:
+        raise HTTPException(404, "Line item not found")
+
+    qty = round(float(body.quantity), 2)
+    unit_price = round(float(li["unit_price"]), 2)
+    amount = round(unit_price * qty, 2)
+    await db.invoice_line_items.update_one(
+        {"id": line_item_id},
+        {"$set": {"quantity": qty, "amount": amount}},
+    )
+    await _recalc_invoice_totals(invoice_id)
+    updated = await db.invoice_line_items.find_one({"id": line_item_id}, {"_id": 0})
+    return updated
 
 
 @router.delete("/{invoice_id}/line-items/{line_item_id}")

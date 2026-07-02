@@ -97,6 +97,7 @@ export const INVOICES = {
     generateBtn: "invoice-generate-btn",
     refreshBtn: "invoice-refresh-btn",
     addLineBtn: "invoice-add-line-btn",
+    lineQuantity: (id) => `invoice-line-qty-${id}`,
     serviceSelect: "invoice-service-select",
     lineAthleteSelect: "invoice-line-athlete-select",
     sendBtn: "invoice-send-btn",

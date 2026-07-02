@@ -422,6 +422,10 @@ class InvoiceLineItemCreate(BaseModel):
     unit_price: Optional[float] = None
 
 
+class InvoiceLineItemUpdate(BaseModel):
+    quantity: float = Field(gt=0)
+
+
 class DiscountPreset(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=_uuid)
