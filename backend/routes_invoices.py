@@ -530,15 +530,6 @@ async def get_invoice(invoice_id: str, sync: bool = False):
         "athletes": athletes,
         "payments": payments,
     }
-    if inv.get("status") == InvoiceStatus.draft.value:
-        period_start = await _parse_date(inv["period_start"])
-        period_end = await _parse_date(inv["period_end"])
-        out["billing_skips"] = await billing_skips_for_period(
-            inv["family_id"],
-            period_start,
-            period_end,
-            for_invoice_id=invoice_id,
-        )
     return out
 
 

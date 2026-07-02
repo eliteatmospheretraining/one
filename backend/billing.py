@@ -360,13 +360,14 @@ def describe_line(
     session_count: int = 1,
 ) -> str:
     """Human-readable description for an invoice line item."""
-    pt_label = {
-        ProgramType.full_time: "Eat w/ EAT",
-        ProgramType.private: "Private Lesson",
-        ProgramType.semi_private: "Semi-Private Lesson",
-    }[program_type]
+    if program_type == ProgramType.private:
+        if session_date:
+            return f"Private Lesson ({format_invoice_display_date(session_date)})"
+        return "Private Lesson"
     if program_type == ProgramType.semi_private:
-        return pt_label
+        return "Semi-Private Lesson"
+
+    pt_label = "Eat w/ EAT"
     at_label = {
         AttendanceType.full: "Daily Rate",
         AttendanceType.half: "Half-Day Rate",

@@ -541,40 +541,6 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     );
 }
 
-const BILLING_SKIP_LABELS = {
-    not_completed: "Not completed yet",
-    no_attendance: "No attendance on file",
-    absent: "Marked absent",
-    already_invoiced: "Already on a sent or paid invoice",
-    monthly_package: "Covered by monthly tuition",
-    weekly_package: "Covered by weekly tuition",
-    monthly_invoice_only: "Bills on the monthly invoice",
-    weekly_invoice_only: "Bills on the weekly invoice",
-    wrong_invoice_period: "Outside this invoice period",
-    excluded: "Not billable",
-};
-
-function InvoiceBillingSkips({ skips }) {
-    if (!skips?.length) return null;
-    return (
-        <div className="mt-4 p-4 border border-amber-500/30 bg-ink">
-            <div className="eat-label text-amber-400">Not on this invoice</div>
-            <ul className="mt-2 space-y-1.5 text-xs text-muted font-light">
-                {skips.map((skip, idx) => (
-                    <li key={`${skip.date}-${skip.athlete_name}-${idx}`}>
-                        <span className="text-paper" style={{ fontWeight: 500 }}>{skip.athlete_name}</span>
-                        {" · "}
-                        {skip.display_date || skip.date}
-                        {" — "}
-                        {BILLING_SKIP_LABELS[skip.reason] || skip.reason}
-                        {skip.invoice_number ? ` (${skip.invoice_number})` : ""}
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
-
 function InvoiceTotalsBreakdown({ invoice }) {
     const subtotal = invoice?.subtotal ?? invoice?.total ?? 0;
     const discountAmount = invoice?.discount_amount || 0;
@@ -1072,7 +1038,6 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                                 onChanged={() => { load(); onChanged?.(); }}
                             />
                         )}
-                        <InvoiceBillingSkips skips={data.billing_skips} />
                         <InvoiceTotalsBreakdown invoice={data.invoice} />
                     </div>
 

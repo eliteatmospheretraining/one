@@ -180,6 +180,9 @@ class TestRateCard:
         desc = describe_line(AttendanceType.full, ProgramType.full_time, "2026-06-03")
         assert desc == "Eat w/ EAT — Daily Rate"
         assert "06-03-2026" not in desc
+        private_desc = describe_line(AttendanceType.full, ProgramType.private, "2026-06-03")
+        assert private_desc == "Private Lesson (06-03-2026)"
+        assert "Daily Rate" not in private_desc
 
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
@@ -429,6 +432,43 @@ class TestRateCard:
         assert items[0].quantity == 1
         assert items[0].amount == 65
         assert set(items[0].attendance_record_ids) == {"r1", "r2"}
+
+    def test_private_lessons_one_line_per_session(self):
+        from invoice_billing import line_items_from_billable
+        from models import AttendanceType, InvoiceLineItem
+
+        athlete = {
+            "id": "a1",
+            "full_name": "Elias Harris",
+            "program_types": ["full_time"],
+            "rate_type": "monthly",
+        }
+        sessions = {
+            f"s{i}": {
+                "id": f"s{i}",
+                "date": f"2026-06-{day:02d}",
+                "session_type": "private",
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "athlete_ids": ["a1"],
+            }
+            for i, day in enumerate([5, 12, 19], start=1)
+        }
+        billable = [
+            {"id": f"r{i}", "athlete_id": "a1", "session_id": f"s{i}", "attendance_type": AttendanceType.full.value}
+            for i in (1, 2, 3)
+        ]
+        items = line_items_from_billable(
+            "inv-1",
+            billable,
+            {"a1": athlete},
+            sessions,
+            line_item_cls=InvoiceLineItem,
+        )
+        private_items = [li for li in items if "Private Lesson" in li.description]
+        assert len(private_items) == 3
+        assert all(li.quantity == 1 for li in private_items)
+        assert len({li.description for li in private_items}) == 3
 
 
 # ---------------- Families ----------------
