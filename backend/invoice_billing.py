@@ -300,6 +300,92 @@ async def relink_invoice_line_items(old_id_by_athlete: dict[str, str], new_id_by
     return updated
 
 
+async def _invoice_lock_sets(
+    family_id: str,
+    *,
+    for_invoice_id: str | None = None,
+) -> tuple[set[str], set[tuple[str, str]]]:
+    """Draft invoice sync only respects sent/paid locks; auto-batch uses all invoices."""
+    if for_invoice_id:
+        return (
+            await _invoiced_attendance_sent_or_paid(),
+            await _billed_session_athletes_sent_or_paid(family_id),
+        )
+    return (
+        await _invoiced_attendance_ids(),
+        await _billed_session_athletes_for_family(family_id),
+    )
+
+
+async def _recalc_invoice_totals_inline(invoice_id: str) -> None:
+    from invoice_discounts import invoice_totals
+
+    inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not inv:
+        return
+    items = await db.invoice_line_items.find({"invoice_id": invoice_id}, {"_id": 0}).to_list(5000)
+    discount_type = inv.get("discount_type")
+    discount_value = inv.get("discount_value")
+    subtotal, discount_amount, total = invoice_totals(
+        items,
+        discount_type=discount_type,
+        discount_value=discount_value,
+    )
+    await db.invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {"subtotal": subtotal, "discount_amount": discount_amount, "total": total}},
+    )
+
+
+async def _release_draft_attendance_in_period(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    keep_invoice_id: str,
+) -> list[str]:
+    """Remove attendance lines from other drafts in this period so sync can own them."""
+    start_iso = period_start.isoformat()
+    end_iso = period_end.isoformat()
+    other_invoices = await db.invoices.find(
+        {
+            "family_id": family_id,
+            "status": InvoiceStatus.draft.value,
+            "id": {"$ne": keep_invoice_id},
+        },
+        {"id": 1, "_id": 0},
+    ).to_list(200)
+    touched: list[str] = []
+    for inv in other_invoices:
+        items = await db.invoice_line_items.find(
+            {"invoice_id": inv["id"]},
+            {"_id": 0},
+        ).to_list(2000)
+        changed = False
+        for li in items:
+            record_ids = _attendance_ids_from_line_item(li)
+            if not record_ids:
+                continue
+            recs = await db.attendance_records.find(
+                {"id": {"$in": record_ids}},
+                {"session_id": 1, "_id": 0},
+            ).to_list(len(record_ids))
+            if not recs:
+                continue
+            sess_ids = [r["session_id"] for r in recs]
+            in_period = await db.sessions.count_documents({
+                "id": {"$in": sess_ids},
+                "date": {"$gte": start_iso, "$lte": end_iso},
+            })
+            if in_period:
+                await db.invoice_line_items.delete_one({"id": li["id"]})
+                changed = True
+        if changed:
+            touched.append(inv["id"])
+            await _recalc_invoice_totals_inline(inv["id"])
+    return touched
+
+
 async def _locked_attendance_ids(*, exclude_invoice_id: str | None = None) -> set[str]:
     """Attendance already on another invoice (any draft except exclude, or sent/paid)."""
     locked: set[str] = set()
@@ -400,10 +486,12 @@ async def _billable_records_for_family(
                 "$gte": period_start.isoformat(),
                 "$lte": period_end.isoformat(),
             },
+            "athlete_ids": {"$in": athlete_ids},
             "status": {
                 "$in": [
                     SessionStatus.completed.value,
                     SessionStatus.scheduled.value,
+                    SessionStatus.rescheduled.value,
                 ]
             },
         },
@@ -421,14 +509,10 @@ async def _billable_records_for_family(
         {"_id": 0},
     ).to_list(5000)
 
-    if skip_invoiced and for_invoice_id:
-        locked = await _locked_attendance_ids(exclude_invoice_id=for_invoice_id)
-        billed_pairs = await _billed_session_athletes_locked(
-            family_id, exclude_invoice_id=for_invoice_id
+    if skip_invoiced:
+        locked, billed_pairs = await _invoice_lock_sets(
+            family_id, for_invoice_id=for_invoice_id
         )
-    elif skip_invoiced:
-        locked = await _invoiced_attendance_ids()
-        billed_pairs = await _billed_session_athletes_for_family(family_id)
     else:
         locked = set()
         billed_pairs = set()
@@ -444,7 +528,10 @@ async def _billable_records_for_family(
         athlete = athletes_by_id.get(r["athlete_id"])
         sess = sessions_by_id.get(r["session_id"])
         if athlete and sess:
-            if not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end):
+            if (
+                not for_invoice_id
+                and not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end)
+            ):
                 continue
             pt = billing_program_type(athlete, sess)
             if (
@@ -504,14 +591,9 @@ async def billing_skips_for_period(
     )
     billable_keys = {(r["session_id"], r["athlete_id"]) for r in billable}
 
-    if for_invoice_id:
-        locked = await _locked_attendance_ids(exclude_invoice_id=for_invoice_id)
-        billed_pairs = await _billed_session_athletes_locked(
-            family_id, exclude_invoice_id=for_invoice_id
-        )
-    else:
-        locked = await _invoiced_attendance_ids()
-        billed_pairs = await _billed_session_athletes_for_family(family_id)
+    locked, billed_pairs = await _invoice_lock_sets(
+        family_id, for_invoice_id=for_invoice_id
+    )
 
     sessions = await db.sessions.find(
         {
@@ -579,7 +661,10 @@ async def billing_skips_for_period(
                 reason = "weekly_package" if _is_weekly_prepay(athlete.get("rate_type")) else "monthly_package"
                 skips.append({**base, "reason": reason})
                 continue
-            if not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end):
+            if (
+                not for_invoice_id
+                and not rostered_lesson_bills_on_invoice(athlete, sess, period_start, period_end)
+            ):
                 if _is_monthly_prepay(athlete.get("rate_type")):
                     skips.append({**base, "reason": "monthly_invoice_only"})
                 elif _is_weekly_prepay(athlete.get("rate_type")):
@@ -1051,6 +1136,12 @@ async def populate_draft_from_attendance(
     await ensure_rostered_lessons_for_family(family_id, period_start, period_end)
 
     if replace_attendance_lines:
+        await _release_draft_attendance_in_period(
+            family_id,
+            period_start,
+            period_end,
+            keep_invoice_id=invoice_id,
+        )
         await db.invoice_line_items.delete_many({
             "invoice_id": invoice_id,
             "$or": [

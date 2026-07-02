@@ -391,14 +391,23 @@ async def ready_to_invoice():
 
 
 def _populate_message(new_items: list, skipped: list[dict]) -> str:
+    session_lines = sum(
+        1 for li in new_items
+        if getattr(li, "attendance_record_id", None) or getattr(li, "attendance_record_ids", None)
+    )
     if new_items:
+        if session_lines:
+            return f"Added {session_lines} session line(s) and {len(new_items)} total item(s)"
         return f"Added {len(new_items)} line item(s) from attendance and rate card"
     not_completed = sum(1 for s in skipped if s.get("reason") == "not_completed")
+    no_attendance = sum(1 for s in skipped if s.get("reason") == "no_attendance")
     already = sum(1 for s in skipped if s.get("reason") == "already_invoiced")
     if not_completed:
         return f"No billable attendance — {not_completed} session(s) not marked completed"
+    if no_attendance:
+        return f"{no_attendance} session(s) in this period have no attendance yet"
     if already:
-        return "Attendance already on another invoice for this period"
+        return "Some sessions are already on a sent or paid invoice"
     return "No billable completed attendance in this period"
 
 

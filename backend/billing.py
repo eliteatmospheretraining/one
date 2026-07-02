@@ -229,9 +229,18 @@ def session_is_billable(session: dict, now: datetime | None = None) -> bool:
         return False
     if status == SessionStatus.completed.value:
         return True
+    now = now or datetime.now(SESSION_TIME_ZONE)
+    if status == SessionStatus.rescheduled.value:
+        if session.get("date"):
+            try:
+                session_day = date.fromisoformat(str(session["date"])[:10])
+                if session_day < now.date():
+                    return True
+            except ValueError:
+                pass
+        return False
     if status != SessionStatus.scheduled.value:
         return False
-    now = now or datetime.now(SESSION_TIME_ZONE)
     if session_has_ended_in_est(session, now):
         return True
     # Private / semi-private: rostered athletes are present once the session date has passed.
