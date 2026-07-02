@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatApiError, fetchInvoiceEmailPreviewHtml, fetchInvoicePdfBlob } from "../lib/api";
 import { PageHeader } from "../components/PageHeader";
@@ -542,57 +542,108 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
 }
 
 function InvoiceLineQuantity({ invoiceId, lineItem, editable, onSaved }) {
+    const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(String(lineItem.quantity ?? 1));
     const [saving, setSaving] = useState(false);
+    const inputRef = useRef(null);
+    const submittingRef = useRef(false);
 
     useEffect(() => {
         setValue(String(lineItem.quantity ?? 1));
     }, [lineItem.id, lineItem.quantity]);
 
+    useEffect(() => {
+        if (editing && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [editing]);
+
+    function cancel() {
+        setValue(String(lineItem.quantity ?? 1));
+        setEditing(false);
+    }
+
     async function save() {
         const num = parseFloat(value);
         if (!Number.isFinite(num) || num <= 0) {
             toast.error("Enter a quantity greater than zero");
-            setValue(String(lineItem.quantity ?? 1));
+            cancel();
             return;
         }
-        if (Math.abs(num - Number(lineItem.quantity)) < 0.001) return;
+        if (Math.abs(num - Number(lineItem.quantity)) < 0.001) {
+            submittingRef.current = false;
+            setEditing(false);
+            return;
+        }
 
         setSaving(true);
         try {
             await api.patch(`/invoices/${invoiceId}/line-items/${lineItem.id}`, { quantity: num });
+            setEditing(false);
             await onSaved?.();
         } catch (err) {
             toast.error(err.response?.data?.detail || "Could not update quantity");
-            setValue(String(lineItem.quantity ?? 1));
+            cancel();
         } finally {
             setSaving(false);
+            submittingRef.current = false;
         }
     }
 
+    const displayClass = "col-span-2 text-right text-paper font-light";
+
     if (!editable) {
+        return <div className={displayClass}>{lineItem.quantity}</div>;
+    }
+
+    if (!editing) {
         return (
-            <div className="col-span-2 text-right text-paper font-light">{lineItem.quantity}</div>
+            <div
+                className={`${displayClass} cursor-text`}
+                onClick={() => !saving && setEditing(true)}
+                data-testid={INVOICES.lineQuantity(lineItem.id)}
+                role="button"
+                tabIndex={0}
+                aria-label="Edit quantity"
+                onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditing(true);
+                    }
+                }}
+            >
+                {lineItem.quantity}
+            </div>
         );
     }
 
     return (
         <div className="col-span-2 flex justify-end">
             <input
+                ref={inputRef}
                 type="number"
                 min="0.01"
                 step="any"
                 value={value}
                 disabled={saving}
                 onChange={(e) => setValue(e.target.value)}
+                onBlur={() => {
+                    if (submittingRef.current) return;
+                    cancel();
+                }}
                 onKeyDown={(e) => {
                     if (e.key === "Enter") {
                         e.preventDefault();
+                        submittingRef.current = true;
                         save();
+                    } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        cancel();
                     }
                 }}
                 data-testid={INVOICES.lineQuantity(lineItem.id)}
-                className="eat-input w-16 h-8 text-right text-sm px-2"
+                className="w-10 bg-transparent border-0 outline-none text-right text-paper font-light p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 aria-label="Line quantity"
             />
         </div>
