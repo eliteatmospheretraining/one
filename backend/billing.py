@@ -361,8 +361,6 @@ def describe_line(
 ) -> str:
     """Human-readable description for an invoice line item."""
     if program_type == ProgramType.private:
-        if session_date:
-            return f"Private Lesson ({format_invoice_display_date(session_date)})"
         return "Private Lesson"
     if program_type == ProgramType.semi_private:
         return "Semi-Private Lesson"

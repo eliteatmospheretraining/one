@@ -181,7 +181,7 @@ class TestRateCard:
         assert desc == "Eat w/ EAT — Daily Rate"
         assert "06-03-2026" not in desc
         private_desc = describe_line(AttendanceType.full, ProgramType.private, "2026-06-03")
-        assert private_desc == "Private Lesson (06-03-2026)"
+        assert private_desc == "Private Lesson"
         assert "Daily Rate" not in private_desc
 
     def test_full_time_flat_rate_from_card(self):
@@ -433,7 +433,7 @@ class TestRateCard:
         assert items[0].amount == 65
         assert set(items[0].attendance_record_ids) == {"r1", "r2"}
 
-    def test_private_lessons_one_line_per_session(self):
+    def test_private_lessons_roll_up_to_one_line(self):
         from invoice_billing import line_items_from_billable
         from models import AttendanceType, InvoiceLineItem
 
@@ -465,10 +465,11 @@ class TestRateCard:
             sessions,
             line_item_cls=InvoiceLineItem,
         )
-        private_items = [li for li in items if "Private Lesson" in li.description]
-        assert len(private_items) == 3
-        assert all(li.quantity == 1 for li in private_items)
-        assert len({li.description for li in private_items}) == 3
+        private_items = [li for li in items if li.description == "Private Lesson"]
+        assert len(private_items) == 1
+        assert private_items[0].quantity == 3
+        assert private_items[0].amount == 255.0
+        assert len(private_items[0].attendance_record_ids) == 3
 
 
 # ---------------- Families ----------------

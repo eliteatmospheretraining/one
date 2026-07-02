@@ -813,7 +813,7 @@ def line_items_from_billable(
         ))
 
     groups: dict[tuple[str, str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
-    private_items = []
+    private_groups: dict[str, list[tuple[dict, dict, dict, float]]] = defaultdict(list)
     for r, athlete, sess in per_session_rows:
         if sess.get("session_type") == ProgramType.semi_private.value:
             continue
@@ -829,24 +829,31 @@ def line_items_from_billable(
             session=sess,
             rate_type=athlete.get("rate_type"),
         )
-        if sess.get("session_type") == ProgramType.private.value:
-            if per_session <= 0:
-                continue
-            private_items.append(line_item_cls(
-                invoice_id=invoice_id,
-                athlete_id=athlete["id"],
-                athlete_name=athlete["full_name"],
-                attendance_record_id=r["id"],
-                attendance_record_ids=[r["id"]],
-                description=describe_line(at, pt, sess["date"]),
-                quantity=1.0,
-                unit_price=per_session,
-                amount=round(per_session, 2),
-            ))
+        if per_session <= 0:
             continue
-        groups[(r["athlete_id"], pt.value, at.value, per_session)].append((r, athlete, sess, per_session))
+        row = (r, athlete, sess, per_session)
+        if sess.get("session_type") == ProgramType.private.value:
+            private_groups[athlete["id"]].append(row)
+            continue
+        groups[(r["athlete_id"], pt.value, at.value, per_session)].append(row)
 
-    items.extend(private_items)
+    for athlete_id, rows in sorted(private_groups.items(), key=lambda x: athletes_by_id[x[0]]["full_name"].casefold()):
+        athlete = athletes_by_id[athlete_id]
+        count = len(rows)
+        record_ids = [row[0]["id"] for row in rows]
+        total = round(sum(row[3] for row in rows), 2)
+        unit_price = round(total / count, 2)
+        items.append(line_item_cls(
+            invoice_id=invoice_id,
+            athlete_id=athlete_id,
+            athlete_name=athlete["full_name"],
+            attendance_record_id=record_ids[0],
+            attendance_record_ids=record_ids,
+            description=describe_line(AttendanceType.full, ProgramType.private),
+            quantity=float(count),
+            unit_price=unit_price,
+            amount=total,
+        ))
 
     items.extend(_semi_private_line_items(
         invoice_id,
