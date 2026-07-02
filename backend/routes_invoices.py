@@ -490,12 +490,27 @@ async def update_invoice_line_item(
     if not li:
         raise HTTPException(404, "Line item not found")
 
+    athlete = await db.athletes.find_one({"id": li["athlete_id"]}, {"_id": 0, "rate_override": 1})
+    override = athlete.get("rate_override") if athlete else None
+    if override is not None:
+        override = float(override)
+
     qty = round(float(body.quantity), 2)
-    unit_price = round(float(li["unit_price"]), 2)
-    amount = round(unit_price * qty, 2)
+    has_attendance = bool(li.get("attendance_record_ids") or li.get("attendance_record_id"))
+    from billing import amount_for_line_quantity_change
+
+    amount, unit_price = amount_for_line_quantity_change(
+        description=li.get("description") or "",
+        old_quantity=float(li["quantity"]),
+        new_quantity=qty,
+        old_amount=float(li["amount"]),
+        unit_price=float(li["unit_price"]),
+        rate_override=override,
+        has_attendance_records=has_attendance,
+    )
     await db.invoice_line_items.update_one(
         {"id": line_item_id},
-        {"$set": {"quantity": qty, "amount": amount}},
+        {"$set": {"quantity": qty, "amount": amount, "unit_price": unit_price}},
     )
     await _recalc_invoice_totals(invoice_id)
     updated = await db.invoice_line_items.find_one({"id": line_item_id}, {"_id": 0})

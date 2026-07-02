@@ -197,6 +197,37 @@ def per_session_charge(
     return round(hourly * hours, 2), hours, hourly
 
 
+def amount_for_line_quantity_change(
+    *,
+    description: str,
+    old_quantity: float,
+    new_quantity: float,
+    old_amount: float,
+    unit_price: float,
+    rate_override: float | None,
+    has_attendance_records: bool,
+) -> tuple[float, float]:
+    """Recalculate line amount/unit_price when invoice qty is edited manually.
+
+    Rolled-up private lesson lines store an averaged unit price when sessions
+    bill at different durations (e.g. a 2-hour lesson at 2×). Manual qty edits
+    add or remove one standard lesson at the card rate instead of that average.
+    """
+    new_qty = round(float(new_quantity), 2)
+    old_qty = float(old_quantity)
+    old_amt = round(float(old_amount), 2)
+
+    if description == "Private Lesson" and has_attendance_records:
+        standard = session_rate_for(ProgramType.private, AttendanceType.full, rate_override)
+        delta = new_qty - old_qty
+        amount = round(old_amt + delta * standard, 2)
+        return amount, round(amount / new_qty, 2)
+
+    price = round(float(unit_price), 2)
+    amount = round(price * new_qty, 2)
+    return amount, price
+
+
 def semi_private_lesson_charge(
     session: dict,
     rate_override: float | None = None,

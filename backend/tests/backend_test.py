@@ -184,6 +184,48 @@ class TestRateCard:
         assert private_desc == "Private Lesson"
         assert "Daily Rate" not in private_desc
 
+    def test_private_rollup_quantity_uses_standard_lesson_rate(self):
+        from billing import amount_for_line_quantity_change
+
+        # 5×$85 + 1 two-hour @ $170 → $595; averaged unit price ≈ $99.17
+        amount, unit_price = amount_for_line_quantity_change(
+            description="Private Lesson",
+            old_quantity=6,
+            new_quantity=7,
+            old_amount=595.0,
+            unit_price=99.17,
+            rate_override=None,
+            has_attendance_records=True,
+        )
+        assert amount == 680.0
+        assert unit_price == round(680 / 7, 2)
+
+        amount_down, _ = amount_for_line_quantity_change(
+            description="Private Lesson",
+            old_quantity=6,
+            new_quantity=5,
+            old_amount=595.0,
+            unit_price=99.17,
+            rate_override=None,
+            has_attendance_records=True,
+        )
+        assert amount_down == 510.0
+
+    def test_other_lines_still_scale_by_unit_price(self):
+        from billing import amount_for_line_quantity_change
+
+        amount, unit_price = amount_for_line_quantity_change(
+            description="Eat w/ EAT — Monthly Rate (June 2026)",
+            old_quantity=1,
+            new_quantity=2,
+            old_amount=1380.0,
+            unit_price=1380.0,
+            rate_override=None,
+            has_attendance_records=False,
+        )
+        assert amount == 2760.0
+        assert unit_price == 1380.0
+
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
         from models import AttendanceType
