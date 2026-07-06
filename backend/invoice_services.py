@@ -28,6 +28,12 @@ class ServiceDef:
 SERVICE_CATALOG: tuple[ServiceDef, ...] = (
     # Eat w/ EAT — full-time (Square variations)
     ServiceDef("eat_monthly", f"{EAT_BRAND} — Monthly Rate", "monthly", EAT_BRAND),
+    ServiceDef(
+        "eat_monthly_legacy",
+        f"{EAT_BRAND} — Monthly Rate (Legacy)",
+        "monthly_legacy",
+        EAT_BRAND,
+    ),
     ServiceDef("eat_weekly", f"{EAT_BRAND} — Weekly Rate", "weekly", EAT_BRAND, needs_week_range=True),
     ServiceDef(
         "eat_weekly_half",
@@ -103,7 +109,7 @@ def build_manual_line_item(
     qty = max(0.01, float(quantity))
     price = float(unit_price if unit_price is not None else card.get(svc.rate_key, 0))
 
-    if svc.id == "eat_monthly":
+    if svc.id in ("eat_monthly", "eat_monthly_legacy"):
         month_label = period_start.strftime("%B %Y")
         description = f"{svc.label} ({month_label})"
     elif svc.id in ("eat_weekly", "eat_weekly_half"):

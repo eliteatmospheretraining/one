@@ -30,6 +30,7 @@ const HIDDEN_RATE_CARD_KEYS = new Set([
 const RATE_GRID_SERVICES = [
     { key: "monthly", label: "Eat w/ EAT · Monthly (full day)" },
     { key: "monthly_half", label: "Eat w/ EAT · Monthly (half day)" },
+    { key: "monthly_legacy", label: "Eat w/ EAT · Monthly (legacy)" },
     { key: "weekly", label: "Eat w/ EAT · Weekly (full day)" },
     { key: "weekly_half", label: "Eat w/ EAT · Weekly (half day)" },
     { key: "drop_in", label: "Eat w/ EAT · Drop-in" },

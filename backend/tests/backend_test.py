@@ -235,6 +235,15 @@ class TestRateCard:
         assert options["eat_weekly_half"]["default_unit_price"] == 172.5
         assert "Half-Day" in options["eat_weekly_half"]["label"]
 
+    def test_service_catalog_includes_monthly_legacy(self):
+        from invoice_services import list_service_options
+
+        options = {o["id"]: o for o in list_service_options()}
+        assert "eat_monthly_legacy" in options
+        assert options["eat_monthly_legacy"]["rate_card_key"] == "monthly_legacy"
+        assert options["eat_monthly_legacy"]["default_unit_price"] == 1100.0
+        assert "Legacy" in options["eat_monthly_legacy"]["label"]
+
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
         from models import AttendanceType

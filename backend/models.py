@@ -521,6 +521,7 @@ RATE_CARD = {
     "weekly_half": 172.50,
     "monthly": 1380.00,
     "monthly_half": 690.00,
+    "monthly_legacy": 1100.00,
     "private": 85.00,
     "semi_private": 65.00,
     "travel": 150.00,
