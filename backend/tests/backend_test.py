@@ -226,6 +226,15 @@ class TestRateCard:
         assert amount == 2760.0
         assert unit_price == 1380.0
 
+    def test_service_catalog_includes_weekly_half_day(self):
+        from invoice_services import list_service_options
+
+        options = {o["id"]: o for o in list_service_options()}
+        assert "eat_weekly_half" in options
+        assert options["eat_weekly_half"]["rate_card_key"] == "weekly_half"
+        assert options["eat_weekly_half"]["default_unit_price"] == 172.5
+        assert "Half-Day" in options["eat_weekly_half"]["label"]
+
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
         from models import AttendanceType

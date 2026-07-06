@@ -30,6 +30,13 @@ SERVICE_CATALOG: tuple[ServiceDef, ...] = (
     ServiceDef("eat_monthly", f"{EAT_BRAND} — Monthly Rate", "monthly", EAT_BRAND),
     ServiceDef("eat_weekly", f"{EAT_BRAND} — Weekly Rate", "weekly", EAT_BRAND, needs_week_range=True),
     ServiceDef(
+        "eat_weekly_half",
+        f"{EAT_BRAND} — Weekly Rate (Half-Day)",
+        "weekly_half",
+        EAT_BRAND,
+        needs_week_range=True,
+    ),
+    ServiceDef(
         "eat_drop_in_full",
         f"{EAT_BRAND} — Drop-In Rate (Full-Day)",
         "drop_in",
@@ -99,7 +106,7 @@ def build_manual_line_item(
     if svc.id == "eat_monthly":
         month_label = period_start.strftime("%B %Y")
         description = f"{svc.label} ({month_label})"
-    elif svc.id == "eat_weekly":
+    elif svc.id in ("eat_weekly", "eat_weekly_half"):
         ws = week_start or period_start
         we = week_end or period_end
         range_label = (
