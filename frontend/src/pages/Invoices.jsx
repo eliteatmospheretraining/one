@@ -387,7 +387,6 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     const selectedService = services.find((s) => s.id === serviceId);
     const needsWeek = selectedService?.needs_week_range;
     const needsDate = selectedService?.needs_service_date;
-    const dateRequired = selectedService?.service_date_required;
 
     const servicesByGroup = useMemo(() => {
         const map = {};
@@ -411,38 +410,23 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     }, [athletes, services, athleteId, serviceId]);
 
     useEffect(() => {
-        const start = periodStart || "";
-        setWeekStart(start);
-        if (needsWeek && start) {
-            setWeekEnd(fridayOfWeekContaining(start));
-        } else {
-            setWeekEnd(periodEnd || "");
+        if (needsWeek) {
+            setWeekStart("");
+            setWeekEnd("");
         }
-    }, [periodStart, periodEnd, needsWeek]);
+    }, [serviceId, needsWeek]);
 
     useEffect(() => {
-        if (!needsDate) return;
-        if (dateRequired) {
-            setServiceDate(periodStart || "");
-        } else {
-            setServiceDate("");
-        }
-    }, [periodStart, serviceId, dateRequired, needsDate]);
+        if (needsDate) setServiceDate("");
+    }, [serviceId, needsDate]);
 
     function onServiceChange(id) {
         setServiceId(id);
         const svc = services.find((s) => s.id === id);
-        if (svc?.service_date_required) {
-            setServiceDate(periodStart || "");
-        } else {
-            setServiceDate("");
-        }
+        setServiceDate("");
         if (svc?.needs_week_range) {
-            const start = weekStart || periodStart || "";
-            if (start) {
-                setWeekStart(start);
-                setWeekEnd(fridayOfWeekContaining(start));
-            }
+            setWeekStart("");
+            setWeekEnd("");
         }
     }
 
@@ -457,14 +441,10 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
             toast.error("Select an athlete and service");
             return;
         }
-        if (dateRequired && !serviceDate) {
-            toast.error("Select a service date");
-            return;
-        }
         setBusy(true);
         try {
             const body = { athlete_id: athleteId, service_id: serviceId, quantity: 1 };
-            if (needsWeek) {
+            if (needsWeek && weekStart && weekEnd) {
                 body.week_start = weekStart;
                 body.week_end = weekEnd;
             }
@@ -532,22 +512,20 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
             {needsWeek && (
                 <div className="grid grid-cols-2 gap-3">
                     <div>
-                        <label className="text-[10px] uppercase tracking-wider2 text-muted">Week start</label>
-                        <div className="mt-1"><DateField value={weekStart} onChange={onWeekStartChange} required /></div>
+                        <label className="text-[10px] uppercase tracking-wider2 text-muted">Week start (optional)</label>
+                        <div className="mt-1"><DateField value={weekStart} onChange={onWeekStartChange} /></div>
                     </div>
                     <div>
-                        <label className="text-[10px] uppercase tracking-wider2 text-muted">Week end</label>
-                        <div className="mt-1"><DateField value={weekEnd} onChange={setWeekEnd} required /></div>
+                        <label className="text-[10px] uppercase tracking-wider2 text-muted">Week end (optional)</label>
+                        <div className="mt-1"><DateField value={weekEnd} onChange={setWeekEnd} /></div>
                     </div>
                 </div>
             )}
             {needsDate && !needsWeek && (
                 <div>
-                    <label className="text-[10px] uppercase tracking-wider2 text-muted">
-                        Service date{dateRequired ? "" : " (optional)"}
-                    </label>
+                    <label className="text-[10px] uppercase tracking-wider2 text-muted">Service date (optional)</label>
                     <div className="mt-1">
-                        <DateField value={serviceDate} onChange={setServiceDate} required={dateRequired} />
+                        <DateField value={serviceDate} onChange={setServiceDate} />
                     </div>
                 </div>
             )}

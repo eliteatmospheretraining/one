@@ -259,6 +259,20 @@ class TestRateCard:
         assert line.description == "Private Lesson (June 2026)"
         assert line.unit_price == 85.0
 
+    def test_drop_in_without_date_uses_invoice_month(self):
+        from datetime import date
+
+        from invoice_services import build_manual_line_item
+
+        line = build_manual_line_item(
+            invoice_id="inv-1",
+            athlete={"id": "a1", "full_name": "Test Athlete"},
+            service_id="eat_drop_in_full",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+        )
+        assert line.description == "Eat w/ EAT — Drop-In Rate (Full-Day) (June 2026)"
+
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
         from models import AttendanceType
