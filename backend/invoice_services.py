@@ -23,6 +23,7 @@ class ServiceDef:
     group: str
     needs_week_range: bool = False
     needs_service_date: bool = False
+    service_date_required: bool = False
 
 
 SERVICE_CATALOG: tuple[ServiceDef, ...] = (
@@ -48,6 +49,7 @@ SERVICE_CATALOG: tuple[ServiceDef, ...] = (
         "drop_in",
         EAT_BRAND,
         needs_service_date=True,
+        service_date_required=True,
     ),
     ServiceDef(
         "eat_drop_in_half",
@@ -55,10 +57,23 @@ SERVICE_CATALOG: tuple[ServiceDef, ...] = (
         "drop_in",
         EAT_BRAND,
         needs_service_date=True,
+        service_date_required=True,
     ),
     # Other Square services
-    ServiceDef("private_lesson", "Private Lesson", "private", "EAT Training", needs_service_date=True),
-    ServiceDef("semi_private_lesson", "Semi-Private Lesson", "semi_private", "EAT Training", needs_service_date=True),
+    ServiceDef(
+        "private_lesson",
+        "Private Lesson",
+        "private",
+        "EAT Training",
+        needs_service_date=True,
+    ),
+    ServiceDef(
+        "semi_private_lesson",
+        "Semi-Private Lesson",
+        "semi_private",
+        "EAT Training",
+        needs_service_date=True,
+    ),
     ServiceDef("athlete_travel", "Athlete Travel Support", "travel", "EAT Travel"),
 )
 
@@ -80,6 +95,7 @@ def list_service_options() -> list[dict]:
             "rate_card_key": svc.rate_key,
             "needs_week_range": svc.needs_week_range,
             "needs_service_date": svc.needs_service_date,
+            "service_date_required": svc.service_date_required,
         })
     return out
 
@@ -120,6 +136,12 @@ def build_manual_line_item(
             f"{format_invoice_display_date(we.isoformat())}"
         )
         description = f"{svc.label} ({range_label})"
+    elif svc.id in ("private_lesson", "semi_private_lesson"):
+        if service_date:
+            description = f"{svc.label} ({format_invoice_display_date(service_date.isoformat())})"
+        else:
+            month_label = period_start.strftime("%B %Y")
+            description = f"{svc.label} ({month_label})"
     elif svc.needs_service_date:
         day = service_date or period_start
         description = f"{svc.label} ({format_invoice_display_date(day.isoformat())})"

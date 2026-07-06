@@ -387,6 +387,7 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
     const selectedService = services.find((s) => s.id === serviceId);
     const needsWeek = selectedService?.needs_week_range;
     const needsDate = selectedService?.needs_service_date;
+    const dateRequired = selectedService?.service_date_required;
 
     const servicesByGroup = useMemo(() => {
         const map = {};
@@ -411,7 +412,6 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
 
     useEffect(() => {
         const start = periodStart || "";
-        setServiceDate(start);
         setWeekStart(start);
         if (needsWeek && start) {
             setWeekEnd(fridayOfWeekContaining(start));
@@ -420,9 +420,23 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
         }
     }, [periodStart, periodEnd, needsWeek]);
 
+    useEffect(() => {
+        if (!needsDate) return;
+        if (dateRequired) {
+            setServiceDate(periodStart || "");
+        } else {
+            setServiceDate("");
+        }
+    }, [periodStart, serviceId, dateRequired, needsDate]);
+
     function onServiceChange(id) {
         setServiceId(id);
         const svc = services.find((s) => s.id === id);
+        if (svc?.service_date_required) {
+            setServiceDate(periodStart || "");
+        } else {
+            setServiceDate("");
+        }
         if (svc?.needs_week_range) {
             const start = weekStart || periodStart || "";
             if (start) {
@@ -443,6 +457,10 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
             toast.error("Select an athlete and service");
             return;
         }
+        if (dateRequired && !serviceDate) {
+            toast.error("Select a service date");
+            return;
+        }
         setBusy(true);
         try {
             const body = { athlete_id: athleteId, service_id: serviceId, quantity: 1 };
@@ -450,7 +468,7 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
                 body.week_start = weekStart;
                 body.week_end = weekEnd;
             }
-            if (needsDate) {
+            if (needsDate && serviceDate) {
                 body.service_date = serviceDate;
             }
             await api.post(`/invoices/${invoiceId}/line-items`, body);
@@ -525,8 +543,12 @@ function DraftLineEditor({ invoiceId, athletes, periodStart, periodEnd, onAdded 
             )}
             {needsDate && !needsWeek && (
                 <div>
-                    <label className="text-[10px] uppercase tracking-wider2 text-muted">Service date</label>
-                    <div className="mt-1"><DateField value={serviceDate} onChange={setServiceDate} required /></div>
+                    <label className="text-[10px] uppercase tracking-wider2 text-muted">
+                        Service date{dateRequired ? "" : " (optional)"}
+                    </label>
+                    <div className="mt-1">
+                        <DateField value={serviceDate} onChange={setServiceDate} required={dateRequired} />
+                    </div>
                 </div>
             )}
             <button

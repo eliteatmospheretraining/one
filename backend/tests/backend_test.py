@@ -244,6 +244,21 @@ class TestRateCard:
         assert options["eat_monthly_legacy"]["default_unit_price"] == 1100.0
         assert "Legacy" in options["eat_monthly_legacy"]["label"]
 
+    def test_private_lesson_without_date_uses_invoice_month(self):
+        from datetime import date
+
+        from invoice_services import build_manual_line_item
+
+        line = build_manual_line_item(
+            invoice_id="inv-1",
+            athlete={"id": "a1", "full_name": "Test Athlete"},
+            service_id="private_lesson",
+            period_start=date(2026, 6, 1),
+            period_end=date(2026, 6, 30),
+        )
+        assert line.description == "Private Lesson (June 2026)"
+        assert line.unit_price == 85.0
+
     def test_full_time_flat_rate_from_card(self):
         from billing import full_time_flat_rate
         from models import AttendanceType
