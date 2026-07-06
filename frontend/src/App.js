@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useEffect } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "./lib/auth";
+import { clearCalendarNavStateIfReload } from "./lib/calendarNavState";
 import RequireAuth from "./components/RequireAuth";
 import AppLayout from "./components/AppLayout";
 import { SmoothCursor } from "./components/magicui/smooth-cursor";
@@ -20,6 +21,10 @@ import Enroll from "./pages/Enroll";
 import WaiverSign from "./pages/WaiverSign";
 
 export default function App() {
+    useEffect(() => {
+        clearCalendarNavStateIfReload();
+    }, []);
+
     return (
         <div className="App">
             <BrowserRouter>

@@ -18,6 +18,7 @@ import {
 } from "../lib/format";
 import { ChevronLeft, ChevronRight, MapPin, Plus, Users } from "lucide-react";
 import { SessionFormModal } from "./SessionForm";
+import { readCalendarNavState, saveCalendarNavState } from "../lib/calendarNavState";
 
 // Each program type gets a left accent bar color
 const TYPE_BAR = {
@@ -46,9 +47,10 @@ function NewSessionButton({ onClick, className = "" }) {
 
 export default function CalendarPage() {
     const nav = useNavigate();
+    const initial = readCalendarNavState();
     const [today] = useState(todayISO());
-    const [selected, setSelected] = useState(todayISO());
-    const [weekAnchor, setWeekAnchor] = useState(weekStart(todayISO()));
+    const [selected, setSelected] = useState(initial.selected);
+    const [weekAnchor, setWeekAnchor] = useState(initial.weekAnchor);
     const [sessions, setSessions] = useState([]);
     const [athletes, setAthletes] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -56,6 +58,10 @@ export default function CalendarPage() {
     const [attendanceBySession, setAttendanceBySession] = useState({});
 
     const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekAnchor, i)), [weekAnchor]);
+
+    useEffect(() => {
+        saveCalendarNavState(weekAnchor, selected);
+    }, [weekAnchor, selected]);
 
     async function load() {
         setLoading(true);
