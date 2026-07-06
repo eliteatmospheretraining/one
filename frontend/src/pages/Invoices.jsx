@@ -1192,7 +1192,7 @@ function InvoiceDetailModal({ invoiceId, open, onOpenChange, onChanged }) {
                             )}
                             {data.invoice.status === "draft" && (
                                 <button data-testid={INVOICES.sendBtn} onClick={send} className="eat-btn-secondary">
-                                    <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send due invoice
+                                    <Send size={13} className="mr-1.5" strokeWidth={1.75} /> Send invoice
                                 </button>
                             )}
                         </div>
