@@ -18,6 +18,9 @@ Property mapping (Notion → app):
 
 Sibling families: match by normalized primary email, else primary phone + primary contact name.
 Athlete upsert key: Notion page ID → athlete.notion_page_id
+
+Portal edits win for family_name: Notion has no family-name column (it is derived from
+the athlete's last name on create only). Sync never overwrites an existing family's name.
 """
 from __future__ import annotations
 
@@ -295,6 +298,9 @@ async def _upsert_family(row: dict[str, Any], families_by_lookup: dict[str, dict
     existing = families_by_lookup.get(lookup)
 
     if existing:
+        # family_name is derived from athlete last name in Notion — never clobber a
+        # name set in the portal or MongoDB after the family was created.
+        payload.pop("family_name", None)
         await db.families.update_one({"id": existing["id"]}, {"$set": serialize(payload)})
         return existing["id"]
 
