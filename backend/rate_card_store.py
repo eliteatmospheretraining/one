@@ -53,7 +53,13 @@ def apply_rate_card(
 ) -> dict[str, float]:
     global _rates, _meta
     merged = deepcopy(DEFAULT_RATE_CARD)
-    for key, value in updates.items():
+    normalized = dict(updates)
+    # Legacy single drop_in key → half-day unless full/half are already present
+    if "drop_in" in normalized and "drop_in_half" not in normalized:
+        normalized["drop_in_half"] = normalized.pop("drop_in")
+    else:
+        normalized.pop("drop_in", None)
+    for key, value in normalized.items():
         if key in merged and value is not None:
             merged[key] = float(value)
     _derive_per_session_rates(merged)

@@ -45,14 +45,14 @@ SERVICE_CATALOG: tuple[ServiceDef, ...] = (
     ServiceDef(
         "eat_drop_in_full",
         f"{EAT_BRAND} — Drop-In Rate (Full-Day)",
-        "drop_in",
+        "drop_in_full",
         EAT_BRAND,
         needs_service_date=True,
     ),
     ServiceDef(
         "eat_drop_in_half",
         f"{EAT_BRAND} — Drop-In Rate (Half-Day)",
-        "drop_in",
+        "drop_in_half",
         EAT_BRAND,
         needs_service_date=True,
     ),

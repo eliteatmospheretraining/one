@@ -164,7 +164,8 @@ class TestRateCard:
         assert rc["full_day_hours"] == 5
         assert rc["half_day_hours"] == 2.5
         assert rc["half_day"] == 34.5
-        assert rc["drop_in"] == 50
+        assert rc["drop_in_full"] == 85
+        assert rc["drop_in_half"] == 50
         assert rc["weekly"] == 345
         assert rc["weekly_half"] == 172.5
         assert rc["monthly"] == 1380
@@ -317,6 +318,15 @@ class TestRateCard:
             rate_type="weekly",
         )
         assert drop_in == 50.0
+
+        drop_in_full, _, _ = per_session_charge(
+            AttendanceType.drop_in_full,
+            ProgramType.full_time,
+            None,
+            session={"session_type": "full_time"},
+            rate_type="weekly",
+        )
+        assert drop_in_full == 85.0
 
         assert weekly_tuition_amount({"enrollment_tier": "full_day"}) == 345.0
         assert weekly_tuition_amount({"enrollment_tier": "half_day"}) == 172.5
@@ -718,7 +728,7 @@ class TestSessionsAttendance:
             {"athlete_id": a1["id"], "attendance_type": "full"},          # full_time full day $60
             {"athlete_id": a2["id"], "attendance_type": "full"},          # override $70/day
             {"athlete_id": a3["id"], "attendance_type": "full"},          # private $85/hr × 5h
-            {"athlete_id": a4["id"], "attendance_type": "drop_in_full"},  # drop-in flat $85
+            {"athlete_id": a4["id"], "attendance_type": "drop_in_full"},  # drop-in full-day flat $85
         ]
         save = requests.post(
             f"{API}/sessions/{sid}/attendance", json={"entries": entries}, headers=auth_headers
@@ -731,7 +741,7 @@ class TestSessionsAttendance:
         assert recs[a1["id"]]["billed_rate"] == 60
         assert recs[a2["id"]]["billed_rate"] == 70  # override applied
         assert recs[a3["id"]]["billed_rate"] == 425
-        assert recs[a4["id"]]["billed_rate"] == 425
+        assert recs[a4["id"]]["billed_rate"] == 85
 
         # Now mark completed (allowed) — auto-creates draft invoice for the family
         done = requests.patch(f"{API}/sessions/{sid}", json={"status": "completed"}, headers=auth_headers)

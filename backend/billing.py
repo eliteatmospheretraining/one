@@ -147,8 +147,10 @@ def session_rate_for(
 ) -> float:
     """Flat per-session rate (drop-ins and full-time)."""
     card = get_rate_card()
-    if attendance_type in (AttendanceType.drop_in_full, AttendanceType.drop_in_half):
-        return float(card["drop_in"])
+    if attendance_type == AttendanceType.drop_in_full:
+        return float(card.get("drop_in_full", card.get("drop_in", 85)))
+    if attendance_type == AttendanceType.drop_in_half:
+        return float(card.get("drop_in_half", card.get("drop_in", 50)))
     if program_type == ProgramType.full_time:
         return full_time_flat_rate(attendance_type, rate_override)
     if program_type == ProgramType.private:

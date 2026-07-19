@@ -516,7 +516,8 @@ RATE_CARD = {
     "full_day_hours": 5.0,  # optional schedule block (hr); not multiplied into full-time billing
     "half_day": 34.50,  # derived from weekly_half / 5
     "half_day_hours": 2.5,  # optional schedule block (hr)
-    "drop_in": 50.00,
+    "drop_in_full": 85.00,
+    "drop_in_half": 50.00,
     "weekly": 345.00,
     "weekly_half": 172.50,
     "monthly": 1380.00,
