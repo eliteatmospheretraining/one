@@ -7,13 +7,17 @@ from datetime import date, datetime, timedelta
 
 from billing import (
     SESSION_TIME_ZONE,
+    WEEK_OUTCOME_WEEKLY_FULL,
+    WEEK_OUTCOME_WEEKLY_HALF,
     _is_monthly_prepay,
-    _is_package_prepay,
     _is_weekly_prepay,
     athlete_on_full_time,
     attendance_is_drop_in,
     billing_program_type,
+    classify_eat_week,
     describe_line,
+    drop_in_attendance_for_day_kind,
+    drop_in_rate_for_day_kind,
     format_invoice_display_date,
     full_time_day_rate_type,
     full_time_flat_rate,
@@ -25,6 +29,7 @@ from billing import (
     session_date_from_line_description,
     session_is_billable,
     stored_attendance_type,
+    week_outcome_is_package,
     weekly_tuition_amount,
 )
 from db import db, now, serialize
@@ -534,9 +539,11 @@ async def _billable_records_for_family(
             ):
                 continue
             pt = billing_program_type(athlete, sess)
+            # Monthly package covers Eat w/ EAT days. Weekly package eligibility is
+            # decided from the week's attendance pattern — keep days billable here.
             if (
                 pt == ProgramType.full_time
-                and _is_package_prepay(athlete.get("rate_type"))
+                and _is_monthly_prepay(athlete.get("rate_type"))
                 and not attendance_is_drop_in(r.get("attendance_type"))
             ):
                 continue
@@ -656,11 +663,10 @@ async def billing_skips_for_period(
             athlete = athletes_by_id.get(aid, {})
             if (
                 sess.get("session_type") == ProgramType.full_time.value
-                and _is_package_prepay(athlete.get("rate_type"))
+                and _is_monthly_prepay(athlete.get("rate_type"))
                 and not attendance_is_drop_in(rec.get("attendance_type"))
             ):
-                reason = "weekly_package" if _is_weekly_prepay(athlete.get("rate_type")) else "monthly_package"
-                skips.append({**base, "reason": reason})
+                skips.append({**base, "reason": "monthly_package"})
                 continue
             if (
                 not for_invoice_id
@@ -781,36 +787,81 @@ def line_items_from_billable(
             per_session_rows.append((r, athlete, sess))
 
     items = []
-    ft_groups: dict[tuple[str, str, float], list[list[str]]] = defaultdict(list)
+    # Per-athlete Eat day summaries: list of (date, day_kind, record_ids)
+    athlete_eat_days: dict[str, list[tuple[str, str, list[str]]]] = defaultdict(list)
     for (athlete_id, session_date), rows in sorted(day_blocks.items(), key=lambda x: (x[0][1], x[0][0])):
-        athlete = rows[0][1]
         day_at = full_time_day_rate_type(len(rows))
-        override = athlete.get("rate_override")
-        if override is not None:
-            override = float(override)
-        unit_price = full_time_flat_rate(day_at, override)
+        day_kind = "full" if day_at == AttendanceType.full else "half"
         record_ids = [row[0]["id"] for row in rows]
-        ft_groups[(athlete_id, day_at.value, unit_price)].append(record_ids)
+        athlete_eat_days[athlete_id].append((session_date, day_kind, record_ids))
 
-    for (athlete_id, at_value, unit_price), day_record_lists in sorted(
-        ft_groups.items(), key=lambda x: (x[0][0], x[0][1])
+    for athlete_id, day_rows in sorted(
+        athlete_eat_days.items(),
+        key=lambda x: athletes_by_id[x[0]]["full_name"].casefold(),
     ):
         athlete = athletes_by_id[athlete_id]
-        day_at = AttendanceType(at_value)
-        count = len(day_record_lists)
-        record_ids = [rid for day_ids in day_record_lists for rid in day_ids]
-        desc = describe_line(day_at, ProgramType.full_time, session_count=count)
-        items.append(line_item_cls(
-            invoice_id=invoice_id,
-            athlete_id=athlete_id,
-            athlete_name=athlete["full_name"],
-            attendance_record_id=record_ids[0],
-            attendance_record_ids=record_ids,
-            description=desc,
-            quantity=float(count),
-            unit_price=unit_price,
-            amount=round(unit_price * count, 2),
-        ))
+        day_kinds = [kind for _, kind, _ in day_rows]
+
+        if _is_weekly_prepay(athlete.get("rate_type")):
+            outcome = classify_eat_week(day_kinds)
+            if week_outcome_is_package(outcome):
+                # Covered by weekly package line — no per-day Eat lines
+                continue
+            # Partial or mixed week → drop-in per day kind
+            by_kind: dict[str, list[list[str]]] = defaultdict(list)
+            for _, kind, record_ids in day_rows:
+                by_kind[kind].append(record_ids)
+            for kind in ("full", "half"):
+                day_lists = by_kind.get(kind) or []
+                if not day_lists:
+                    continue
+                count = len(day_lists)
+                record_ids = [rid for day_ids in day_lists for rid in day_ids]
+                drop_at = drop_in_attendance_for_day_kind(kind)
+                unit_price = drop_in_rate_for_day_kind(kind)
+                desc = describe_line(drop_at, ProgramType.full_time, session_count=count)
+                items.append(line_item_cls(
+                    invoice_id=invoice_id,
+                    athlete_id=athlete_id,
+                    athlete_name=athlete["full_name"],
+                    attendance_record_id=record_ids[0],
+                    attendance_record_ids=record_ids,
+                    description=desc,
+                    quantity=float(count),
+                    unit_price=unit_price,
+                    amount=round(unit_price * count, 2),
+                ))
+            continue
+
+        if _is_monthly_prepay(athlete.get("rate_type")):
+            continue
+
+        # Daily / non-package athletes: roll up full/half day rates
+        ft_groups: dict[tuple[str, float], list[list[str]]] = defaultdict(list)
+        for _, kind, record_ids in day_rows:
+            day_at = AttendanceType.full if kind == "full" else AttendanceType.half
+            override = athlete.get("rate_override")
+            if override is not None:
+                override = float(override)
+            unit_price = full_time_flat_rate(day_at, override)
+            ft_groups[(day_at.value, unit_price)].append(record_ids)
+
+        for (at_value, unit_price), day_record_lists in sorted(ft_groups.items(), key=lambda x: x[0][0]):
+            day_at = AttendanceType(at_value)
+            count = len(day_record_lists)
+            record_ids = [rid for day_ids in day_record_lists for rid in day_ids]
+            desc = describe_line(day_at, ProgramType.full_time, session_count=count)
+            items.append(line_item_cls(
+                invoice_id=invoice_id,
+                athlete_id=athlete_id,
+                athlete_name=athlete["full_name"],
+                attendance_record_id=record_ids[0],
+                attendance_record_ids=record_ids,
+                description=desc,
+                quantity=float(count),
+                unit_price=unit_price,
+                amount=round(unit_price * count, 2),
+            ))
 
     groups: dict[tuple[str, str, str, float], list[tuple[dict, dict, dict, float]]] = defaultdict(list)
     private_groups: dict[str, list[tuple[dict, dict, dict, float]]] = defaultdict(list)
@@ -1002,6 +1053,39 @@ async def _weekly_athletes_with_attendance(
     )
 
 
+async def _eat_week_day_kinds_for_athlete(
+    athlete_id: str,
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    for_invoice_id: str | None = None,
+) -> list[str]:
+    """Half/full day kinds for Eat w/ EAT days in the period (for weekly classification)."""
+    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+        family_id,
+        period_start,
+        period_end,
+        skip_invoiced=True,
+        for_invoice_id=for_invoice_id,
+    )
+    day_blocks: dict[str, list] = defaultdict(list)
+    for r in billable:
+        if r["athlete_id"] != athlete_id:
+            continue
+        athlete = athletes_by_id.get(r["athlete_id"])
+        sess = sessions_by_id.get(r["session_id"])
+        if not athlete or not sess:
+            continue
+        if _is_full_time_day_block(athlete, sess, r):
+            day_blocks[sess["date"]].append(r)
+    kinds: list[str] = []
+    for session_date in sorted(day_blocks.keys()):
+        day_at = full_time_day_rate_type(len(day_blocks[session_date]))
+        kinds.append("full" if day_at == AttendanceType.full else "half")
+    return kinds
+
+
 async def monthly_tuition_line_items(
     invoice_id: str,
     family_id: str,
@@ -1011,8 +1095,9 @@ async def monthly_tuition_line_items(
     line_item_cls,
     require_attendance: bool = True,
 ) -> list:
-    """Auto-add monthly package lines for prepay athletes who trained in the period."""
+    """Auto-add monthly package lines for monthly-prepay athletes."""
     from invoice_services import build_manual_line_item
+    from billing import _is_half_day_tier
 
     already = await _athletes_with_monthly_line(invoice_id)
     candidates = await _monthly_athletes_with_attendance(
@@ -1026,11 +1111,12 @@ async def monthly_tuition_line_items(
         if athlete["id"] in already:
             continue
         price = monthly_tuition_amount(athlete)
+        service_id = "eat_monthly_half" if _is_half_day_tier(athlete) else "eat_monthly"
         items.append(
             build_manual_line_item(
                 invoice_id=invoice_id,
                 athlete=athlete,
-                service_id="eat_monthly",
+                service_id=service_id,
                 period_start=period_start,
                 period_end=period_end,
                 unit_price=price,
@@ -1048,8 +1134,11 @@ async def weekly_tuition_line_items(
     *,
     line_item_cls,
 ) -> list:
-    """Auto-add weekly package lines for prepay athletes who trained in the period."""
+    """Auto-add weekly package lines only when the week classifies as full or half package."""
     from invoice_services import build_manual_line_item
+
+    if not is_weekly_invoice_period(period_start, period_end):
+        return []
 
     already = await _athletes_with_weekly_line(invoice_id)
     candidates = await _weekly_athletes_with_attendance(family_id, period_start, period_end)
@@ -1057,12 +1146,25 @@ async def weekly_tuition_line_items(
     for athlete in candidates:
         if athlete["id"] in already:
             continue
-        price = weekly_tuition_amount(athlete)
+        day_kinds = await _eat_week_day_kinds_for_athlete(
+            athlete["id"],
+            family_id,
+            period_start,
+            period_end,
+            for_invoice_id=invoice_id,
+        )
+        outcome = classify_eat_week(day_kinds)
+        if not week_outcome_is_package(outcome):
+            continue
+        price = weekly_tuition_amount(athlete, week_outcome=outcome)
+        service_id = (
+            "eat_weekly_half" if outcome == WEEK_OUTCOME_WEEKLY_HALF else "eat_weekly"
+        )
         items.append(
             build_manual_line_item(
                 invoice_id=invoice_id,
                 athlete=athlete,
-                service_id="eat_weekly",
+                service_id=service_id,
                 period_start=period_start,
                 period_end=period_end,
                 week_start=period_start,

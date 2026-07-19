@@ -9,12 +9,13 @@ from typing import Optional
 
 from billing import SESSION_TIME_ZONE
 from db import db, now, serialize
-from models import AttendanceType, Invoice, InvoiceLineItem, InvoiceStatus, ProgramType
+from models import AttendanceType, Invoice, InvoiceLineItem, InvoiceStatus, ProgramType, SessionStatus
 
 logger = logging.getLogger(__name__)
 
 WEEKLY_BATCH_JOB = "weekly_invoices"
 MONTHLY_BATCH_JOB = "monthly_invoices"
+WEEKLY_BATCH_HOUR_ET = 17  # 5pm Eastern — second Eat block should be done
 
 
 def month_period_for(session_date: date) -> tuple[date, date]:
@@ -23,6 +24,19 @@ def month_period_for(session_date: date) -> tuple[date, date]:
         session_date.replace(day=1),
         session_date.replace(day=last_day),
     )
+
+
+def next_month_period(as_of: date) -> tuple[date, date]:
+    """Calendar month following as_of (prepaid monthly invoice period)."""
+    if as_of.month == 12:
+        start = date(as_of.year + 1, 1, 1)
+    else:
+        start = date(as_of.year, as_of.month + 1, 1)
+    return month_period_for(start)
+
+
+def is_last_day_of_month(as_of: date) -> bool:
+    return as_of.day == calendar.monthrange(as_of.year, as_of.month)[1]
 
 
 async def sync_family_draft_invoice(
@@ -154,25 +168,32 @@ async def auto_sync_invoices_for_session(session_id: str) -> list[dict]:
 
 
 def training_week_mon_fri(as_of: date) -> tuple[date, date]:
-    """Mon–Fri of the last completed training week (due for invoicing)."""
+    """Mon–Fri of the training week due for invoicing relative to as_of."""
     weekday = as_of.weekday()
-    if weekday == 4:  # Friday — current week still in session; bill the prior week
-        friday = as_of - timedelta(days=7)
+    if weekday == 4:  # Friday — bill the week ending today
+        friday = as_of
     elif weekday == 5:  # Saturday — week ended yesterday
         friday = as_of - timedelta(days=1)
     elif weekday == 6:  # Sunday
         friday = as_of - timedelta(days=2)
-    else:  # Mon–Thu — last Friday was 3–6 days ago
+    else:  # Mon–Thu — last completed week
         friday = as_of - timedelta(days=weekday + 3)
     monday = friday - timedelta(days=4)
     return monday, friday
 
 
-def prior_mon_fri_period(as_of: date) -> Optional[tuple[date, date]]:
-    """Mon–Fri for Saturday auto-batch runs."""
-    if as_of.weekday() != 5:
+def friday_week_period(as_of: date) -> Optional[tuple[date, date]]:
+    """Mon–Fri for Friday auto-batch runs (current week ending today)."""
+    if as_of.weekday() != 4:
         return None
     return training_week_mon_fri(as_of)
+
+
+def prior_mon_fri_period(as_of: date) -> Optional[tuple[date, date]]:
+    """Deprecated alias — Friday batch uses friday_week_period; kept for callers."""
+    return friday_week_period(as_of) if as_of.weekday() == 4 else (
+        training_week_mon_fri(as_of) if as_of.weekday() == 5 else None
+    )
 
 
 async def _family_has_billable_period(
@@ -224,16 +245,16 @@ async def run_monthly_batch(
     as_of: Optional[date] = None,
     force: bool = False,
 ) -> dict:
-    """Create draft invoices for all families with monthly-prepay athletes (calendar month)."""
+    """Create draft prepaid invoices for next month on the last day of the current month."""
     as_of = as_of or datetime.now(SESSION_TIME_ZONE).date()
-    if as_of.day != 1 and not force:
+    if not is_last_day_of_month(as_of) and not force:
         return {
             "status": "skipped",
-            "reason": "not_first_of_month",
+            "reason": "not_last_day_of_month",
             "as_of": as_of.isoformat(),
         }
 
-    period_start, period_end = month_period_for(as_of)
+    period_start, period_end = next_month_period(as_of)
     run_key = f"{period_start.isoformat()}_{period_end.isoformat()}"
     if not force:
         existing = await db.scheduled_job_runs.find_one(
@@ -304,33 +325,34 @@ async def run_monthly_batch(
     }
 
 
-async def run_saturday_weekly_batch(
+async def run_friday_weekly_batch(
     *,
     as_of: Optional[date] = None,
     force: bool = False,
+    now_et: Optional[datetime] = None,
 ) -> dict:
-    """Create draft invoices for all families with billable Mon–Fri attendance."""
-    as_of = as_of or datetime.now(SESSION_TIME_ZONE).date()
-    period = prior_mon_fri_period(as_of)
+    """Create draft weekly invoices Friday at/after 5pm ET for the Mon–Fri week ending today."""
+    now_et = now_et or datetime.now(SESSION_TIME_ZONE)
+    as_of = as_of or now_et.date()
+    period = friday_week_period(as_of)
     if not period and not force:
         return {
             "status": "skipped",
-            "reason": "not_saturday",
+            "reason": "not_friday",
             "as_of": as_of.isoformat(),
+        }
+    if not force and as_of.weekday() == 4 and now_et.hour < WEEKLY_BATCH_HOUR_ET:
+        return {
+            "status": "skipped",
+            "reason": "before_5pm",
+            "as_of": as_of.isoformat(),
+            "hour": now_et.hour,
         }
 
     if period:
         period_start, period_end = period
     else:
-        # Manual run on a non-Saturday: bill the most recent Mon–Fri week.
-        weekday = as_of.weekday()
-        friday = as_of - timedelta(days=(weekday - 4) % 7)
-        if weekday == 5:
-            friday = as_of - timedelta(days=1)
-        elif weekday == 6:
-            friday = as_of - timedelta(days=2)
-        period_start = friday - timedelta(days=4)
-        period_end = friday
+        period_start, period_end = training_week_mon_fri(as_of)
 
     run_key = f"{period_start.isoformat()}_{period_end.isoformat()}"
     if not force:
@@ -397,26 +419,32 @@ async def run_saturday_weekly_batch(
     }
 
 
+# Back-compat alias for routes / scripts
+async def run_saturday_weekly_batch(**kwargs) -> dict:
+    return await run_friday_weekly_batch(**kwargs)
+
+
 async def _invoice_scheduler_loop() -> None:
-    """Hourly check: Saturday weekly batch + 1st-of-month monthly batch (Eastern)."""
+    """Hourly check: Friday 5pm weekly batch + last-day-of-month prepaid monthly batch (Eastern)."""
     await asyncio.sleep(30)
     while True:
         try:
-            today = datetime.now(SESSION_TIME_ZONE).date()
-            if today.weekday() == 5:
-                result = await run_saturday_weekly_batch(as_of=today)
+            now_et = datetime.now(SESSION_TIME_ZONE)
+            today = now_et.date()
+            if today.weekday() == 4 and now_et.hour >= WEEKLY_BATCH_HOUR_ET:
+                result = await run_friday_weekly_batch(as_of=today, now_et=now_et)
                 if result.get("status") == "ok":
                     logger.info(
-                        "Saturday weekly invoices: %s drafts for %s–%s",
+                        "Friday weekly invoices: %s drafts for %s–%s",
                         len(result.get("created") or []),
                         result.get("period_start"),
                         result.get("period_end"),
                     )
-            if today.day == 1:
+            if is_last_day_of_month(today):
                 result = await run_monthly_batch(as_of=today)
                 if result.get("status") == "ok":
                     logger.info(
-                        "Monthly invoices: %s drafts for %s–%s",
+                        "Monthly prepaid invoices: %s drafts for %s–%s",
                         len(result.get("created") or []),
                         result.get("period_start"),
                         result.get("period_end"),

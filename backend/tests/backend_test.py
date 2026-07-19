@@ -293,14 +293,20 @@ class TestRateCard:
 
     def test_weekly_prepay_billing(self):
         from billing import (
+            classify_eat_week,
             is_monthly_invoice_period,
             is_weekly_invoice_period,
             per_session_charge,
+            week_outcome_is_package,
             weekly_tuition_amount,
+            WEEK_OUTCOME_DROP_IN,
+            WEEK_OUTCOME_WEEKLY_FULL,
+            WEEK_OUTCOME_WEEKLY_HALF,
         )
         from datetime import date
         from models import AttendanceType, ProgramType
 
+        # Weekly athletes are no longer zeroed at attendance save — week pattern decides package vs drop-in
         amount, _, _ = per_session_charge(
             AttendanceType.full,
             ProgramType.full_time,
@@ -308,7 +314,17 @@ class TestRateCard:
             session={"session_type": "full_time"},
             rate_type="weekly",
         )
-        assert amount == 0.0
+        assert amount == 69.0
+
+        # Monthly package still zeros Eat w/ EAT attendance
+        monthly_zero, _, _ = per_session_charge(
+            AttendanceType.full,
+            ProgramType.full_time,
+            None,
+            session={"session_type": "full_time"},
+            rate_type="monthly",
+        )
+        assert monthly_zero == 0.0
 
         drop_in, _, _ = per_session_charge(
             AttendanceType.drop_in_half,
@@ -330,6 +346,15 @@ class TestRateCard:
 
         assert weekly_tuition_amount({"enrollment_tier": "full_day"}) == 345.0
         assert weekly_tuition_amount({"enrollment_tier": "half_day"}) == 172.5
+        assert weekly_tuition_amount({}, week_outcome=WEEK_OUTCOME_WEEKLY_FULL) == 345.0
+        assert weekly_tuition_amount({}, week_outcome=WEEK_OUTCOME_WEEKLY_HALF) == 172.5
+
+        assert classify_eat_week(["half"] * 5) == WEEK_OUTCOME_WEEKLY_HALF
+        assert classify_eat_week(["full"] * 5) == WEEK_OUTCOME_WEEKLY_FULL
+        assert classify_eat_week(["full"] * 3 + ["half"] * 2) == WEEK_OUTCOME_DROP_IN
+        assert classify_eat_week(["half"] * 3) == WEEK_OUTCOME_DROP_IN
+        assert week_outcome_is_package(WEEK_OUTCOME_WEEKLY_FULL)
+        assert not week_outcome_is_package(WEEK_OUTCOME_DROP_IN)
 
         assert is_weekly_invoice_period(date(2026, 6, 1), date(2026, 6, 5))
         assert not is_weekly_invoice_period(date(2026, 6, 1), date(2026, 6, 30))
@@ -338,6 +363,124 @@ class TestRateCard:
 
         assert monthly_tuition_amount({"enrollment_tier": "full_day"}) == 1380.0
         assert monthly_tuition_amount({"enrollment_tier": "half_day"}) == 690.0
+
+    def test_weekly_athlete_mixed_week_bills_drop_ins(self):
+        from invoice_billing import line_items_from_billable
+        from models import AttendanceType, InvoiceLineItem
+
+        athlete = {
+            "id": "a1",
+            "full_name": "Weekly Athlete",
+            "program_types": ["full_time"],
+            "rate_type": "weekly",
+        }
+        # 3 full days (AM+PM) + 2 half days → drop-ins, not weekly package
+        sessions = {}
+        billable = []
+        rid = 0
+        for i, day in enumerate([1, 2, 3, 4, 5]):
+            date_s = f"2026-06-0{day}"
+            am_id = f"am{i}"
+            sessions[am_id] = {
+                "id": am_id,
+                "date": date_s,
+                "session_type": "full_time",
+                "start_time": "08:00",
+                "end_time": "11:00",
+            }
+            rid += 1
+            billable.append({
+                "id": f"r{rid}",
+                "athlete_id": "a1",
+                "session_id": am_id,
+                "attendance_type": AttendanceType.half.value,
+            })
+            if i < 3:  # full days also have PM
+                pm_id = f"pm{i}"
+                sessions[pm_id] = {
+                    "id": pm_id,
+                    "date": date_s,
+                    "session_type": "full_time",
+                    "start_time": "13:30",
+                    "end_time": "15:30",
+                }
+                rid += 1
+                billable.append({
+                    "id": f"r{rid}",
+                    "athlete_id": "a1",
+                    "session_id": pm_id,
+                    "attendance_type": AttendanceType.half.value,
+                })
+
+        items = line_items_from_billable(
+            "inv-mix",
+            billable,
+            {"a1": athlete},
+            sessions,
+            line_item_cls=InvoiceLineItem,
+        )
+        by_desc = {li.description: li for li in items}
+        assert "Eat w/ EAT — Drop-In Rate (Full-Day)" in by_desc
+        assert "Eat w/ EAT — Drop-In Rate (Half-Day)" in by_desc
+        assert by_desc["Eat w/ EAT — Drop-In Rate (Full-Day)"].quantity == 3
+        assert by_desc["Eat w/ EAT — Drop-In Rate (Full-Day)"].amount == 255.0  # 3 × $85
+        assert by_desc["Eat w/ EAT — Drop-In Rate (Half-Day)"].quantity == 2
+        assert by_desc["Eat w/ EAT — Drop-In Rate (Half-Day)"].amount == 100.0  # 2 × $50
+
+    def test_weekly_athlete_full_week_skips_day_lines(self):
+        from invoice_billing import line_items_from_billable
+        from models import AttendanceType, InvoiceLineItem
+
+        athlete = {
+            "id": "a1",
+            "full_name": "Weekly Athlete",
+            "program_types": ["full_time"],
+            "rate_type": "weekly",
+        }
+        sessions = {}
+        billable = []
+        rid = 0
+        for i, day in enumerate([1, 2, 3, 4, 5]):
+            date_s = f"2026-06-0{day}"
+            for block, (start, end) in enumerate([("08:00", "11:00"), ("13:30", "15:30")]):
+                sid = f"s{i}-{block}"
+                sessions[sid] = {
+                    "id": sid,
+                    "date": date_s,
+                    "session_type": "full_time",
+                    "start_time": start,
+                    "end_time": end,
+                }
+                rid += 1
+                billable.append({
+                    "id": f"r{rid}",
+                    "athlete_id": "a1",
+                    "session_id": sid,
+                    "attendance_type": AttendanceType.half.value,
+                })
+
+        items = line_items_from_billable(
+            "inv-full",
+            billable,
+            {"a1": athlete},
+            sessions,
+            line_item_cls=InvoiceLineItem,
+        )
+        # Package week → no per-day Eat lines (package added by weekly_tuition_line_items)
+        assert items == []
+
+    def test_next_month_period_and_friday_week(self):
+        from datetime import date
+
+        from invoice_auto import friday_week_period, is_last_day_of_month, next_month_period, training_week_mon_fri
+
+        assert next_month_period(date(2026, 6, 30)) == (date(2026, 7, 1), date(2026, 7, 31))
+        assert next_month_period(date(2026, 12, 31)) == (date(2027, 1, 1), date(2027, 1, 31))
+        assert is_last_day_of_month(date(2026, 6, 30))
+        assert not is_last_day_of_month(date(2026, 6, 29))
+        assert friday_week_period(date(2026, 6, 19)) == (date(2026, 6, 15), date(2026, 6, 19))
+        assert friday_week_period(date(2026, 6, 18)) is None
+        assert training_week_mon_fri(date(2026, 6, 19)) == (date(2026, 6, 15), date(2026, 6, 19))
 
     def test_rostered_lesson_invoice_period_routing(self):
         from billing import rostered_lesson_bills_on_invoice

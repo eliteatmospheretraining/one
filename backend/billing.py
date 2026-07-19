@@ -92,6 +92,37 @@ def _is_package_prepay(rate_type: str | None) -> bool:
     return _is_monthly_prepay(rate_type) or _is_weekly_prepay(rate_type)
 
 
+# Mon–Fri training week expectations for weekly package eligibility
+TRAINING_DAYS_PER_WEEK = 5
+
+WEEK_OUTCOME_WEEKLY_FULL = "weekly_full"
+WEEK_OUTCOME_WEEKLY_HALF = "weekly_half"
+WEEK_OUTCOME_DROP_IN = "drop_in"
+
+
+def classify_eat_week(day_kinds: list[str]) -> str:
+    """Classify a Mon–Fri Eat w/ EAT attendance pattern.
+
+    day_kinds: one entry per calendar day attended, each \"full\" or \"half\".
+
+    - All 5 days half → weekly half package
+    - All 5 days full → weekly full package
+    - Fewer than 5 days, or mixed full/half → drop-in per day
+    """
+    if len(day_kinds) != TRAINING_DAYS_PER_WEEK:
+        return WEEK_OUTCOME_DROP_IN
+    kinds = {str(k).strip().lower() for k in day_kinds}
+    if kinds == {"half"}:
+        return WEEK_OUTCOME_WEEKLY_HALF
+    if kinds == {"full"}:
+        return WEEK_OUTCOME_WEEKLY_FULL
+    return WEEK_OUTCOME_DROP_IN
+
+
+def week_outcome_is_package(outcome: str) -> bool:
+    return outcome in (WEEK_OUTCOME_WEEKLY_FULL, WEEK_OUTCOME_WEEKLY_HALF)
+
+
 def _is_half_day_tier(athlete: dict) -> bool:
     return athlete.get("enrollment_tier") == "half_day"
 
@@ -160,6 +191,20 @@ def session_rate_for(
     return float(rate_override if rate_override is not None else card["full_day"])
 
 
+def drop_in_rate_for_day_kind(day_kind: str) -> float:
+    """Price one Eat w/ EAT day billed as a drop-in (full or half)."""
+    card = get_rate_card()
+    if str(day_kind).strip().lower() == "full":
+        return float(card.get("drop_in_full", card.get("drop_in", 85)))
+    return float(card.get("drop_in_half", card.get("drop_in", 50)))
+
+
+def drop_in_attendance_for_day_kind(day_kind: str) -> AttendanceType:
+    if str(day_kind).strip().lower() == "full":
+        return AttendanceType.drop_in_full
+    return AttendanceType.drop_in_half
+
+
 def hourly_rate_for(
     program_type: ProgramType,
     attendance_type: AttendanceType,
@@ -186,7 +231,7 @@ def per_session_charge(
     at = attendance_type
     if at == AttendanceType.absent:
         return 0.0, None, None
-    if program_type == ProgramType.full_time and _is_package_prepay(rate_type):
+    if program_type == ProgramType.full_time and _is_monthly_prepay(rate_type):
         at_value = at.value if isinstance(at, AttendanceType) else at
         if not attendance_is_drop_in(at_value):
             return 0.0, None, None
@@ -443,8 +488,12 @@ def monthly_tuition_amount(athlete: dict) -> float:
     return round(float(get_rate_card()[_package_rate_key(athlete, "monthly")]), 2)
 
 
-def weekly_tuition_amount(athlete: dict) -> float:
-    """Flat weekly prepay from rate card or athlete override."""
+def weekly_tuition_amount(athlete: dict, *, week_outcome: str | None = None) -> float:
+    """Flat weekly package from rate card, enrollment tier, or week classification."""
+    if week_outcome == WEEK_OUTCOME_WEEKLY_HALF:
+        return round(float(get_rate_card()["weekly_half"]), 2)
+    if week_outcome == WEEK_OUTCOME_WEEKLY_FULL:
+        return round(float(get_rate_card()["weekly"]), 2)
     if athlete.get("rate_override") is not None:
         override = float(athlete["rate_override"])
         if _is_half_day_tier(athlete):

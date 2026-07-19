@@ -217,15 +217,15 @@ async def generate_invoice(req: InvoiceGenerateRequest):
 
 @router.post("/run-weekly-batch")
 async def run_weekly_invoice_batch(force: bool = True):
-    """Create Mon–Fri draft invoices for all families (Saturday auto-batch; coach can run anytime)."""
-    from invoice_auto import run_saturday_weekly_batch
+    """Create Mon–Fri draft invoices for all families (Friday 5pm ET auto-batch; coach can run anytime)."""
+    from invoice_auto import run_friday_weekly_batch
 
-    return await run_saturday_weekly_batch(force=force)
+    return await run_friday_weekly_batch(force=force)
 
 
 @router.post("/run-monthly-batch")
 async def run_monthly_invoice_batch(force: bool = True):
-    """Create calendar-month draft invoices for monthly families (1st-of-month auto-batch)."""
+    """Create next-month prepaid draft invoices for monthly families (last-day-of-month auto-batch)."""
     from invoice_auto import run_monthly_batch
 
     return await run_monthly_batch(force=force)
