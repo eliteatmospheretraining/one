@@ -282,10 +282,12 @@ export default function Home() {
     }
 
     const readyToInvoiceCount = readyToInvoice.total_sessions || 0;
+    const readyToInvoiceFamilies = readyToInvoice.total_families || readyToInvoice.families?.length || 0;
     const billingWeek = readyToInvoice.billing_week;
-    const readyToInvoiceDetail = billingWeek
-        ? `Week ${fmtInvoiceDate(billingWeek.start)} – ${fmtInvoiceDate(billingWeek.end)} · ${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`
-        : `${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`;
+    const readyToInvoiceDetail = readyToInvoice.summary
+        || (billingWeek
+            ? `Week ${fmtInvoiceDate(billingWeek.start)} – ${fmtInvoiceDate(billingWeek.end)} · ${readyToInvoiceCount} unbilled`
+            : `${readyToInvoiceCount} unbilled session${readyToInvoiceCount === 1 ? "" : "s"}`);
     const sessionCards = todaySessions.slice(0, 4);
     const weeklyPeriod = draftSummary.weekly_period;
     const weeklyPackageCount = draftSummary.weekly_package_draft_count || 0;
@@ -296,7 +298,7 @@ export default function Home() {
         if (weeklyPeriod?.start && weeklyPeriod?.end) {
             parts.push(`Week ${fmtInvoiceDate(weeklyPeriod.start)} – ${fmtInvoiceDate(weeklyPeriod.end)}`);
         }
-        parts.push(`${draftSummary.weekly_draft_count} not yet sent`);
+        parts.push(`${draftSummary.weekly_draft_count} ready to review`);
         if (weeklyPackageCount || weeklyDropinCount) {
             const bits = [];
             if (weeklyPackageCount) bits.push(`${weeklyPackageCount} package`);
@@ -305,7 +307,20 @@ export default function Home() {
         }
         return parts.join(" · ");
     })();
+    const monthlyDraftDetail = draftSummary.monthly_period_label
+        ? `${draftSummary.monthly_period_label} · ${draftSummary.monthly_draft_count} ready to review`
+        : `${draftSummary.monthly_draft_count} ready to review`;
+
+    // One job per cue — only action-true items, no artificial 3-card cap
     const invoiceActions = [
+        ...(missingBillingCount > 0
+            ? [{
+                count: missingBillingCount,
+                label: "Billing Setup",
+                detail: `${missingBillingCount} Eat w/ EAT athlete${missingBillingCount === 1 ? "" : "s"} missing cadence or tier`,
+                onClick: () => nav("/roster"),
+            }]
+            : []),
         ...(draftSummary.weekly_draft_count > 0
             ? [{
                 count: draftSummary.weekly_draft_count,
@@ -318,34 +333,10 @@ export default function Home() {
             ? [{
                 count: draftSummary.monthly_draft_count,
                 label: "Monthly Drafts",
-                detail: draftSummary.monthly_period_label
-                    ? `${draftSummary.monthly_period_label} · ${draftSummary.monthly_draft_count} not yet sent`
-                    : `${draftSummary.monthly_draft_count} invoice${draftSummary.monthly_draft_count === 1 ? "" : "s"} not yet sent`,
+                detail: monthlyDraftDetail,
                 onClick: () => nav("/invoices?status=draft"),
             }]
             : []),
-        ...(missingBillingCount > 0
-            ? [{
-                count: missingBillingCount,
-                label: "Billing Setup",
-                detail: `${missingBillingCount} Eat w/ EAT athlete${missingBillingCount === 1 ? "" : "s"} missing cadence or tier`,
-                onClick: () => nav("/roster"),
-            }]
-            : []),
-        ...(draftSummary.other_draft_count > 0
-            ? [{
-                count: draftSummary.other_draft_count,
-                label: "Drafts Pending",
-                detail: `${draftSummary.other_draft_count} invoice${draftSummary.other_draft_count === 1 ? "" : "s"} not yet sent`,
-                onClick: () => nav("/invoices?status=draft"),
-            }]
-            : []),
-        {
-            count: sentCount,
-            label: "Awaiting Payment",
-            detail: `${sentCount} invoice${sentCount === 1 ? "" : "s"} sent, not yet paid — ${fmtMoney(outstandingTotal)}`,
-            onClick: () => nav("/invoices?status=sent"),
-        },
         ...(readyToInvoiceCount > 0
             ? [{
                 count: readyToInvoiceCount,
@@ -354,9 +345,23 @@ export default function Home() {
                 onClick: openReadyToInvoice,
             }]
             : []),
-    ]
-        .filter((item) => item.count > 0)
-        .slice(0, 3);
+        ...(draftSummary.other_draft_count > 0
+            ? [{
+                count: draftSummary.other_draft_count,
+                label: "Other Drafts",
+                detail: `${draftSummary.other_draft_count} invoice${draftSummary.other_draft_count === 1 ? "" : "s"} not yet sent`,
+                onClick: () => nav("/invoices?status=draft"),
+            }]
+            : []),
+        ...(sentCount > 0
+            ? [{
+                count: sentCount,
+                label: "Awaiting Payment",
+                detail: `${sentCount} sent · ${fmtMoney(outstandingTotal)} outstanding`,
+                onClick: () => nav("/invoices?status=sent"),
+            }]
+            : []),
+    ].filter((item) => item.count > 0);
 
     const greetingLabel = `${greeting.toUpperCase()}, ${getUserLabel(coach?.name)}`;
     const topDateLabel = formatHeaderDate(today);
@@ -517,8 +522,13 @@ export default function Home() {
                                     >
                                         <span className="absolute left-0 top-0 bottom-0 w-1 bg-accent" />
                                         <div className="pl-3 min-w-0 flex-1">
-                                            <div className="font-thunder uppercase tracking-tight text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
-                                                {action.label}
+                                            <div className="flex items-baseline justify-between gap-3">
+                                                <div className="font-thunder uppercase tracking-tight text-paper text-sm sm:text-base" style={{ fontWeight: 700 }}>
+                                                    {action.label}
+                                                </div>
+                                                <div className="font-thunder text-paper text-lg sm:text-xl leading-none shrink-0" style={{ fontWeight: 800 }}>
+                                                    {action.count}
+                                                </div>
                                             </div>
                                             <div className="mt-1.5 sm:mt-2 text-xs sm:text-sm text-muted font-light leading-relaxed">
                                                 {action.detail}
@@ -587,26 +597,25 @@ export default function Home() {
                 open={readyToInvoiceOpen}
                 onOpenChange={setReadyToInvoiceOpen}
                 title="Ready to Invoice"
-                description="Sessions with billable attendance not yet on an invoice"
+                description="Unbilled charges with no draft yet — package-covered Eat days are excluded"
                 maxW="max-w-xl"
             >
                 {readyToInvoiceLoading ? (
                     <div className="text-center py-8 text-muted uppercase tracking-wider2 text-sm">Loading…</div>
                 ) : readyToInvoiceCount === 0 ? (
-                    <div className="text-sm text-muted font-light py-4">All billable sessions for this week are on invoices.</div>
+                    <div className="text-sm text-muted font-light py-4">
+                        Nothing waiting. Monthly and weekly package coverage is already handled, and remaining sessions are on drafts or paid invoices.
+                    </div>
                 ) : (
                     <div className="flex flex-col gap-4">
                         <p className="text-sm text-muted font-light">
-                            {billingWeek ? (
+                            {readyToInvoice.summary || (
                                 <>
-                                    Week {fmtInvoiceDate(billingWeek.start)} – {fmtInvoiceDate(billingWeek.end)}
-                                    {" · "}
+                                    {readyToInvoiceCount} session{readyToInvoiceCount === 1 ? "" : "s"} across{" "}
+                                    {readyToInvoiceFamilies} famil
+                                    {readyToInvoiceFamilies === 1 ? "y" : "ies"} need a new invoice.
                                 </>
-                            ) : null}
-                            {readyToInvoiceCount} session{readyToInvoiceCount === 1 ? "" : "s"} across{" "}
-                            {readyToInvoice.total_families || readyToInvoice.families?.length || 0} famil
-                            {(readyToInvoice.total_families || readyToInvoice.families?.length || 0) === 1 ? "y" : "ies"}{" "}
-                            need invoicing.
+                            )}
                         </p>
                         <div className="flex flex-col gap-3">
                             {(readyToInvoice.families || []).map((family) => (
@@ -642,7 +651,7 @@ export default function Home() {
                                             <li key={athlete.athlete_id} className="flex items-baseline justify-between gap-3 text-sm">
                                                 <span className="text-paper font-light min-w-0 truncate">{athlete.athlete_name}</span>
                                                 <span className="text-muted text-xs shrink-0 text-right">
-                                                    {athlete.detail}
+                                                    {athlete.detail || athlete.reason}
                                                     {athlete.date_start && athlete.date_end && athlete.date_end !== athlete.date_start ? (
                                                         <span className="block text-[10px] mt-0.5">
                                                             {fmtInvoiceDate(athlete.date_start)} – {fmtInvoiceDate(athlete.date_end)}

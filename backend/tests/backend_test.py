@@ -532,6 +532,26 @@ class TestRateCard:
         assert by_label["Missed week (half)"]["discount_type"] == "fixed"
         assert "Sibling Discount" in by_label
 
+    def test_ready_to_invoice_detail_reasons(self):
+        from types import SimpleNamespace
+
+        from invoice_billing import _ready_detail_from_lines
+
+        assert _ready_detail_from_lines([], needs_weekly_package=True) == (
+            "Weekly package · not on a draft"
+        )
+        assert _ready_detail_from_lines(
+            [],
+            needs_weekly_package=True,
+            week_outcome="weekly_half",
+        ) == "Weekly package (half) · not on a draft"
+
+        private = SimpleNamespace(description="Private Lesson", quantity=2, amount=170)
+        assert _ready_detail_from_lines([private]) == "2 privates · not on a draft"
+
+        drop = SimpleNamespace(description="Drop-In Rate (Full-Day)", quantity=3, amount=255)
+        assert "Drop-in" in _ready_detail_from_lines([drop], needs_weekly_package=True)
+
     def test_invoice_discount_math(self):
         from invoice_discounts import compute_discount_amount, invoice_totals
 

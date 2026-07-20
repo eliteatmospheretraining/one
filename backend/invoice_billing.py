@@ -23,6 +23,7 @@ from billing import (
     full_time_flat_rate,
     is_monthly_invoice_period,
     is_weekly_invoice_period,
+    month_period_for,
     monthly_tuition_amount,
     per_session_charge,
     rostered_lesson_bills_on_invoice,
@@ -1510,150 +1511,305 @@ async def billing_status_for_session(session_id: str) -> list[dict]:
     return out
 
 
+def _ready_detail_from_lines(
+    items: list,
+    *,
+    needs_weekly_package: bool = False,
+    week_outcome: str | None = None,
+) -> str:
+    """Human reason for why an athlete appears in Ready to Invoice."""
+    parts: list[str] = []
+    if needs_weekly_package:
+        if week_outcome == WEEK_OUTCOME_WEEKLY_HALF:
+            parts.append("Weekly package (half)")
+        else:
+            parts.append("Weekly package")
+
+    privates = 0
+    drop_full = 0
+    drop_half = 0
+    eat_days = 0
+    other = 0
+    for li in items:
+        desc = li.description or ""
+        qty = int(li.quantity or 1)
+        amount = float(li.amount or 0)
+        if amount <= 0:
+            continue
+        if "Private" in desc:
+            privates += qty
+        elif "Semi-Private" in desc or "Semi Private" in desc:
+            other += qty
+        elif "Drop-In" in desc and "Full" in desc:
+            drop_full += qty
+        elif "Drop-In" in desc:
+            drop_half += qty
+        elif "Full-Day" in desc or "Half-Day" in desc or "Full Day" in desc or "Half Day" in desc:
+            eat_days += qty
+        else:
+            other += qty
+
+    if privates:
+        parts.append(f"{privates} private{'s' if privates != 1 else ''}")
+    if drop_full or drop_half:
+        bits = []
+        if drop_full:
+            bits.append(f"{drop_full} full")
+        if drop_half:
+            bits.append(f"{drop_half} half")
+        parts.append(f"Drop-in · {' / '.join(bits)}")
+    if eat_days:
+        parts.append(f"{eat_days} training day{'s' if eat_days != 1 else ''}")
+    if other and not (privates or drop_full or drop_half or eat_days):
+        parts.append(f"{other} session{'s' if other != 1 else ''}")
+    if not parts:
+        return "Unbilled sessions · not on a draft"
+    return f"{' · '.join(parts)} · not on a draft"
+
+
+async def _family_ids_with_invoice_period(
+    period_start: date,
+    period_end: date,
+) -> set[str]:
+    """Families that already have any invoice (draft/sent/paid) for this period."""
+    docs = await db.invoices.find(
+        {
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "status": {
+                "$in": [
+                    InvoiceStatus.draft.value,
+                    InvoiceStatus.sent.value,
+                    InvoiceStatus.paid.value,
+                ]
+            },
+        },
+        {"_id": 0, "family_id": 1},
+    ).to_list(2000)
+    return {d["family_id"] for d in docs if d.get("family_id")}
+
+
 async def ready_to_invoice_summary() -> dict:
-    """Families with uninvoiced billable attendance for the last completed Mon–Fri week."""
+    """Families with true unbilled charges and no invoice yet for the period.
+
+    Excludes:
+    - Monthly Eat w/ EAT presence (prepaid package already covers the month)
+    - Anything already on a draft, sent, or paid invoice
+    - Families that already have an invoice for the billing week / month
+    """
     from invoice_auto import training_week_mon_fri
+    from models import InvoiceLineItem
 
     today = datetime.now(SESSION_TIME_ZONE).date()
-    period_start, period_end = training_week_mon_fri(today)
+    week_start, week_end = training_week_mon_fri(today)
+    month_start, month_end = month_period_for(today)
     billing_week = {
-        "start": period_start.isoformat(),
-        "end": period_end.isoformat(),
+        "start": week_start.isoformat(),
+        "end": week_end.isoformat(),
+    }
+    billing_month = {
+        "start": month_start.isoformat(),
+        "end": month_end.isoformat(),
     }
 
     families = await db.families.find({}, {"_id": 0, "id": 1, "family_name": 1}).to_list(500)
     fam_by_id = {f["id"]: f for f in families}
-    athletes = await db.athletes.find(
-        {"status": {"$in": ["active", "pending"]}},
-        {"_id": 0},
-    ).to_list(2000)
-    athletes_by_id = {a["id"]: a for a in athletes}
-    athlete_family: dict[str, str] = {
-        a["id"]: a["family_id"] for a in athletes if a.get("family_id")
-    }
 
-    family_billed: dict[str, set[tuple[str, str]]] = {}
-    for fam in families:
-        family_billed[fam["id"]] = await _billed_session_athletes_sent_or_paid(fam["id"])
+    week_invoiced = await _family_ids_with_invoice_period(week_start, week_end)
+    month_invoiced = await _family_ids_with_invoice_period(month_start, month_end)
 
-    locked = await _invoiced_attendance_sent_or_paid()
-
-    sessions = await db.sessions.find(
-        {
-            "date": {"$gte": period_start.isoformat(), "$lte": period_end.isoformat()},
-            "status": {
-                "$in": [
-                    SessionStatus.completed.value,
-                    SessionStatus.scheduled.value,
-                ]
-            },
-        },
-        {"_id": 0},
-    ).to_list(10000)
-    sessions = [s for s in sessions if session_is_billable(s)]
-    sessions_by_id = {s["id"]: s for s in sessions}
-    if not sessions_by_id:
-        return {
-            "visible": True,
-            "billing_week": billing_week,
-            "total_sessions": 0,
-            "total_families": 0,
-            "families": [],
-        }
-
-    records = await db.attendance_records.find(
-        {"session_id": {"$in": list(sessions_by_id.keys())}},
-        {"_id": 0},
-    ).to_list(20000)
-
-    # family_id -> athlete_id -> {session_ids, dates}
-    grouped: dict[str, dict[str, dict]] = defaultdict(
-        lambda: defaultdict(lambda: {"session_ids": set(), "dates": set()})
-    )
+    # family_id -> athlete rows keyed by athlete_id (merge week + month leftovers)
+    family_athletes: dict[str, dict[str, dict]] = defaultdict(dict)
+    family_periods: dict[str, tuple[str, str]] = {}
+    family_session_ids: dict[str, set[str]] = defaultdict(set)
     all_session_ids: set[str] = set()
 
-    for r in records:
-        if r.get("attendance_type") == AttendanceType.absent.value:
-            continue
-        if r["id"] in locked:
-            continue
-        aid = r["athlete_id"]
-        fid = athlete_family.get(aid)
-        if not fid or fid not in fam_by_id:
-            continue
-        sid = r["session_id"]
-        if (sid, aid) in family_billed.get(fid, set()):
-            continue
-        sess = sessions_by_id.get(sid)
-        if not sess:
-            continue
+    async def _collect_period(
+        family_id: str,
+        period_start: date,
+        period_end: date,
+        *,
+        allow_weekly_package: bool,
+    ) -> None:
+        billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+            family_id,
+            period_start,
+            period_end,
+            skip_invoiced=True,
+        )
+        if not billable and not allow_weekly_package:
+            return
 
-        grouped[fid][aid]["session_ids"].add(sid)
-        grouped[fid][aid]["dates"].add(sess["date"])
-        all_session_ids.add(sid)
+        week_outcomes = await week_outcomes_for_family(
+            family_id,
+            period_start,
+            period_end,
+        )
 
-    family_rows: list[dict] = []
-    for fid, by_athlete in grouped.items():
-        fam = fam_by_id[fid]
-        family_session_ids: set[str] = set()
-        athlete_rows: list[dict] = []
+        items = []
+        if billable:
+            items = line_items_from_billable(
+                "ready-preview",
+                billable,
+                athletes_by_id,
+                sessions_by_id,
+                line_item_cls=InvoiceLineItem,
+                week_outcomes=week_outcomes,
+            )
 
-        for aid, data in by_athlete.items():
+        items_by_athlete: dict[str, list] = defaultdict(list)
+        for li in items:
+            if float(li.amount or 0) <= 0:
+                continue
+            athlete = athletes_by_id.get(li.athlete_id)
+            if not athlete:
+                continue
+            # Month scan is only for monthly-athlete extras (privates / drop-ins).
+            if not allow_weekly_package and not _is_monthly_prepay(athlete.get("rate_type")):
+                continue
+            items_by_athlete[li.athlete_id].append(li)
+
+        package_athletes: set[str] = set()
+        if allow_weekly_package and is_weekly_invoice_period(period_start, period_end):
+            for aid, outcome in week_outcomes.items():
+                if not week_outcome_is_package(outcome):
+                    continue
+                athlete = athletes_by_id.get(aid)
+                if not athlete or not _is_weekly_prepay(athlete.get("rate_type")):
+                    continue
+                package_athletes.add(aid)
+
+        athlete_ids = set(items_by_athlete) | package_athletes
+        if not athlete_ids:
+            return
+
+        if not fam_by_id.get(family_id):
+            return
+
+        for aid in athlete_ids:
             athlete = athletes_by_id.get(aid)
             if not athlete:
                 continue
-            family_session_ids.update(data["session_ids"])
-            dates = sorted(data["dates"])
-            monthly = _is_monthly_prepay(athlete.get("rate_type"))
-            weekly = _is_weekly_prepay(athlete.get("rate_type"))
-            full_time = athlete_on_full_time(athlete)
-            day_count = len(dates)
-            session_count = len(data["session_ids"])
+            # Monthly Eat presence never belongs here — only extras with $ lines.
+            if _is_monthly_prepay(athlete.get("rate_type")) and aid not in items_by_athlete:
+                continue
 
-            if monthly:
-                unit_label = "training day" if day_count == 1 else "training days"
-                detail = f"{day_count} {unit_label} · monthly rate"
-            elif weekly:
-                unit_label = "training day" if day_count == 1 else "training days"
-                detail = f"{day_count} {unit_label} · weekly rate"
-            elif full_time:
-                unit_label = "training day" if day_count == 1 else "training days"
-                detail = f"{day_count} {unit_label}"
-            else:
-                unit_label = "session" if session_count == 1 else "sessions"
-                detail = f"{session_count} {unit_label}"
+            athlete_items = items_by_athlete.get(aid) or []
+            needs_package = aid in package_athletes
+            if not athlete_items and not needs_package:
+                continue
 
-            athlete_rows.append({
+            linked_ids: set[str] = set()
+            for li in athlete_items:
+                linked_ids.update(_attendance_ids_from_line_item(li.model_dump()))
+
+            session_ids: set[str] = set()
+            dates: set[str] = set()
+            for r in billable:
+                if r["athlete_id"] != aid:
+                    continue
+                sess = sessions_by_id.get(r["session_id"])
+                if not sess:
+                    continue
+                include = False
+                if needs_package and _is_full_time_day_block(athlete, sess, r):
+                    include = True
+                elif r["id"] in linked_ids:
+                    include = True
+                if include:
+                    session_ids.add(r["session_id"])
+                    dates.add(sess["date"])
+
+            session_count = (
+                len(session_ids)
+                or sum(int(li.quantity or 1) for li in athlete_items)
+                or 1
+            )
+            date_list = sorted(dates)
+            detail = _ready_detail_from_lines(
+                athlete_items,
+                needs_weekly_package=needs_package,
+                week_outcome=week_outcomes.get(aid),
+            )
+
+            existing = family_athletes[family_id].get(aid)
+            row = {
                 "athlete_id": aid,
                 "athlete_name": athlete.get("full_name") or "Athlete",
                 "session_count": session_count,
-                "training_days": day_count,
+                "training_days": len(date_list),
                 "detail": detail,
-                "date_start": dates[0] if dates else None,
-                "date_end": dates[-1] if dates else None,
+                "reason": detail,
+                "date_start": date_list[0] if date_list else period_start.isoformat(),
+                "date_end": date_list[-1] if date_list else period_end.isoformat(),
                 "rate_type": athlete.get("rate_type"),
                 "program_types": athlete.get("program_types") or [],
-            })
+            }
+            if existing:
+                if row["session_count"] >= existing["session_count"]:
+                    family_athletes[family_id][aid] = row
+            else:
+                family_athletes[family_id][aid] = row
 
-        if not athlete_rows:
+            family_session_ids[family_id].update(session_ids)
+            all_session_ids.update(session_ids)
+            if family_id not in family_periods or allow_weekly_package:
+                family_periods[family_id] = (
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                )
+
+    for fam in families:
+        fid = fam["id"]
+        if fid not in week_invoiced:
+            await _collect_period(
+                fid,
+                week_start,
+                week_end,
+                allow_weekly_package=True,
+            )
+        if fid not in month_invoiced:
+            await _collect_period(
+                fid,
+                month_start,
+                month_end,
+                allow_weekly_package=False,
+            )
+
+    family_rows: list[dict] = []
+    for fid, by_athlete in family_athletes.items():
+        fam = fam_by_id.get(fid)
+        if not fam or not by_athlete:
             continue
-
+        athlete_rows = list(by_athlete.values())
         athlete_rows.sort(key=lambda a: (-a["session_count"], a["athlete_name"]))
+        ps, pe = family_periods.get(
+            fid,
+            (billing_week["start"], billing_week["end"]),
+        )
         family_rows.append({
             "family_id": fid,
             "family_name": fam.get("family_name") or "Family",
-            "session_count": len(family_session_ids),
+            "session_count": len(family_session_ids[fid]) or sum(a["session_count"] for a in athlete_rows),
             "athletes": athlete_rows,
-            "period_start": billing_week["start"],
-            "period_end": billing_week["end"],
+            "period_start": ps,
+            "period_end": pe,
         })
 
     family_rows.sort(key=lambda f: (-f["session_count"], f["family_name"]))
+    total_sessions = len(all_session_ids) or sum(f["session_count"] for f in family_rows)
 
     return {
         "visible": True,
         "billing_week": billing_week,
-        "total_sessions": len(all_session_ids),
+        "billing_month": billing_month,
+        "total_sessions": total_sessions,
         "total_families": len(family_rows),
         "families": family_rows,
+        "summary": (
+            f"{total_sessions} unbilled session{'' if total_sessions == 1 else 's'} "
+            f"across {len(family_rows)} famil{'y' if len(family_rows) == 1 else 'ies'}"
+            if family_rows
+            else "Nothing waiting — package coverage and drafts are caught up"
+        ),
     }
