@@ -128,6 +128,9 @@ export default function Home() {
         draft_count: 0,
         weekly_draft_count: 0,
         monthly_draft_count: 0,
+        weekly_package_draft_count: 0,
+        weekly_dropin_draft_count: 0,
+        eat_athletes_missing_billing_count: 0,
         other_draft_count: 0,
         monthly_period_label: "",
         weekly_period: null,
@@ -179,6 +182,9 @@ export default function Home() {
                     draft_count: 0,
                     weekly_draft_count: 0,
                     monthly_draft_count: 0,
+                    weekly_package_draft_count: 0,
+                    weekly_dropin_draft_count: 0,
+                    eat_athletes_missing_billing_count: 0,
                     other_draft_count: 0,
                     monthly_period_label: "",
                     weekly_period: null,
@@ -282,14 +288,29 @@ export default function Home() {
         : `${readyToInvoiceCount} session${readyToInvoiceCount === 1 ? "" : "s"} not yet invoiced`;
     const sessionCards = todaySessions.slice(0, 4);
     const weeklyPeriod = draftSummary.weekly_period;
+    const weeklyPackageCount = draftSummary.weekly_package_draft_count || 0;
+    const weeklyDropinCount = draftSummary.weekly_dropin_draft_count || 0;
+    const missingBillingCount = draftSummary.eat_athletes_missing_billing_count || 0;
+    const weeklyDraftDetail = (() => {
+        const parts = [];
+        if (weeklyPeriod?.start && weeklyPeriod?.end) {
+            parts.push(`Week ${fmtInvoiceDate(weeklyPeriod.start)} – ${fmtInvoiceDate(weeklyPeriod.end)}`);
+        }
+        parts.push(`${draftSummary.weekly_draft_count} not yet sent`);
+        if (weeklyPackageCount || weeklyDropinCount) {
+            const bits = [];
+            if (weeklyPackageCount) bits.push(`${weeklyPackageCount} package`);
+            if (weeklyDropinCount) bits.push(`${weeklyDropinCount} drop-in`);
+            parts.push(bits.join(" · "));
+        }
+        return parts.join(" · ");
+    })();
     const invoiceActions = [
         ...(draftSummary.weekly_draft_count > 0
             ? [{
                 count: draftSummary.weekly_draft_count,
                 label: "Weekly Drafts",
-                detail: weeklyPeriod
-                    ? `Week ${fmtInvoiceDate(weeklyPeriod.start)} – ${fmtInvoiceDate(weeklyPeriod.end)} · ${draftSummary.weekly_draft_count} not yet sent`
-                    : `${draftSummary.weekly_draft_count} invoice${draftSummary.weekly_draft_count === 1 ? "" : "s"} not yet sent`,
+                detail: weeklyDraftDetail,
                 onClick: () => nav("/invoices?status=draft"),
             }]
             : []),
@@ -301,6 +322,14 @@ export default function Home() {
                     ? `${draftSummary.monthly_period_label} · ${draftSummary.monthly_draft_count} not yet sent`
                     : `${draftSummary.monthly_draft_count} invoice${draftSummary.monthly_draft_count === 1 ? "" : "s"} not yet sent`,
                 onClick: () => nav("/invoices?status=draft"),
+            }]
+            : []),
+        ...(missingBillingCount > 0
+            ? [{
+                count: missingBillingCount,
+                label: "Billing Setup",
+                detail: `${missingBillingCount} Eat w/ EAT athlete${missingBillingCount === 1 ? "" : "s"} missing cadence or tier`,
+                onClick: () => nav("/roster"),
             }]
             : []),
         ...(draftSummary.other_draft_count > 0

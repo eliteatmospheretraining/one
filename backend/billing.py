@@ -100,16 +100,16 @@ WEEK_OUTCOME_WEEKLY_HALF = "weekly_half"
 WEEK_OUTCOME_DROP_IN = "drop_in"
 
 
-def classify_eat_week(day_kinds: list[str]) -> str:
-    """Classify a Mon–Fri Eat w/ EAT attendance pattern.
+def classify_eat_week(day_kinds: list[str], *, expected_days: int | None = None) -> str:
+    """Classify an Eat w/ EAT attendance pattern for a training week.
 
     day_kinds: one entry per calendar day attended, each \"full\" or \"half\".
-
-    - All 5 days half → weekly half package
-    - All 5 days full → weekly full package
-    - Fewer than 5 days, or mixed full/half → drop-in per day
+    expected_days: scheduled training days that week (defaults to 5 Mon–Fri).
+      Use fewer than 5 when a holiday cancelled sessions so a full attended
+      short week can still earn the weekly package.
     """
-    if len(day_kinds) != TRAINING_DAYS_PER_WEEK:
+    expected = TRAINING_DAYS_PER_WEEK if expected_days is None else int(expected_days)
+    if expected <= 0 or len(day_kinds) != expected:
         return WEEK_OUTCOME_DROP_IN
     kinds = {str(k).strip().lower() for k in day_kinds}
     if kinds == {"half"}:

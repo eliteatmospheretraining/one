@@ -353,6 +353,9 @@ class TestRateCard:
         assert classify_eat_week(["full"] * 5) == WEEK_OUTCOME_WEEKLY_FULL
         assert classify_eat_week(["full"] * 3 + ["half"] * 2) == WEEK_OUTCOME_DROP_IN
         assert classify_eat_week(["half"] * 3) == WEEK_OUTCOME_DROP_IN
+        # Holiday week: 4 scheduled days, all attended full → package
+        assert classify_eat_week(["full"] * 4, expected_days=4) == WEEK_OUTCOME_WEEKLY_FULL
+        assert classify_eat_week(["full"] * 3, expected_days=4) == WEEK_OUTCOME_DROP_IN
         assert week_outcome_is_package(WEEK_OUTCOME_WEEKLY_FULL)
         assert not week_outcome_is_package(WEEK_OUTCOME_DROP_IN)
 

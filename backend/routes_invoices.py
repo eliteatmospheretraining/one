@@ -91,9 +91,18 @@ async def _sync_draft_invoice(
     period_end = await _parse_date(inv["period_end"])
 
     if replace:
+        # Clear auto package + attendance-linked lines so classifier rebuilds cleanly
         await db.invoice_line_items.delete_many({
             "invoice_id": invoice_id,
             "description": {"$regex": r"(Monthly|Weekly) Rate"},
+        })
+        await db.invoice_line_items.delete_many({
+            "invoice_id": invoice_id,
+            "description": {"$regex": r"Drop-In Rate"},
+            "$or": [
+                {"attendance_record_id": {"$exists": True, "$ne": None}},
+                {"attendance_record_ids.0": {"$exists": True}},
+            ],
         })
 
     new_items, skipped, session_count = await populate_draft_from_attendance(
@@ -233,48 +242,106 @@ async def run_monthly_invoice_batch(force: bool = True):
 
 @router.get("/draft-summary")
 async def invoice_draft_summary():
-    """Draft counts split by weekly vs monthly billing period."""
+    """Draft counts split by weekly vs monthly billing period, plus billing hygiene cues."""
     from billing import is_monthly_invoice_period, is_weekly_invoice_period, month_period_for
+    from invoice_auto import next_month_period, training_week_mon_fri
+    from models import AthleteStatus, ProgramType
 
     drafts = await db.invoices.find(
         {"status": InvoiceStatus.draft.value},
-        {"_id": 0, "period_start": 1, "period_end": 1},
+        {"_id": 0, "id": 1, "period_start": 1, "period_end": 1},
     ).to_list(500)
 
     weekly_count = 0
     monthly_count = 0
     other_count = 0
+    weekly_ids: list[str] = []
+    monthly_labels: list[str] = []
     for inv in drafts:
         ps = await _parse_date(inv["period_start"])
         pe = await _parse_date(inv["period_end"])
         if is_weekly_invoice_period(ps, pe):
             weekly_count += 1
+            weekly_ids.append(inv["id"])
         elif is_monthly_invoice_period(ps, pe):
             monthly_count += 1
+            monthly_labels.append(ps.strftime("%B %Y"))
         else:
             other_count += 1
 
-    today = date.today()
-    month_start, month_end = month_period_for(today)
-    from invoice_auto import training_week_mon_fri
+    weekly_package_count = 0
+    weekly_dropin_count = 0
+    if weekly_ids:
+        items = await db.invoice_line_items.find(
+            {"invoice_id": {"$in": weekly_ids}},
+            {"_id": 0, "invoice_id": 1, "description": 1},
+        ).to_list(5000)
+        by_inv: dict[str, list[str]] = {}
+        for li in items:
+            by_inv.setdefault(li["invoice_id"], []).append(li.get("description") or "")
+        for inv_id in weekly_ids:
+            descs = by_inv.get(inv_id) or []
+            if any("Weekly Rate" in d for d in descs):
+                weekly_package_count += 1
+            elif any("Drop-In Rate" in d for d in descs):
+                weekly_dropin_count += 1
 
+    today = date.today()
     week_start, week_end = training_week_mon_fri(today)
-    month_label = month_start.strftime("%B %Y")
+
+    monthly_period_start = None
+    monthly_period_end = None
+    if monthly_labels:
+        month_label = max(set(monthly_labels), key=monthly_labels.count)
+        for inv in drafts:
+            ps = await _parse_date(inv["period_start"])
+            pe = await _parse_date(inv["period_end"])
+            if is_monthly_invoice_period(ps, pe) and ps.strftime("%B %Y") == month_label:
+                monthly_period_start, monthly_period_end = ps, pe
+                break
+    else:
+        from invoice_auto import is_last_day_of_month
+        if is_last_day_of_month(today):
+            monthly_period_start, monthly_period_end = next_month_period(today)
+        else:
+            monthly_period_start, monthly_period_end = month_period_for(today)
+        month_label = monthly_period_start.strftime("%B %Y")
+
+    eat_athletes = await db.athletes.find(
+        {
+            "status": {"$in": [AthleteStatus.active.value, AthleteStatus.pending.value]},
+            "$or": [
+                {"program_types": ProgramType.full_time.value},
+                {"program_type": ProgramType.full_time.value},
+            ],
+        },
+        {"_id": 0, "id": 1, "full_name": 1, "rate_type": 1, "enrollment_tier": 1},
+    ).to_list(2000)
+    missing_billing = [
+        {"id": a["id"], "full_name": a.get("full_name")}
+        for a in eat_athletes
+        if a.get("rate_type") not in ("weekly", "monthly", "daily")
+        or a.get("enrollment_tier") not in ("full_day", "half_day")
+    ]
 
     return {
         "draft_count": len(drafts),
         "weekly_draft_count": weekly_count,
+        "weekly_package_draft_count": weekly_package_count,
+        "weekly_dropin_draft_count": weekly_dropin_count,
         "monthly_draft_count": monthly_count,
         "other_draft_count": other_count,
         "monthly_period_label": month_label,
         "monthly_period": {
-            "start": month_start.isoformat(),
-            "end": month_end.isoformat(),
+            "start": monthly_period_start.isoformat() if monthly_period_start else None,
+            "end": monthly_period_end.isoformat() if monthly_period_end else None,
         },
         "weekly_period": {
             "start": week_start.isoformat(),
             "end": week_end.isoformat(),
         },
+        "eat_athletes_missing_billing_count": len(missing_billing),
+        "eat_athletes_missing_billing": missing_billing[:10],
     }
 
 

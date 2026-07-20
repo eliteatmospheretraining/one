@@ -51,6 +51,7 @@ async def sync_family_draft_invoice(
         _weekly_athletes_with_attendance,
         line_items_from_billable,
         package_tuition_line_items,
+        week_outcomes_for_family,
     )
     from routes_invoices import _find_family_draft, _next_invoice_number, _recalc_invoice_totals
 
@@ -66,13 +67,20 @@ async def sync_family_draft_invoice(
     if not billable and not monthly_attended and not weekly_attended:
         return None
 
+    week_outcomes = await week_outcomes_for_family(family_id, period_start, period_end)
+
     draft = await _find_family_draft(family_id, period_start, period_end)
     created = False
 
     if draft:
         invoice_id = draft["id"]
         new_items = line_items_from_billable(
-            invoice_id, billable, athletes_by_id, sessions_by_id, line_item_cls=InvoiceLineItem
+            invoice_id,
+            billable,
+            athletes_by_id,
+            sessions_by_id,
+            line_item_cls=InvoiceLineItem,
+            week_outcomes=week_outcomes,
         )
         package_items = await package_tuition_line_items(
             invoice_id, family_id, period_start, period_end, line_item_cls=InvoiceLineItem
@@ -92,7 +100,12 @@ async def sync_family_draft_invoice(
             status=InvoiceStatus.draft,
         )
         line_items = line_items_from_billable(
-            invoice.id, billable, athletes_by_id, sessions_by_id, line_item_cls=InvoiceLineItem
+            invoice.id,
+            billable,
+            athletes_by_id,
+            sessions_by_id,
+            line_item_cls=InvoiceLineItem,
+            week_outcomes=week_outcomes,
         )
         package_items = await package_tuition_line_items(
             invoice.id, family_id, period_start, period_end, line_item_cls=InvoiceLineItem

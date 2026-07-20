@@ -767,11 +767,12 @@ def line_items_from_billable(
     sessions_by_id: dict,
     *,
     line_item_cls,
+    week_outcomes: dict[str, str] | None = None,
 ):
     """Build line items.
 
     Eat w/ EAT enrolled athletes: same calendar day with both AM + PM blocks → one full-day
-    line; one block → half-day. Other programs bill per session as before.
+    line; one block → half-day. Weekly athletes use week_outcomes to choose package vs drop-in.
     """
     day_blocks: dict[tuple[str, str], list[tuple[dict, dict, dict]]] = defaultdict(list)
     per_session_rows: list[tuple[dict, dict, dict]] = []
@@ -803,7 +804,9 @@ def line_items_from_billable(
         day_kinds = [kind for _, kind, _ in day_rows]
 
         if _is_weekly_prepay(athlete.get("rate_type")):
-            outcome = classify_eat_week(day_kinds)
+            outcome = (week_outcomes or {}).get(athlete_id)
+            if outcome is None:
+                outcome = classify_eat_week([kind for _, kind, _ in day_rows])
             if week_outcome_is_package(outcome):
                 # Covered by weekly package line — no per-day Eat lines
                 continue
@@ -1053,6 +1056,78 @@ async def _weekly_athletes_with_attendance(
     )
 
 
+async def _scheduled_eat_day_count(
+    athlete_id: str,
+    period_start: date,
+    period_end: date,
+) -> int:
+    """Mon–Fri dates in period where athlete was on a non-cancelled Eat w/ EAT session."""
+    sessions = await db.sessions.find(
+        {
+            "date": {
+                "$gte": period_start.isoformat(),
+                "$lte": period_end.isoformat(),
+            },
+            "session_type": ProgramType.full_time.value,
+            "status": {"$ne": SessionStatus.cancelled.value},
+            "athlete_ids": athlete_id,
+        },
+        {"_id": 0, "date": 1},
+    ).to_list(500)
+    return len({str(s.get("date") or "")[:10] for s in sessions if s.get("date")})
+
+
+async def _eat_week_pattern_for_athlete(
+    athlete_id: str,
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    for_invoice_id: str | None = None,
+) -> tuple[list[str], int]:
+    """Return (attended day kinds, scheduled day count) for weekly classification."""
+    day_kinds = await _eat_week_day_kinds_for_athlete(
+        athlete_id,
+        family_id,
+        period_start,
+        period_end,
+        for_invoice_id=for_invoice_id,
+    )
+    expected = await _scheduled_eat_day_count(athlete_id, period_start, period_end)
+    if expected <= 0:
+        expected = 5 if is_weekly_invoice_period(period_start, period_end) else len(day_kinds)
+    return day_kinds, expected
+
+
+async def week_outcomes_for_family(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+    *,
+    for_invoice_id: str | None = None,
+) -> dict[str, str]:
+    """Map weekly athlete id → week outcome for this invoice period."""
+    if not is_weekly_invoice_period(period_start, period_end):
+        return {}
+    athletes = await db.athletes.find(
+        {"family_id": family_id},
+        {"_id": 0, "id": 1, "rate_type": 1},
+    ).to_list(500)
+    outcomes: dict[str, str] = {}
+    for athlete in athletes:
+        if not _is_weekly_prepay(athlete.get("rate_type")):
+            continue
+        day_kinds, expected = await _eat_week_pattern_for_athlete(
+            athlete["id"],
+            family_id,
+            period_start,
+            period_end,
+            for_invoice_id=for_invoice_id,
+        )
+        outcomes[athlete["id"]] = classify_eat_week(day_kinds, expected_days=expected)
+    return outcomes
+
+
 async def _eat_week_day_kinds_for_athlete(
     athlete_id: str,
     family_id: str,
@@ -1146,14 +1221,14 @@ async def weekly_tuition_line_items(
     for athlete in candidates:
         if athlete["id"] in already:
             continue
-        day_kinds = await _eat_week_day_kinds_for_athlete(
+        day_kinds, expected = await _eat_week_pattern_for_athlete(
             athlete["id"],
             family_id,
             period_start,
             period_end,
             for_invoice_id=invoice_id,
         )
-        outcome = classify_eat_week(day_kinds)
+        outcome = classify_eat_week(day_kinds, expected_days=expected)
         if not week_outcome_is_package(outcome):
             continue
         price = weekly_tuition_amount(athlete, week_outcome=outcome)
@@ -1286,6 +1361,13 @@ async def populate_draft_from_attendance(
         for_invoice_id=invoice_id,
     )
 
+    week_outcomes = await week_outcomes_for_family(
+        family_id,
+        period_start,
+        period_end,
+        for_invoice_id=invoice_id,
+    )
+
     attendance_items = []
     if billable:
         await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
@@ -1295,6 +1377,7 @@ async def populate_draft_from_attendance(
             athletes_by_id,
             sessions_by_id,
             line_item_cls=line_item_cls,
+            week_outcomes=week_outcomes,
         )
 
     monthly_items = await package_tuition_line_items(

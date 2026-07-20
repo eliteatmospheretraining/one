@@ -13,9 +13,37 @@ from auth import get_current_coach
 from db import db, serialize
 from enrollment_pdf import enrollment_pdf_filename, render_enrollment_pdf, render_waiver_pdf, waiver_pdf_filename
 from enrollment_send import build_enrollment_context_from_records
-from models import Athlete, AthleteCreate, AthleteStatus, AthleteUpdate, ProgramType
+from models import Athlete, AthleteCreate, AthleteStatus, AthleteUpdate, ProgramType, RateType, EnrollmentTier
 
 router = APIRouter(prefix="/athletes", tags=["athletes"], dependencies=[Depends(get_current_coach)])
+
+
+def _athlete_on_eat(program_types: list | None, program_type: str | None = None) -> bool:
+    types = list(program_types or [])
+    if program_type:
+        types.append(program_type)
+    return ProgramType.full_time.value in {getattr(t, "value", t) for t in types}
+
+
+def _require_eat_billing_fields(program_types, program_type, rate_type, enrollment_tier) -> None:
+    if not _athlete_on_eat(program_types, program_type):
+        return
+    rt = getattr(rate_type, "value", rate_type)
+    et = getattr(enrollment_tier, "value", enrollment_tier)
+    if rt not in (
+        RateType.weekly.value,
+        RateType.monthly.value,
+        RateType.daily.value,
+    ):
+        raise HTTPException(
+            400,
+            "Eat w/ EAT athletes need a billing cadence (weekly, monthly, or per session)",
+        )
+    if et not in (EnrollmentTier.full_day.value, EnrollmentTier.half_day.value):
+        raise HTTPException(
+            400,
+            "Eat w/ EAT athletes need an enrollment tier (full day or half day)",
+        )
 
 
 @router.get("", response_model=List[Athlete])
@@ -47,6 +75,12 @@ async def create_athlete(payload: AthleteCreate):
     fam = await db.families.find_one({"id": payload.family_id}, {"_id": 0})
     if not fam:
         raise HTTPException(400, "family_id does not exist")
+    _require_eat_billing_fields(
+        payload.program_types,
+        payload.program_type,
+        payload.rate_type,
+        payload.enrollment_tier,
+    )
     a = Athlete(**payload.model_dump())
     await db.athletes.insert_one(serialize(a.model_dump()))
     return a
@@ -130,6 +164,10 @@ async def download_waiver_pdf(athlete_id: str):
 
 @router.patch("/{athlete_id}", response_model=Athlete)
 async def update_athlete(athlete_id: str, payload: AthleteUpdate):
+    existing = await db.athletes.find_one({"id": athlete_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Athlete not found")
+
     updates = {}
     for k, v in payload.model_dump(exclude_unset=True).items():
         if hasattr(v, "isoformat"):  # date
@@ -137,10 +175,17 @@ async def update_athlete(athlete_id: str, payload: AthleteUpdate):
         if hasattr(v, "value"):  # enum
             v = v.value
         updates[k] = v
+
+    merged = {**existing, **updates}
+    _require_eat_billing_fields(
+        merged.get("program_types"),
+        merged.get("program_type"),
+        merged.get("rate_type"),
+        merged.get("enrollment_tier"),
+    )
+
     if updates:
-        res = await db.athletes.update_one({"id": athlete_id}, {"$set": updates})
-        if res.matched_count == 0:
-            raise HTTPException(404, "Athlete not found")
+        await db.athletes.update_one({"id": athlete_id}, {"$set": updates})
     a = await db.athletes.find_one({"id": athlete_id}, {"_id": 0})
     return a
 

@@ -20,7 +20,7 @@ const STATUSES = [
 const BILLING_CADENCES = [
     { value: "weekly", label: "Weekly" },
     { value: "monthly", label: "Monthly" },
-    { value: "daily", label: "Per session" },
+    { value: "daily", label: "Per session / drop-in" },
 ];
 const ENROLLMENT_TIERS = [
     { value: "full_day", label: "Full day" },
@@ -218,6 +218,16 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
             toast.error("Primary contact name, email, and phone are required");
             return;
         }
+        if (form.program_types?.includes("full_time")) {
+            if (!form.rate_type || !["weekly", "monthly", "daily"].includes(form.rate_type)) {
+                toast.error("Select a billing cadence for Eat w/ EAT");
+                return;
+            }
+            if (!form.enrollment_tier || !["full_day", "half_day"].includes(form.enrollment_tier)) {
+                toast.error("Select an enrollment tier for Eat w/ EAT");
+                return;
+            }
+        }
 
         const athletePayload = {
             full_name: form.full_name,
@@ -349,9 +359,9 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label className="eat-label">Billing cadence</label>
-                            <Select value={form.rate_type} onValueChange={(v) => set("rate_type", v)}>
+                            <Select value={form.rate_type || undefined} onValueChange={(v) => set("rate_type", v)}>
                                 <SelectTrigger data-testid={ATHLETE_FORM.rateType} className="mt-1.5 h-11">
-                                    <SelectValue />
+                                    <SelectValue placeholder="Weekly or monthly" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {BILLING_CADENCES.map((p) => (
@@ -362,9 +372,9 @@ export function AthleteFormModal({ open, onOpenChange, athlete, families, onSave
                         </div>
                         <div>
                             <label className="eat-label">Enrollment tier</label>
-                            <Select value={form.enrollment_tier} onValueChange={(v) => set("enrollment_tier", v)}>
+                            <Select value={form.enrollment_tier || undefined} onValueChange={(v) => set("enrollment_tier", v)}>
                                 <SelectTrigger data-testid={ATHLETE_FORM.enrollmentTier} className="mt-1.5 h-11">
-                                    <SelectValue />
+                                    <SelectValue placeholder="Full day or half day" />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {ENROLLMENT_TIERS.map((p) => (
