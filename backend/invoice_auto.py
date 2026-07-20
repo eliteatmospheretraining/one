@@ -232,11 +232,29 @@ async def _family_has_billable_period(
     return bool(weekly)
 
 
-async def _family_has_monthly_billable(
+async def _family_has_monthly_athletes(
     family_id: str,
     period_start: date,
     period_end: date,
 ) -> bool:
+    """True when the family has active monthly Eat athletes for a calendar-month period."""
+    from invoice_billing import _monthly_athletes_with_attendance
+
+    monthly = await _monthly_athletes_with_attendance(
+        family_id,
+        period_start,
+        period_end,
+        require_attendance=False,
+    )
+    return bool(monthly)
+
+
+async def _family_has_monthly_settlement(
+    family_id: str,
+    period_start: date,
+    period_end: date,
+) -> bool:
+    """True when monthly athletes have ending-month extras (privates / drop-ins) to bill."""
     from invoice_billing import _billable_records_for_family, _monthly_athletes_with_attendance
 
     monthly = await _monthly_athletes_with_attendance(
@@ -245,12 +263,16 @@ async def _family_has_monthly_billable(
         period_end,
         require_attendance=False,
     )
-    if monthly:
-        return True
+    if not monthly:
+        return False
     billable, _, _ = await _billable_records_for_family(
         family_id, period_start, period_end, skip_invoiced=True
     )
     return bool(billable)
+
+
+# Back-compat alias for callers / tests
+_family_has_monthly_billable = _family_has_monthly_athletes
 
 
 async def run_monthly_batch(
@@ -258,7 +280,11 @@ async def run_monthly_batch(
     as_of: Optional[date] = None,
     force: bool = False,
 ) -> dict:
-    """Create draft prepaid invoices for next month on the last day of the current month."""
+    """Month-end: prepaid next-month packages + settle ending-month privates/drop-ins.
+
+    Prepaid drafts are package-only (no attendance from the ending month).
+    Ending-month drafts get privates/drop-ins only — never a second monthly package.
+    """
     as_of = as_of or datetime.now(SESSION_TIME_ZONE).date()
     if not is_last_day_of_month(as_of) and not force:
         return {
@@ -267,8 +293,9 @@ async def run_monthly_batch(
             "as_of": as_of.isoformat(),
         }
 
-    period_start, period_end = next_month_period(as_of)
-    run_key = f"{period_start.isoformat()}_{period_end.isoformat()}"
+    prepaid_start, prepaid_end = next_month_period(as_of)
+    settle_start, settle_end = month_period_for(as_of)
+    run_key = f"{prepaid_start.isoformat()}_{prepaid_end.isoformat()}"
     if not force:
         existing = await db.scheduled_job_runs.find_one(
             {"job": MONTHLY_BATCH_JOB, "period_key": run_key},
@@ -278,8 +305,8 @@ async def run_monthly_batch(
             return {
                 "status": "skipped",
                 "reason": "already_ran",
-                "period_start": period_start.isoformat(),
-                "period_end": period_end.isoformat(),
+                "period_start": prepaid_start.isoformat(),
+                "period_end": prepaid_end.isoformat(),
                 "ran_at": existing.get("ran_at"),
             }
 
@@ -287,32 +314,52 @@ async def run_monthly_batch(
 
     families = await db.families.find({}, {"_id": 0, "id": 1, "family_name": 1}).to_list(500)
     created: list[dict] = []
+    settled: list[dict] = []
     skipped_families: list[str] = []
     errors: list[dict] = []
 
     for fam in families:
         family_id = fam["id"]
         try:
-            if not await _family_has_monthly_billable(family_id, period_start, period_end):
+            if await _family_has_monthly_athletes(family_id, prepaid_start, prepaid_end):
+                summary = await generate_family_period_invoice(
+                    family_id,
+                    prepaid_start,
+                    prepaid_end,
+                    include_monthly_package=True,
+                )
+                inv = summary.get("invoice") or {}
+                if float(inv.get("total") or 0) > 0 or summary.get("added"):
+                    created.append({
+                        "family_id": family_id,
+                        "family_name": fam.get("family_name"),
+                        "invoice_number": inv.get("invoice_number"),
+                        "total": inv.get("total"),
+                        "reused_draft": summary.get("reused_draft"),
+                        "kind": "prepaid",
+                    })
+                else:
+                    skipped_families.append(family_id)
+            else:
                 skipped_families.append(family_id)
-                continue
-            summary = await generate_family_period_invoice(
-                family_id,
-                period_start,
-                period_end,
-                require_monthly_attendance=False,
-            )
-            inv = summary.get("invoice") or {}
-            if float(inv.get("total") or 0) <= 0 and not summary.get("added"):
-                skipped_families.append(family_id)
-                continue
-            created.append({
-                "family_id": family_id,
-                "family_name": fam.get("family_name"),
-                "invoice_number": inv.get("invoice_number"),
-                "total": inv.get("total"),
-                "reused_draft": summary.get("reused_draft"),
-            })
+
+            if await _family_has_monthly_settlement(family_id, settle_start, settle_end):
+                settle_summary = await generate_family_period_invoice(
+                    family_id,
+                    settle_start,
+                    settle_end,
+                    include_monthly_package=False,
+                )
+                settle_inv = settle_summary.get("invoice") or {}
+                if float(settle_inv.get("total") or 0) > 0 or settle_summary.get("added"):
+                    settled.append({
+                        "family_id": family_id,
+                        "family_name": fam.get("family_name"),
+                        "invoice_number": settle_inv.get("invoice_number"),
+                        "total": settle_inv.get("total"),
+                        "reused_draft": settle_summary.get("reused_draft"),
+                        "kind": "settlement",
+                    })
         except Exception as e:
             logger.exception("Monthly invoice batch failed for family %s", family_id)
             errors.append({"family_id": family_id, "error": str(e)})
@@ -320,19 +367,25 @@ async def run_monthly_batch(
     await db.scheduled_job_runs.insert_one(serialize({
         "job": MONTHLY_BATCH_JOB,
         "period_key": run_key,
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
+        "period_start": prepaid_start.isoformat(),
+        "period_end": prepaid_end.isoformat(),
+        "settlement_period_start": settle_start.isoformat(),
+        "settlement_period_end": settle_end.isoformat(),
         "ran_at": now().isoformat(),
         "created_count": len(created),
+        "settled_count": len(settled),
         "skipped_count": len(skipped_families),
         "error_count": len(errors),
     }))
 
     return {
         "status": "ok",
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
+        "period_start": prepaid_start.isoformat(),
+        "period_end": prepaid_end.isoformat(),
+        "settlement_period_start": settle_start.isoformat(),
+        "settlement_period_end": settle_end.isoformat(),
         "created": created,
+        "settled": settled,
         "skipped_families": len(skipped_families),
         "errors": errors,
     }

@@ -1258,17 +1258,27 @@ async def package_tuition_line_items(
     period_end: date,
     *,
     line_item_cls,
-    require_monthly_attendance: bool = True,
+    include_monthly_package: bool = False,
+    require_monthly_attendance: bool | None = None,
 ) -> list:
-    """Monthly and/or weekly package lines for the invoice period."""
-    monthly_items = await monthly_tuition_line_items(
-        invoice_id,
-        family_id,
-        period_start,
-        period_end,
-        line_item_cls=line_item_cls,
-        require_attendance=require_monthly_attendance,
-    )
+    """Monthly and/or weekly package lines for the invoice period.
+
+    Monthly package lines are prepaid-only (`include_monthly_package=True`).
+    Mid-month settlement / private sync must not re-add a monthly package.
+    """
+    if require_monthly_attendance is not None:
+        # Legacy: False meant "prepaid — add package without attendance".
+        include_monthly_package = not require_monthly_attendance
+    monthly_items: list = []
+    if include_monthly_package:
+        monthly_items = await monthly_tuition_line_items(
+            invoice_id,
+            family_id,
+            period_start,
+            period_end,
+            line_item_cls=line_item_cls,
+            require_attendance=False,
+        )
     weekly_items = await weekly_tuition_line_items(
         invoice_id, family_id, period_start, period_end, line_item_cls=line_item_cls
     )
@@ -1332,13 +1342,26 @@ async def populate_draft_from_attendance(
     *,
     line_item_cls,
     replace_attendance_lines: bool = False,
-    require_monthly_attendance: bool = True,
+    include_monthly_package: bool = False,
+    require_monthly_attendance: bool | None = None,
+    as_of: date | None = None,
 ) -> tuple[list, list, int]:
-    """Add attendance + package tuition lines. Returns (all_new_items, skipped, session_count)."""
-    await auto_complete_family_sessions_in_period(family_id, period_start, period_end)
-    await ensure_rostered_lessons_for_family(family_id, period_start, period_end)
+    """Add attendance + package tuition lines. Returns (all_new_items, skipped, session_count).
 
-    if replace_attendance_lines:
+    Prepaid next-month drafts (`include_monthly_package=True` while the period has not
+    started yet) are package-only — no attendance or private lines from another month.
+    """
+    if require_monthly_attendance is not None:
+        include_monthly_package = not require_monthly_attendance
+    today = as_of or datetime.now(SESSION_TIME_ZONE).date()
+    # Future prepaid month: package lines only (no empty-period side effects / wrong period).
+    package_only = include_monthly_package and period_start > today
+
+    if not package_only:
+        await auto_complete_family_sessions_in_period(family_id, period_start, period_end)
+        await ensure_rostered_lessons_for_family(family_id, period_start, period_end)
+
+    if replace_attendance_lines and not package_only:
         await _release_draft_attendance_in_period(
             family_id,
             period_start,
@@ -1353,32 +1376,33 @@ async def populate_draft_from_attendance(
             ],
         })
 
-    billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
-        family_id,
-        period_start,
-        period_end,
-        skip_invoiced=True,
-        for_invoice_id=invoice_id,
-    )
-
-    week_outcomes = await week_outcomes_for_family(
-        family_id,
-        period_start,
-        period_end,
-        for_invoice_id=invoice_id,
-    )
-
-    attendance_items = []
-    if billable:
-        await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
-        attendance_items = line_items_from_billable(
-            invoice_id,
-            billable,
-            athletes_by_id,
-            sessions_by_id,
-            line_item_cls=line_item_cls,
-            week_outcomes=week_outcomes,
+    attendance_items: list = []
+    if not package_only:
+        billable, athletes_by_id, sessions_by_id = await _billable_records_for_family(
+            family_id,
+            period_start,
+            period_end,
+            skip_invoiced=True,
+            for_invoice_id=invoice_id,
         )
+
+        week_outcomes = await week_outcomes_for_family(
+            family_id,
+            period_start,
+            period_end,
+            for_invoice_id=invoice_id,
+        )
+
+        if billable:
+            await sync_attendance_billed_rates(billable, athletes_by_id, sessions_by_id)
+            attendance_items = line_items_from_billable(
+                invoice_id,
+                billable,
+                athletes_by_id,
+                sessions_by_id,
+                line_item_cls=line_item_cls,
+                week_outcomes=week_outcomes,
+            )
 
     monthly_items = await package_tuition_line_items(
         invoice_id,
@@ -1386,7 +1410,7 @@ async def populate_draft_from_attendance(
         period_start,
         period_end,
         line_item_cls=line_item_cls,
-        require_monthly_attendance=require_monthly_attendance,
+        include_monthly_package=include_monthly_package,
     )
 
     new_items = attendance_items + monthly_items

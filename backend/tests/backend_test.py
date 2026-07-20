@@ -492,13 +492,45 @@ class TestRateCard:
         athlete = {"rate_type": "monthly"}
         private = {"session_type": "private"}
         june = (date(2026, 6, 1), date(2026, 6, 30))
+        july = (date(2026, 7, 1), date(2026, 7, 31))
         week = (date(2026, 6, 1), date(2026, 6, 5))
+        # Monthly privates belong on the calendar-month invoice for that session month
         assert rostered_lesson_bills_on_invoice(athlete, private, *june) is True
+        assert rostered_lesson_bills_on_invoice(athlete, private, *july) is True
         assert rostered_lesson_bills_on_invoice(athlete, private, *week) is False
 
         weekly_athlete = {"rate_type": "weekly"}
         assert rostered_lesson_bills_on_invoice(weekly_athlete, private, *week) is True
         assert rostered_lesson_bills_on_invoice(weekly_athlete, private, *june) is False
+
+    def test_monthly_package_only_on_prepaid_flag(self):
+        """Settlement / mid-month sync must not auto-add monthly packages."""
+        import inspect
+
+        from invoice_billing import package_tuition_line_items, populate_draft_from_attendance
+
+        assert (
+            inspect.signature(package_tuition_line_items)
+            .parameters["include_monthly_package"]
+            .default
+            is False
+        )
+        assert (
+            inspect.signature(populate_draft_from_attendance)
+            .parameters["include_monthly_package"]
+            .default
+            is False
+        )
+
+    def test_missed_week_discount_presets(self):
+        from invoice_discounts import DEFAULT_DISCOUNT_PRESETS
+
+        by_label = {p["label"]: p for p in DEFAULT_DISCOUNT_PRESETS}
+        assert by_label["Missed week (full)"]["default_value"] == 345.0
+        assert by_label["Missed week (full)"]["discount_type"] == "fixed"
+        assert by_label["Missed week (half)"]["default_value"] == 172.5
+        assert by_label["Missed week (half)"]["discount_type"] == "fixed"
+        assert "Sibling Discount" in by_label
 
     def test_invoice_discount_math(self):
         from invoice_discounts import compute_discount_amount, invoice_totals

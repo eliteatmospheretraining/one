@@ -78,9 +78,12 @@ async def _sync_draft_invoice(
     invoice_id: str,
     *,
     replace: bool = False,
-    require_monthly_attendance: bool = True,
+    include_monthly_package: bool = False,
+    require_monthly_attendance: bool | None = None,
 ) -> dict:
     """Rebuild draft lines from attendance + rate card."""
+    if require_monthly_attendance is not None:
+        include_monthly_package = not require_monthly_attendance
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not inv:
         raise HTTPException(404, "Invoice not found")
@@ -112,7 +115,7 @@ async def _sync_draft_invoice(
         period_end,
         line_item_cls=InvoiceLineItem,
         replace_attendance_lines=replace,
-        require_monthly_attendance=require_monthly_attendance,
+        include_monthly_package=include_monthly_package,
     )
     total = await _recalc_invoice_totals(invoice_id)
     inv = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -172,9 +175,16 @@ async def generate_family_period_invoice(
     period_start: date,
     period_end: date,
     *,
-    require_monthly_attendance: bool = True,
+    include_monthly_package: bool = False,
+    require_monthly_attendance: bool | None = None,
 ) -> dict:
-    """Create or refresh a draft invoice for a family and period from attendance + rate card."""
+    """Create or refresh a draft invoice for a family and period from attendance + rate card.
+
+    Pass include_monthly_package=True only for prepaid monthly drafts (month-end batch).
+    Settlement / mid-month sync must leave monthly packages off so they are not double-billed.
+    """
+    if require_monthly_attendance is not None:
+        include_monthly_package = not require_monthly_attendance
     family = await db.families.find_one({"id": family_id}, {"_id": 0})
     if not family:
         raise HTTPException(404, "Family not found")
@@ -186,7 +196,7 @@ async def generate_family_period_invoice(
         out = await _sync_draft_invoice(
             existing["id"],
             replace=True,
-            require_monthly_attendance=require_monthly_attendance,
+            include_monthly_package=include_monthly_package,
         )
         out["reused_draft"] = True
         return out
@@ -204,7 +214,7 @@ async def generate_family_period_invoice(
     out = await _sync_draft_invoice(
         invoice.id,
         replace=False,
-        require_monthly_attendance=require_monthly_attendance,
+        include_monthly_package=include_monthly_package,
     )
     out["reused_draft"] = False
     return out
@@ -234,7 +244,7 @@ async def run_weekly_invoice_batch(force: bool = True):
 
 @router.post("/run-monthly-batch")
 async def run_monthly_invoice_batch(force: bool = True):
-    """Create next-month prepaid draft invoices for monthly families (last-day-of-month auto-batch)."""
+    """Month-end: next-month prepaid packages + ending-month private/drop-in settlement."""
     from invoice_auto import run_monthly_batch
 
     return await run_monthly_batch(force=force)

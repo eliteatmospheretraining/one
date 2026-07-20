@@ -86,17 +86,23 @@ async def upsert_discount_preset(
     return doc
 
 
-async def ensure_discount_presets_seeded() -> None:
-    from db import db, now, serialize
+DEFAULT_DISCOUNT_PRESETS: list[dict[str, Any]] = [
+    {"label": "Sibling Discount", "discount_type": "percent", "default_value": 10.0},
+    {"label": "Missed week (full)", "discount_type": "fixed", "default_value": 345.0},
+    {"label": "Missed week (half)", "discount_type": "fixed", "default_value": 172.5},
+]
 
-    count = await db.discount_presets.count_documents({})
-    if count:
-        return
-    await db.discount_presets.insert_one(serialize({
-        "id": str(uuid.uuid4()),
-        "label": "Sibling Discount",
-        "discount_type": "percent",
-        "default_value": 10.0,
-        "created_at": now().isoformat(),
-        "updated_at": now().isoformat(),
-    }))
+
+async def ensure_discount_presets_seeded() -> None:
+    """Ensure built-in discount presets exist (sibling + missed-week credits)."""
+    from db import db
+
+    for preset in DEFAULT_DISCOUNT_PRESETS:
+        existing = await db.discount_presets.find_one({"label": preset["label"]}, {"_id": 0})
+        if existing:
+            continue
+        await upsert_discount_preset(
+            label=preset["label"],
+            discount_type=preset["discount_type"],
+            default_value=float(preset["default_value"]),
+        )
